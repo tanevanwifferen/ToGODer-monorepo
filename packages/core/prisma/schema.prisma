@@ -1,0 +1,84 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+// table for users, containing id, privateKeyHash, maxMessagesPerDay, messagesLeft, and chats
+model User {
+  id                String        @id @default(uuid())
+  sharedChats       SharedChat[]
+  email             String        @unique
+  password          String
+  verified          Boolean       @default(false)
+  verificationToken String        @default(uuid())
+  createdAt         DateTime      @default(now())
+  dataSync          UserDataSync?
+}
+
+model UserDataSync {
+  id            String   @id @default(uuid())
+  userId        String   @unique
+  user          User     @relation(fields: [userId], references: [id])
+  encryptedData String   // Base64 encrypted blob
+  lastModified  DateTime @updatedAt
+  version       Int      @default(1)
+  createdAt     DateTime @default(now())
+}
+
+model Payment {
+  id         String   @id @default(uuid())
+  user_email String
+  timestamp  DateTime @default(now())
+  amount     Decimal
+  message    String?
+}
+
+model Usage {
+  id         String  @id @default(uuid())
+  user_email String
+  year       Int
+  month      Int
+  amount     Decimal
+}
+
+// table for chats, containing id, title, date, likes, messages, and userId
+model Chat {
+  id        String    @id @default(uuid())
+  emailHash String
+  title     String
+  date      DateTime  @default(now())
+  likes     Int
+  messages  Message[]
+}
+
+// table for messages, containing id, chatId, timestamp, content, and userId
+model Message {
+  id        String   @id @default(uuid())
+  chatId    String
+  timestamp DateTime @default(now())
+  content   String
+  chat      Chat     @relation(fields: [chatId], references: [id])
+}
+
+// table for shared chats, containing id, title, description, messages with their signatures, owner reference, and visibility
+model SharedChat {
+  id          String   @id @default(uuid())
+  ownerId     String
+  owner       User     @relation(fields: [ownerId], references: [id])
+  title       String
+  description String?
+  createdAt   DateTime @default(now())
+  messages    String // JSON blob containing messages with their signatures
+  views       Int      @default(0)
+  visibility  String   @default("PUBLIC") // Can be "PUBLIC" or "PRIVATE"
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL_RAW")
+}

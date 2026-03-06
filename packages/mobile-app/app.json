@@ -1,0 +1,92 @@
+{
+  "expo": {
+    "name": "ToGODer",
+    "slug": "ToGODer",
+    "version": "1.2.0",
+    "orientation": "portrait",
+    "icon": "./assets/images/icon.png",
+    "scheme": "togoderapp",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.vanWifferen.ToGODer-app"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/images/adaptive-icon.png",
+        "backgroundColor": "#ffffff"
+      },
+      "package": "com.vanWifferen.ToGODerapp"
+    },
+    "web": {
+      "bundler": "metro",
+      "output": "static",
+      "favicon": "./assets/images/favicon.png"
+    },
+    "plugins": [
+      [
+        "@kingstinct/react-native-healthkit",
+        {
+          "NSHealthShareUsageDescription": "Let ToGODer analyze your physical and mental health",
+          "NSHealthUpdateUsageDescription": "Not used, but I think the library supports it so I'm not sure how to disable this.",
+          "background": true
+        }
+      ],
+      "expo-router",
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/images/icon.png",
+          "imageWidth": 200,
+          "resizeMode": "contain",
+          "backgroundColor": "#ffffff"
+        }
+      ],
+      [
+        "expo-build-properties",
+        {
+          "ios": {
+            "associatedDomains": [
+              "applinks:dev.togoder.click",
+              "applinks:chat.togoder.click"
+            ]
+          },
+          "android": {
+            "intentFilters": [
+              {
+                "action": "VIEW",
+                "autoVerify": true,
+                "data": [
+                  {
+                    "scheme": "https",
+                    "host": "dev.togoder.click",
+                    "pathPrefix": "/shared"
+                  },
+                  {
+                    "scheme": "https",
+                    "host": "chat.togoder.click",
+                    "pathPrefix": "/shared"
+                  }
+                ],
+                "category": [
+                  "BROWSABLE",
+                  "DEFAULT"
+                ]
+              }
+            ]
+          }
+        }
+      ],
+      "expo-font",
+      "expo-web-browser"
+    ],
+    "experiments": {
+      "typedRoutes": true
+    },
+    "extra": {
+      "apiUrl": "https://dev.togoder.click/api",
+      "shareUrl": "https://dev.togoder.click/shared"
+    }
+  }
+}

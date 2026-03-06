@@ -1,0 +1,42 @@
+# Dependencies
+**/node_modules/
+
+# Build outputs
+**/dist/
+**/build/
+*.log
+
+# Environment files
+**.env
+**.env.local
+**.env.*.local
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.suo
+
+# OS
+.DS_Store
+**/.DS_Store
+
+# Turbo cache
+.turbo/
+
+# PNPM
+pnpm-lock.yaml
+
+# Test coverage
+**/coverage/
+
+# Expo
+**/.expo/
+**/web-build/
+
+# Prisma
+**/prisma/.db
+
+# Temporary files
+**/tmp/
+**/*.tmp

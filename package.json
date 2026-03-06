@@ -1,0 +1,20 @@
+{
+  "name": "togoder-monorepo",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "turbo run dev",
+    "build": "turbo run build",
+    "test": "turbo run test",
+    "lint": "turbo run lint",
+    "dev:core": "turbo run dev --filter=@togoder/core",
+    "dev:mobile": "turbo run dev --filter=@togoder/mobile-app",
+    "dev:mcp": "turbo run dev --filter=@togoder/mcp-server"
+  },
+  "devDependencies": {
+    "turbo": "^2.0.0",
+    "prettier": "^3.2.5",
+    "typescript": "^5.4.5"
+  },
+  "packageManager": "pnpm@9.0.0"
+}
