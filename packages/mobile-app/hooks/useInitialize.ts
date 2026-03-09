@@ -18,9 +18,17 @@ export function useInitialize() {
       // Fetch global config
       const globalConfig = await GlobalApiClient.getGlobalConfig();
       store.dispatch(setGlobalConfig(globalConfig));
-      const oldDefualtModel = selectOldDefaultModel(store.getState());
+      const oldDefaultModel = selectOldDefaultModel(store.getState());
       const defaultModel = selectDefaultModel(store.getState());
-      if (defaultModel !== oldDefualtModel && defaultModel !== "") {
+      const currentModel = store.getState().userSettings.model;
+      // Only update the model if the server default changed AND the user
+      // hasn't explicitly chosen a different model (i.e. they're still on
+      // the old default).
+      if (
+        defaultModel !== oldDefaultModel &&
+        defaultModel !== "" &&
+        (!currentModel || currentModel === oldDefaultModel)
+      ) {
         store.dispatch(
           updateSettings({
             model: defaultModel,

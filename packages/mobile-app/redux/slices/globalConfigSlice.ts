@@ -77,7 +77,7 @@ export const selectDefaultModel = createSelector(
   [selectGlobalConfig],
   (globalConfig) => {
     // Return the first model in the list as the default, or a hardcoded fallback
-    return globalConfig.models[0]?.model || "deepseek/deepseek-chat-v3.1";
+    return globalConfig.models[0]?.model || "meta-llama/llama-3.2-90b-vision-instruct";
   }
 );
 
