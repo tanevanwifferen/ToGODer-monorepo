@@ -101,7 +101,8 @@ app.get('/api/global_config', (req, res) => {
   });
 });
 
-app.get('/', (req, res) => {
+// SPA catch-all: serve index.html for all non-API routes
+app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, '../Frontend/index.html'));
 });
 

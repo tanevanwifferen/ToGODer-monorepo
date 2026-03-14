@@ -1,0 +1,7 @@
+node_modules
+.git
+.beads
+packages/*/node_modules
+packages/*/dist
+packages/*/bin
+packages/core/Frontend

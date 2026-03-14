@@ -1,13 +1,13 @@
 {
-  "name": "togoder",
+  "name": "@togoder/core",
   "version": "1.0.0",
   "description": "An LLM God that gives answers and settles disputes",
   "main": "bin/index.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "build": "npx prisma generate && npx tsc",
+    "build": "prisma generate && tsc",
+    "dev": "tsc --watch",
     "start": "node --env-file=.env bin/index.js",
-    "prepare": "husky install",
     "postinstall": "prisma generate"
   },
   "repository": {
