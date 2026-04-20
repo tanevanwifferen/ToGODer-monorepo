@@ -347,8 +347,11 @@ private final class SSEStreamController: NSObject, URLSessionDataDelegate {
         // SSE frames are separated by a blank line ("\n\n" or "\r\n\r\n").
         // Scan the buffer for frame boundaries and parse each complete frame.
         while let boundary = findFrameBoundary(in: buffer) {
-            let frameData = buffer.prefix(boundary.startOfBlankLine)
-            buffer.removeFirst(boundary.endOfBlankLine)
+            // `boundary` offsets are relative to buffer.startIndex, so prefix/
+            // removeFirst operate correctly even after prior removals have
+            // shifted the buffer's startIndex off zero.
+            let frameData = Data(buffer.prefix(boundary.frameLength))
+            buffer.removeFirst(boundary.consumedLength)
 
             guard let frameString = String(data: frameData, encoding: .utf8) else {
                 continue
@@ -369,18 +372,23 @@ private final class SSEStreamController: NSObject, URLSessionDataDelegate {
         }
     }
 
-    /// Locate the end of the next SSE frame in the buffer. Returns the offset of
-    /// the first byte of the blank-line delimiter (so the preceding data is the
-    /// frame) and the offset just past the delimiter (where the next frame starts).
-    private func findFrameBoundary(in data: Data) -> (startOfBlankLine: Int, endOfBlankLine: Int)? {
+    /// Locate the end of the next SSE frame in the buffer.
+    /// Returns offsets RELATIVE to `data.startIndex`:
+    /// - `frameLength`: number of bytes from startIndex up to the blank-line delimiter
+    /// - `consumedLength`: number of bytes to remove from the front (frame + delimiter)
+    private func findFrameBoundary(in data: Data) -> (frameLength: Int, consumedLength: Int)? {
         // Match either "\n\n" or "\r\n\r\n".
         let lfLf = Data([0x0A, 0x0A])
         let crLfCrLf = Data([0x0D, 0x0A, 0x0D, 0x0A])
         if let range = data.range(of: crLfCrLf) {
-            return (range.lowerBound, range.upperBound)
+            let frameLength = data.distance(from: data.startIndex, to: range.lowerBound)
+            let consumed = data.distance(from: data.startIndex, to: range.upperBound)
+            return (frameLength, consumed)
         }
         if let range = data.range(of: lfLf) {
-            return (range.lowerBound, range.upperBound)
+            let frameLength = data.distance(from: data.startIndex, to: range.lowerBound)
+            let consumed = data.distance(from: data.startIndex, to: range.upperBound)
+            return (frameLength, consumed)
         }
         return nil
     }
