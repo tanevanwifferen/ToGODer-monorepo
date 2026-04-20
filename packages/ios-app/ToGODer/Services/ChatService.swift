@@ -7,6 +7,7 @@ final class ChatService: ObservableObject {
     @Published var currentChatId: String?
     @Published var isStreaming = false
     @Published var streamingContent = ""
+    @Published var lastError: String?
 
     let apiClient: APIClient
     private let storage: StorageService
@@ -213,6 +214,7 @@ final class ChatService: ObservableObject {
             var signature: String?
 
             do {
+                print("[ChatService] Starting stream to /chat/stream")
                 let stream = await apiClient.stream("/chat/stream", body: request)
                 for try await event in stream {
                     guard !Task.isCancelled else { return }
@@ -266,6 +268,8 @@ final class ChatService: ObservableObject {
                         }
 
                     case .error(let msg):
+                        print("[ChatService] SSE error event: \(msg)")
+                        lastError = msg
                         appendAssistantMessage("Error: \(msg)", to: chatId)
                         isStreaming = false
                         return
@@ -285,10 +289,13 @@ final class ChatService: ObservableObject {
                 }
             } catch {
                 if !Task.isCancelled {
+                    let errorMessage = error.localizedDescription
+                    print("[ChatService] Stream error: \(errorMessage)")
+                    lastError = errorMessage
                     if !accumulatedContent.isEmpty {
                         appendAssistantMessage(accumulatedContent, signature: signature, to: chatId)
                     } else {
-                        appendAssistantMessage("Failed to get response. Please try again.", to: chatId)
+                        appendAssistantMessage("Error: \(errorMessage)", to: chatId)
                     }
                 }
             }

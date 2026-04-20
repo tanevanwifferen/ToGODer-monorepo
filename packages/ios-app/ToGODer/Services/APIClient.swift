@@ -93,6 +93,8 @@ actor APIClient {
 
                     var buffer = ""
                     for try await line in bytes.lines {
+                        // Skip SSE comment lines (keep-alive, padding)
+                        if line.hasPrefix(":") { continue }
                         buffer += line + "\n"
                         if line.isEmpty {
                             if let event = SSEEvent.parse(buffer) {
@@ -183,25 +185,45 @@ enum SSEEvent {
         switch type {
         case "chunk":
             guard let d = data else { return nil }
-            if let parsed = try? JSONDecoder().decode(SSEData.self, from: Data(d.utf8)) {
+            // Backend sends {"delta":"text"} for chunks
+            if let parsed = try? JSONDecoder().decode(SSEChunkData.self, from: Data(d.utf8)) {
+                return .chunk(parsed.delta)
+            }
+            // Fallback: try legacy {"data":"text"} format
+            if let parsed = try? JSONDecoder().decode(SSEStringField.self, from: Data(d.utf8)) {
                 return .chunk(parsed.data)
             }
             return .chunk(d)
         case "signature":
             guard let d = data else { return nil }
-            if let parsed = try? JSONDecoder().decode(SSEData.self, from: Data(d.utf8)) {
+            // Backend sends {"signature":"sig"}
+            if let parsed = try? JSONDecoder().decode(SSESignatureData.self, from: Data(d.utf8)) {
+                return .signature(parsed.signature)
+            }
+            // Fallback: try legacy {"data":"sig"} format
+            if let parsed = try? JSONDecoder().decode(SSEStringField.self, from: Data(d.utf8)) {
                 return .signature(parsed.data)
             }
             return .signature(d)
         case "memory_request":
-            guard let d = data,
-                  let parsed = try? JSONDecoder().decode(SSEMemoryRequest.self, from: Data(d.utf8)) else { return nil }
-            return .memoryRequest(parsed.data.keys)
+            guard let d = data else { return nil }
+            // Backend sends {"keys":["key1","key2"]} directly
+            if let parsed = try? JSONDecoder().decode(MemoryRequest.self, from: Data(d.utf8)) {
+                return .memoryRequest(parsed.keys)
+            }
+            return nil
         case "tool_call":
-            guard let d = data,
-                  let parsed = try? JSONDecoder().decode(SSEToolCall.self, from: Data(d.utf8)) else { return nil }
-            return .toolCall(parsed.data)
+            guard let d = data else { return nil }
+            // Backend sends tool call data directly (not wrapped in "data" field)
+            if let parsed = try? JSONDecoder().decode(ToolCallData.self, from: Data(d.utf8)) {
+                return .toolCall(parsed)
+            }
+            return nil
         case "error":
+            if let d = data,
+               let parsed = try? JSONDecoder().decode(SSEErrorData.self, from: Data(d.utf8)) {
+                return .error(parsed.message)
+            }
             return .error(data ?? "Unknown error")
         case "done":
             return .done
@@ -211,16 +233,24 @@ enum SSEEvent {
     }
 }
 
-private struct SSEData: Codable {
+/// Backend chunk format: {"delta":"text"}
+private struct SSEChunkData: Codable {
+    let delta: String
+}
+
+/// Backend signature format: {"signature":"sig"}
+private struct SSESignatureData: Codable {
+    let signature: String
+}
+
+/// Backend error format: {"message":"error text"}
+private struct SSEErrorData: Codable {
+    let message: String
+}
+
+/// Legacy/fallback format: {"data":"text"}
+private struct SSEStringField: Codable {
     let data: String
-}
-
-private struct SSEMemoryRequest: Codable {
-    let data: MemoryRequest
-}
-
-private struct SSEToolCall: Codable {
-    let data: ToolCallData
 }
 
 struct ToolCallData: Codable {

@@ -207,9 +207,10 @@ struct SharedChatOwner: Codable {
 
 // MARK: - Sync
 
-struct SyncResponse: Codable {
+struct SyncPullResponse: Codable {
     let encryptedData: String?
-    let version: Int?
+    let version: Int
+    let lastModified: String?
 }
 
 struct SyncRequest: Codable {
