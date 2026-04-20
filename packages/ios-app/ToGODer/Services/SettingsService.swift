@@ -27,8 +27,25 @@ final class SettingsService: ObservableObject {
             if let models = config.models, !models.isEmpty {
                 availableModels = models
             }
+            applyDefaultModel(from: config)
         } catch {
             // Non-critical
+        }
+    }
+
+    private func applyDefaultModel(from config: GlobalConfig) {
+        let defaultModel = config.models?.first?.model ?? ""
+        let previousDefault = config.previousDefaultModel ?? ""
+        let currentModel = settings.model
+        // Only update if the server default changed AND the user hasn't
+        // explicitly chosen a different model (still on the old default,
+        // or the current model isn't in the available list at all).
+        let currentIsInList = availableModels.contains { $0.model == currentModel }
+        let userStillOnOldDefault = currentModel.isEmpty || currentModel == previousDefault
+        if !defaultModel.isEmpty,
+           defaultModel != currentModel,
+           userStillOnOldDefault || !currentIsInList {
+            updateSettings { $0.model = defaultModel }
         }
     }
 }
