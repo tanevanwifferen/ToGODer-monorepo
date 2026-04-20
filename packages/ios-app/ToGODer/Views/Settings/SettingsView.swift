@@ -2,6 +2,11 @@ import SwiftUI
 
 struct SettingsView: View {
     @EnvironmentObject var settingsService: SettingsService
+    @EnvironmentObject var passcodeService: PasscodeService
+    @EnvironmentObject var calendarService: CalendarService
+    @EnvironmentObject var healthService: HealthService
+    @EnvironmentObject var memoryService: MemoryService
+    @State private var showPasscodeSetup = false
 
     var body: some View {
         Form {
@@ -30,7 +35,47 @@ struct SettingsView: View {
                 Toggle("Keep Conversation Going", isOn: keepGoingBinding)
                 Toggle("Think Outside the Box", isOn: outsideBoxBinding)
                 Toggle("Holistic Therapist", isOn: holisticTherapistBinding)
-                Toggle("Library Integration", isOn: libraryBinding)
+                if settingsService.globalConfig?.libraryIntegrationEnabled == true {
+                    Toggle("Library Integration", isOn: libraryBinding)
+                }
+            }
+
+            Section("Memory") {
+                NavigationLink {
+                    MemoriesView()
+                } label: {
+                    HStack {
+                        Text("Memories")
+                        Spacer()
+                        Text("\(memoryService.memoryKeys.count)")
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+
+            Section("Calendar") {
+                Toggle("Calendar Integration", isOn: calendarBinding)
+            }
+
+            Section("Health") {
+                if healthService.isAvailable {
+                    Toggle("HealthKit Integration", isOn: healthBinding)
+
+                    if healthService.isAuthorized {
+                        if let summary = healthService.healthSummary {
+                            Text(summary)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        } else {
+                            Text("No health data available yet.")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                } else {
+                    Text("HealthKit is not available on this device.")
+                        .foregroundStyle(.secondary)
+                }
             }
 
             Section("Persona") {
@@ -46,8 +91,26 @@ struct SettingsView: View {
                 TextEditor(text: customPromptBinding)
                     .frame(minHeight: 100)
             }
+
+            Section("Security") {
+                if passcodeService.hasPasscode {
+                    Button("Change Passcode") {
+                        showPasscodeSetup = true
+                    }
+                    Button("Remove Passcode", role: .destructive) {
+                        passcodeService.removePasscode()
+                    }
+                } else {
+                    Button("Set Passcode") {
+                        showPasscodeSetup = true
+                    }
+                }
+            }
         }
         .navigationTitle("Settings")
+        .sheet(isPresented: $showPasscodeSetup) {
+            PasscodeView(mode: .setup)
+        }
     }
 
     // MARK: - Bindings
@@ -112,6 +175,35 @@ struct SettingsView: View {
         Binding(
             get: { settingsService.settings.libraryIntegrationEnabled },
             set: { val in settingsService.updateSettings { $0.libraryIntegrationEnabled = val } }
+        )
+    }
+
+    private var calendarBinding: Binding<Bool> {
+        Binding(
+            get: { settingsService.settings.calendarIntegrationEnabled },
+            set: { val in
+                settingsService.updateSettings { $0.calendarIntegrationEnabled = val }
+                if val {
+                    Task {
+                        await calendarService.requestAccess()
+                        await calendarService.fetchEvents()
+                    }
+                }
+            }
+        )
+    }
+
+    private var healthBinding: Binding<Bool> {
+        Binding(
+            get: { healthService.isAuthorized },
+            set: { val in
+                if val {
+                    Task {
+                        await healthService.requestAuthorization()
+                        await healthService.fetchHealthData()
+                    }
+                }
+            }
         )
     }
 

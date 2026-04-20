@@ -10,6 +10,7 @@ struct UserSettings: Codable {
     var language: String
     var assistantName: String
     var libraryIntegrationEnabled: Bool
+    var calendarIntegrationEnabled: Bool
     var customSystemPrompt: String?
     var persona: String?
 
@@ -22,7 +23,8 @@ struct UserSettings: Codable {
         communicationStyle: .default,
         language: "English",
         assistantName: "ToGODer",
-        libraryIntegrationEnabled: false
+        libraryIntegrationEnabled: false,
+        calendarIntegrationEnabled: false
     )
 }
 

@@ -11,6 +11,9 @@ final class ChatService: ObservableObject {
     let apiClient: APIClient
     private let storage: StorageService
     private let settingsService: SettingsService
+    var calendarService: CalendarService?
+    var healthService: HealthService?
+    var syncService: SyncService?
     private var streamTask: Task<Void, Never>?
 
     init(apiClient: APIClient, storage: StorageService, settingsService: SettingsService) {
@@ -154,7 +157,7 @@ final class ChatService: ObservableObject {
 
     // MARK: - Streaming
 
-    private func streamResponse(for chatId: String, memoryLoopCount: Int = 0) async {
+    private func streamResponse(for chatId: String, memoryLoopCount: Int = 0, requestedMemoryKeys: [String]? = nil) async {
         guard let chat = chats[chatId] else { return }
         let settings = settingsService.settings
 
@@ -171,8 +174,13 @@ final class ChatService: ObservableObject {
             )
         }
 
-        let memories = storage.loadMemories()
-        let memoryIndex = Array(memories.keys)
+        let allMemories = storage.loadMemories()
+        let memoryIndex = Array(allMemories.keys)
+
+        // Include fetched memory values if this is a memory loop iteration
+        let requestedMemories: [String: String]? = requestedMemoryKeys.map { keys in
+            storage.getMemoryValues(for: keys)
+        }
 
         let request = ChatRequest(
             model: settings.model,
@@ -183,9 +191,14 @@ final class ChatService: ObservableObject {
             communicationStyle: settings.communicationStyle.rawValue,
             prompts: prompts,
             configurableData: settings.persona,
-            staticData: StaticData(date: ISO8601DateFormatter().string(from: Date())),
+            staticData: StaticData(
+                date: ISO8601DateFormatter().string(from: Date()),
+                calendarEvents: calendarService?.calendarSummary,
+                health: healthService?.healthSummary
+            ),
             assistantName: settings.assistantName,
             memoryIndex: memoryIndex,
+            memories: requestedMemories,
             customSystemPrompt: settings.customSystemPrompt,
             persona: settings.persona,
             libraryIntegrationEnabled: settings.libraryIntegrationEnabled,
@@ -211,21 +224,37 @@ final class ChatService: ObservableObject {
                         signature = sig
 
                     case .memoryRequest(let keys):
-                        // Fetch requested memories and resend
+                        // Fetch requested memories and resend with values
                         guard memoryLoopCount < Configuration.maxMemoryLoops else { break }
-                        _ = storage.getMemoryValues(for: keys)
                         // Append partial content if any
                         if !accumulatedContent.isEmpty {
                             appendAssistantMessage(accumulatedContent, signature: signature, to: chatId)
                         }
                         isStreaming = false
-                        // Re-send with memories
-                        await streamResponse(for: chatId, memoryLoopCount: memoryLoopCount + 1)
+                        // Re-send with the requested memory values included
+                        await streamResponse(for: chatId, memoryLoopCount: memoryLoopCount + 1, requestedMemoryKeys: keys)
                         return
 
-                    case .toolCall:
-                        // TODO: Handle artifact tool calls
-                        break
+                    case .toolCall(let toolData):
+                        if toolData.name == "query_library" {
+                            let query = toolData.arguments?["query"] ?? ""
+                            accumulatedContent += "\n\n*Searching library for: \"\(query)\"...*\n\n"
+                            streamingContent = accumulatedContent
+
+                            // Execute library query client-side if we have the API URL
+                            if let librarianUrl = self.settingsService.globalConfig?.librarianApiUrl,
+                               let url = URL(string: librarianUrl.trimmingCharacters(in: CharacterSet(charactersIn: "/")) + "/chat") {
+                                do {
+                                    let result = try await self.queryLibrary(url: url, query: query)
+                                    accumulatedContent += result + "\n\n"
+                                    streamingContent = accumulatedContent
+                                } catch {
+                                    accumulatedContent += "*Library search failed: \(error.localizedDescription)*\n\n"
+                                    streamingContent = accumulatedContent
+                                }
+                            }
+                        }
+                        // Other tool calls (artifacts, etc.) not yet handled
 
                     case .error(let msg):
                         appendAssistantMessage("Error: \(msg)", to: chatId)
@@ -267,6 +296,46 @@ final class ChatService: ObservableObject {
         save()
     }
 
+    // MARK: - Library Query
+
+    private func queryLibrary(url: URL, query: String) async throws -> String {
+        struct LibraryRequest: Codable {
+            let messages: [APIChatMessage]
+        }
+        struct LibraryResponse: Codable {
+            let answer: String?
+            let sources: [LibrarySource]?
+        }
+        struct LibrarySource: Codable {
+            let filename: String?
+            let chunk_index: Int?
+        }
+
+        let requestBody = LibraryRequest(messages: [APIChatMessage(content: query, role: "user")])
+        let response: LibraryResponse = try await apiClient.post(url: url, body: requestBody)
+
+        guard let answer = response.answer, !answer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return "No relevant excerpts found for this query."
+        }
+
+        var result = answer.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        if let sources = response.sources, !sources.isEmpty {
+            let formattedSources = sources.map { src in
+                let filename = src.filename ?? "unknown"
+                if let chunkIndex = src.chunk_index {
+                    return "- \(filename)#\(chunkIndex)"
+                }
+                return "- \(filename)"
+            }.joined(separator: "\n")
+            if !formattedSources.isEmpty {
+                result += "\n\nSources:\n" + formattedSources
+            }
+        }
+
+        return result
+    }
+
     // MARK: - Title Generation
 
     private func generateTitle(for chatId: String) async {
@@ -288,5 +357,6 @@ final class ChatService: ObservableObject {
 
     private func save() {
         storage.saveChats(chats)
+        syncService?.schedulePush()
     }
 }

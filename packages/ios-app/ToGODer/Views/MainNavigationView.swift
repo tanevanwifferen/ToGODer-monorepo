@@ -1,6 +1,11 @@
 import SwiftUI
 
+extension String: @retroactive Identifiable {
+    public var id: String { self }
+}
+
 struct MainNavigationView: View {
+    @EnvironmentObject var appState: AppState
     @EnvironmentObject var chatService: ChatService
     @EnvironmentObject var authService: AuthService
     @EnvironmentObject var settingsService: SettingsService
@@ -16,6 +21,12 @@ struct MainNavigationView: View {
                 ChatView(chatId: chatId)
             } else {
                 EmptyChatView()
+            }
+        }
+        .sheet(item: $appState.deepLinkSharedChatId) { id in
+            NavigationStack {
+                DeepLinkSharedChatSheet(sharedChatId: id)
+                    .environmentObject(chatService)
             }
         }
     }
@@ -65,6 +76,12 @@ struct MainNavigationView: View {
                 }
 
                 NavigationLink {
+                    ProjectsView()
+                } label: {
+                    Label("Projects", systemImage: "folder")
+                }
+
+                NavigationLink {
                     SettingsView()
                 } label: {
                     Label("Settings", systemImage: "gear")
@@ -93,6 +110,50 @@ struct MainNavigationView: View {
         }
         .navigationTitle("ToGODer")
         .listStyle(.sidebar)
+    }
+}
+
+struct DeepLinkSharedChatSheet: View {
+    let sharedChatId: String
+    @EnvironmentObject var chatService: ChatService
+    @Environment(\.dismiss) private var dismiss
+    @State private var sharedChat: SharedChat?
+    @State private var isLoading = true
+    @State private var error: String?
+
+    var body: some View {
+        Group {
+            if isLoading {
+                ProgressView("Loading shared conversation...")
+            } else if let sharedChat {
+                SharedChatDetailView(sharedChat: sharedChat)
+            } else if let error {
+                ContentUnavailableView(
+                    "Could not load conversation",
+                    systemImage: "exclamationmark.triangle",
+                    description: Text(error)
+                )
+            }
+        }
+        .toolbar {
+            ToolbarItem(placement: .cancellationAction) {
+                Button("Done") { dismiss() }
+            }
+        }
+        .task {
+            await loadSharedChat()
+        }
+    }
+
+    private func loadSharedChat() async {
+        isLoading = true
+        defer { isLoading = false }
+        do {
+            let chat: SharedChat = try await chatService.apiClient.get("/share/\(sharedChatId)")
+            sharedChat = chat
+        } catch {
+            self.error = error.localizedDescription
+        }
     }
 }
 

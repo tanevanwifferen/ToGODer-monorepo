@@ -17,6 +17,7 @@ final class StorageService {
         static let syncVersion = "syncVersion"
         static let language = "language"
         static let passcode = "passcode"
+        static let projects = "projects"
     }
 
     // MARK: - App State
@@ -76,6 +77,22 @@ final class StorageService {
             return [:]
         }
         return chats
+    }
+
+    // MARK: - Projects
+
+    func saveProjects(_ projects: [String: Project]) {
+        if let data = try? encoder.encode(projects) {
+            defaults.set(data, forKey: Keys.projects)
+        }
+    }
+
+    func loadProjects() -> [String: Project] {
+        guard let data = defaults.data(forKey: Keys.projects),
+              let projects = try? decoder.decode([String: Project].self, from: data) else {
+            return [:]
+        }
+        return projects
     }
 
     // MARK: - Settings

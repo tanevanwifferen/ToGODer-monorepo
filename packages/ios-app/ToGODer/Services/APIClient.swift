@@ -63,6 +63,14 @@ actor APIClient {
         try validateResponse(response)
     }
 
+    func post<T: Decodable>(url: URL, body: some Encodable) async throws -> T {
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.httpBody = try encoder.encode(body)
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        return try await execute(request)
+    }
+
     func delete(_ path: String) async throws {
         let request = try buildRequest(path: path, method: "DELETE")
         let (_, response) = try await session.data(for: request)
@@ -215,6 +223,7 @@ private struct SSEToolCall: Codable {
 }
 
 struct ToolCallData: Codable {
+    let id: String?
     let name: String
     let arguments: [String: String]?
 }

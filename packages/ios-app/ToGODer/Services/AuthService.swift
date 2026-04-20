@@ -10,7 +10,7 @@ final class AuthService: ObservableObject {
 
     private let apiClient: APIClient
     private let storage: StorageService
-    private var password: String?
+    private(set) var password: String?
     private var refreshTask: Task<Void, Never>?
 
     init(apiClient: APIClient, storage: StorageService) {

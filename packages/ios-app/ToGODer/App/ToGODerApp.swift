@@ -12,6 +12,14 @@ struct ToGODerApp: App {
                 .environmentObject(appState.chatService)
                 .environmentObject(appState.settingsService)
                 .environmentObject(appState.syncService)
+                .environmentObject(appState.passcodeService)
+                .environmentObject(appState.projectService)
+                .environmentObject(appState.healthService)
+                .environmentObject(appState.calendarService)
+                .environmentObject(appState.memoryService)
+                .onOpenURL { url in
+                    appState.handleDeepLink(url)
+                }
         }
     }
 }

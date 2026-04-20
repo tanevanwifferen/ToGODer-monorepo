@@ -227,6 +227,7 @@ struct SyncRequest: Codable {
 
 struct MemoryFetchKeysRequest: Codable {
     let shortTermMemory: String
+    let existingKeys: [String]
 }
 
 struct MemoryFetchKeysResponse: Codable {
@@ -235,7 +236,19 @@ struct MemoryFetchKeysResponse: Codable {
 
 struct MemoryCompressRequest: Codable {
     let shortTermMemory: String
-    let longTermMemories: [String: String]
+    let longTermMemory: [String: String]
+}
+
+struct MemoryCompressResponse: Codable {
+    let shortTermMemory: String
+    let longTermMemory: [String: String]
+}
+
+// MARK: - Tool Results
+
+struct ToolResult: Codable {
+    let toolCallId: String
+    let result: String
 }
 
 // MARK: - Quote
