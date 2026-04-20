@@ -80,47 +80,50 @@ actor APIClient {
     // MARK: - Streaming
 
     func stream(_ path: String, body: some Encodable) -> AsyncThrowingStream<SSEEvent, Error> {
-        AsyncThrowingStream { continuation in
-            Task {
-                do {
-                    var request = try self.buildRequest(path: path, method: "POST")
-                    request.httpBody = try self.encoder.encode(body)
-                    request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-                    request.setValue("text/event-stream", forHTTPHeaderField: "Accept")
-                    request.setValue("no-cache", forHTTPHeaderField: "Cache-Control")
-                    // Prevent URLSession from buffering a compressed response; SSE
-                    // must be delivered incrementally.
-                    request.setValue("identity", forHTTPHeaderField: "Accept-Encoding")
-                    // SSE streams can idle for long stretches before the first chunk
-                    // (slow LLM TTFT, memory lookups, tool calls). The session-level
-                    // 60s inter-byte timeout is too aggressive for chat streaming.
-                    request.timeoutInterval = 300
+        // Prepare the request synchronously so init errors are surfaced via the stream.
+        let preparedRequest: Result<URLRequest, Error>
+        do {
+            var request = try buildRequest(path: path, method: "POST")
+            request.httpBody = try encoder.encode(body)
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.setValue("text/event-stream", forHTTPHeaderField: "Accept")
+            request.setValue("no-cache", forHTTPHeaderField: "Cache-Control")
+            // SSE streams can idle for long stretches before the first chunk
+            // (slow LLM TTFT, memory lookups, tool calls). The session-level
+            // 60s inter-byte timeout is too aggressive for chat streaming.
+            request.timeoutInterval = 300
+            preparedRequest = .success(request)
+        } catch {
+            preparedRequest = .failure(error)
+        }
 
-                    let (bytes, response) = try await self.session.bytes(for: request)
-                    try self.validateResponse(response)
-
-                    var buffer = ""
-                    for try await line in bytes.lines {
-                        // Skip SSE comment lines (keep-alive, padding)
-                        if line.hasPrefix(":") { continue }
-                        buffer += line + "\n"
-                        if line.isEmpty {
-                            if let event = SSEEvent.parse(buffer) {
-                                print("[APIClient.stream] yielding event: \(event)")
-                                continuation.yield(event)
-                                if case .done = event {
-                                    continuation.finish()
-                                    return
-                                }
-                            }
-                            buffer = ""
-                        }
-                    }
-                    print("[APIClient.stream] bytes.lines completed (stream closed)")
-                    continuation.finish()
-                } catch {
-                    continuation.finish(throwing: error)
+        return AsyncThrowingStream { continuation in
+            switch preparedRequest {
+            case .failure(let err):
+                continuation.finish(throwing: err)
+                return
+            case .success(let request):
+                // A URLSessionDataDelegate receives bytes as they arrive — more
+                // reliable than URLSession.bytes(for:).lines, which has been observed
+                // to complete with zero yielded lines on some configurations.
+                let controller = SSEStreamController(continuation: continuation)
+                let config = URLSessionConfiguration.ephemeral
+                config.timeoutIntervalForRequest = 300
+                config.timeoutIntervalForResource = 600
+                config.requestCachePolicy = .reloadIgnoringLocalAndRemoteCacheData
+                let streamingSession = URLSession(
+                    configuration: config,
+                    delegate: controller,
+                    delegateQueue: nil
+                )
+                let task = streamingSession.dataTask(with: request)
+                controller.task = task
+                controller.sessionToInvalidate = streamingSession
+                continuation.onTermination = { @Sendable _ in
+                    task.cancel()
+                    streamingSession.finishTasksAndInvalidate()
                 }
+                task.resume()
             }
         }
     }
@@ -272,4 +275,125 @@ struct ToolCallData: Codable {
     let id: String?
     let name: String
     let arguments: [String: String]?
+}
+
+// MARK: - Streaming Delegate
+
+/// Receives SSE bytes incrementally via URLSessionDataDelegate and yields parsed
+/// events through an AsyncThrowingStream continuation.
+private final class SSEStreamController: NSObject, URLSessionDataDelegate {
+    private let continuation: AsyncThrowingStream<SSEEvent, Error>.Continuation
+    private var buffer = Data()
+    private var didFinish = false
+
+    weak var task: URLSessionDataTask?
+    var sessionToInvalidate: URLSession?
+
+    init(continuation: AsyncThrowingStream<SSEEvent, Error>.Continuation) {
+        self.continuation = continuation
+    }
+
+    func urlSession(
+        _ session: URLSession,
+        dataTask: URLSessionDataTask,
+        didReceive response: URLResponse,
+        completionHandler: @escaping (URLSession.ResponseDisposition) -> Void
+    ) {
+        guard let http = response as? HTTPURLResponse else {
+            finish(throwing: APIError.invalidResponse)
+            completionHandler(.cancel)
+            return
+        }
+        print("[APIClient.stream] status=\(http.statusCode) content-type=\(http.value(forHTTPHeaderField: "Content-Type") ?? "nil") content-encoding=\(http.value(forHTTPHeaderField: "Content-Encoding") ?? "nil")")
+        if !(200...299).contains(http.statusCode) {
+            if http.statusCode == 429 {
+                let retryAfter = http.value(forHTTPHeaderField: "retry-after")
+                    .flatMap { TimeInterval($0) }
+                finish(throwing: APIError.rateLimited(retryAfter: retryAfter))
+            } else {
+                finish(throwing: APIError.httpError(statusCode: http.statusCode, body: nil))
+            }
+            completionHandler(.cancel)
+            return
+        }
+        completionHandler(.allow)
+    }
+
+    func urlSession(
+        _ session: URLSession,
+        dataTask: URLSessionDataTask,
+        didReceive data: Data
+    ) {
+        buffer.append(data)
+        drainCompleteFrames()
+    }
+
+    func urlSession(
+        _ session: URLSession,
+        task: URLSessionTask,
+        didCompleteWithError error: Error?
+    ) {
+        // Drain anything left in the buffer in case the final frame has no
+        // trailing blank line.
+        drainCompleteFrames()
+        if let error = error {
+            finish(throwing: APIError.networkError(error))
+        } else {
+            finish(throwing: nil)
+        }
+    }
+
+    private func drainCompleteFrames() {
+        // SSE frames are separated by a blank line ("\n\n" or "\r\n\r\n").
+        // Scan the buffer for frame boundaries and parse each complete frame.
+        while let boundary = findFrameBoundary(in: buffer) {
+            let frameData = buffer.prefix(boundary.startOfBlankLine)
+            buffer.removeFirst(boundary.endOfBlankLine)
+
+            guard let frameString = String(data: frameData, encoding: .utf8) else {
+                continue
+            }
+            let trimmed = frameString.trimmingCharacters(in: .whitespacesAndNewlines)
+            if trimmed.isEmpty { continue }
+            // Skip pure-comment frames (keep-alive, padding)
+            if trimmed.allSatisfy({ $0 == ":" }) == false,
+               let event = SSEEvent.parse(frameString) {
+                print("[APIClient.stream] yielding event: \(event)")
+                continuation.yield(event)
+                if case .done = event {
+                    finish(throwing: nil)
+                    task?.cancel()
+                    return
+                }
+            }
+        }
+    }
+
+    /// Locate the end of the next SSE frame in the buffer. Returns the offset of
+    /// the first byte of the blank-line delimiter (so the preceding data is the
+    /// frame) and the offset just past the delimiter (where the next frame starts).
+    private func findFrameBoundary(in data: Data) -> (startOfBlankLine: Int, endOfBlankLine: Int)? {
+        // Match either "\n\n" or "\r\n\r\n".
+        let lfLf = Data([0x0A, 0x0A])
+        let crLfCrLf = Data([0x0D, 0x0A, 0x0D, 0x0A])
+        if let range = data.range(of: crLfCrLf) {
+            return (range.lowerBound, range.upperBound)
+        }
+        if let range = data.range(of: lfLf) {
+            return (range.lowerBound, range.upperBound)
+        }
+        return nil
+    }
+
+    private func finish(throwing error: Error?) {
+        if didFinish { return }
+        didFinish = true
+        if let error = error {
+            continuation.finish(throwing: error)
+        } else {
+            continuation.finish()
+        }
+        sessionToInvalidate?.finishTasksAndInvalidate()
+        sessionToInvalidate = nil
+    }
 }
