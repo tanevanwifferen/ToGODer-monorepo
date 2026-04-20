@@ -23,19 +23,23 @@ struct AccountView: View {
                 }
 
                 HStack {
-                    Text("Credits")
+                    Text("Balance")
                     Spacer()
-                    Text(String(format: "%.2f", appState.balanceService.credits))
+                    Text(String(format: "$%.2f", appState.balanceService.balance))
                         .foregroundStyle(.secondary)
                 }
 
-                if let sub = appState.balanceService.subscription, sub.active {
-                    HStack {
-                        Text("Subscription")
-                        Spacer()
-                        Text(sub.plan ?? "Active")
-                            .foregroundStyle(.green)
-                    }
+                HStack {
+                    Text("Donated Balance")
+                    Spacer()
+                    Text(String(format: "$%.2f", appState.balanceService.globalBalance))
+                        .foregroundStyle(.secondary)
+                }
+
+                if let error = appState.balanceService.error {
+                    Text(error)
+                        .foregroundStyle(.red)
+                        .font(.caption)
                 }
             }
 

@@ -2,8 +2,9 @@ import Foundation
 
 @MainActor
 final class BalanceService: ObservableObject {
-    @Published var credits: Double = 0
-    @Published var subscription: Subscription?
+    @Published var balance: Double = 0
+    @Published var globalBalance: Double = 0
+    @Published var error: String?
 
     private let apiClient: APIClient
 
@@ -12,16 +13,17 @@ final class BalanceService: ObservableObject {
     }
 
     func fetchBalance() async {
+        error = nil
         do {
             let response: BillingResponse = try await apiClient.get("/billing")
-            credits = response.credits ?? 0
-            subscription = response.subscription
+            balance = response.balance ?? 0
+            globalBalance = response.globalBalance ?? 0
         } catch {
-            // Non-critical
+            self.error = error.localizedDescription
         }
     }
 
     var hasBalance: Bool {
-        credits > 0 || (subscription?.active == true)
+        balance > 0 || globalBalance > 0
     }
 }

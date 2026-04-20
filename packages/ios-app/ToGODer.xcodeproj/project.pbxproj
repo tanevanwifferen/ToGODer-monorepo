@@ -24,8 +24,6 @@
 		A1B2C3D4E5F6000100000F /* LoginView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F610100000F /* LoginView.swift */; };
 		A1B2C3D4E5F60001000010 /* ChatView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60101000010 /* ChatView.swift */; };
 		A1B2C3D4E5F60001000011 /* MessageBubble.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60101000011 /* MessageBubble.swift */; };
-		A1B2C3D4E5F60001000019 /* PromptSuggestionsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60101000019 /* PromptSuggestionsView.swift */; };
-		A1B2C3D4E5F6000100001A /* ShareChatView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F6010100001A /* ShareChatView.swift */; };
 		A1B2C3D4E5F60001000012 /* DonateView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60101000012 /* DonateView.swift */; };
 		A1B2C3D4E5F60001000013 /* MainNavigationView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60101000013 /* MainNavigationView.swift */; };
 		A1B2C3D4E5F60001000014 /* OnboardingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60101000014 /* OnboardingView.swift */; };
@@ -33,16 +31,18 @@
 		A1B2C3D4E5F60001000016 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60101000016 /* SettingsView.swift */; };
 		A1B2C3D4E5F60001000017 /* SharedConversationsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60101000017 /* SharedConversationsView.swift */; };
 		A1B2C3D4E5F60001000018 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60101000018 /* Assets.xcassets */; };
+		A1B2C3D4E5F60001000019 /* PromptSuggestionsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60101000019 /* PromptSuggestionsView.swift */; };
+		A1B2C3D4E5F6000100001A /* ShareChatView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F6010100001A /* ShareChatView.swift */; };
 		A1B2C3D4E5F6000100001B /* PasscodeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F6010100001B /* PasscodeView.swift */; };
 		A1B2C3D4E5F6000100001C /* PasscodeService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F6010100001C /* PasscodeService.swift */; };
-		A1B2C3D4E5F6000100001E /* CalendarService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F6010100001E /* CalendarService.swift */; };
 		A1B2C3D4E5F6000100001D /* HealthService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F6010100001D /* HealthService.swift */; };
+		A1B2C3D4E5F6000100001E /* CalendarService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F6010100001E /* CalendarService.swift */; };
+		A1B2C3D4E5F6000100001F /* MemoryService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F6010100001F /* MemoryService.swift */; };
+		A1B2C3D4E5F60001000020 /* MemoriesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60101000020 /* MemoriesView.swift */; };
 		A1B2C3D4E5F60001000021 /* Project.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60101000021 /* Project.swift */; };
 		A1B2C3D4E5F60001000022 /* ProjectService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60101000022 /* ProjectService.swift */; };
 		A1B2C3D4E5F60001000023 /* ProjectsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60101000023 /* ProjectsView.swift */; };
 		A1B2C3D4E5F60001000024 /* ProjectDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60101000024 /* ProjectDetailView.swift */; };
-		A1B2C3D4E5F6000100001F /* MemoryService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F6010100001F /* MemoryService.swift */; };
-		A1B2C3D4E5F60001000020 /* MemoriesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60101000020 /* MemoriesView.swift */; };
 		A1B2C3D4E5F60001000025 /* Artifact.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60101000025 /* Artifact.swift */; };
 		A1B2C3D4E5F60001000026 /* ArtifactService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60101000026 /* ArtifactService.swift */; };
 		A1B2C3D4E5F60001000027 /* ArtifactsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60101000027 /* ArtifactsView.swift */; };
@@ -50,7 +50,6 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
-		A1B2C3D4E5F60201000001 /* ToGODer.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = ToGODer.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		A1B2C3D4E5F60101000001 /* ToGODerApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ToGODerApp.swift; sourceTree = "<group>"; };
 		A1B2C3D4E5F60101000002 /* AppState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppState.swift; sourceTree = "<group>"; };
 		A1B2C3D4E5F60101000003 /* Configuration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Configuration.swift; sourceTree = "<group>"; };
@@ -60,16 +59,8 @@
 		A1B2C3D4E5F60101000007 /* APIClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIClient.swift; sourceTree = "<group>"; };
 		A1B2C3D4E5F60101000008 /* AuthService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthService.swift; sourceTree = "<group>"; };
 		A1B2C3D4E5F60101000009 /* BalanceService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BalanceService.swift; sourceTree = "<group>"; };
-		A1B2C3D4E5F610100000A /* ChatService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatService.swift; sourceTree = "<group>"; };
-		A1B2C3D4E5F610100000B /* SettingsService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsService.swift; sourceTree = "<group>"; };
-		A1B2C3D4E5F610100000C /* StorageService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StorageService.swift; sourceTree = "<group>"; };
-		A1B2C3D4E5F610100000D /* SyncService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncService.swift; sourceTree = "<group>"; };
-		A1B2C3D4E5F610100000E /* AccountView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccountView.swift; sourceTree = "<group>"; };
-		A1B2C3D4E5F610100000F /* LoginView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoginView.swift; sourceTree = "<group>"; };
 		A1B2C3D4E5F60101000010 /* ChatView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatView.swift; sourceTree = "<group>"; };
 		A1B2C3D4E5F60101000011 /* MessageBubble.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MessageBubble.swift; sourceTree = "<group>"; };
-		A1B2C3D4E5F60101000019 /* PromptSuggestionsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PromptSuggestionsView.swift; sourceTree = "<group>"; };
-		A1B2C3D4E5F6010100001A /* ShareChatView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShareChatView.swift; sourceTree = "<group>"; };
 		A1B2C3D4E5F60101000012 /* DonateView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DonateView.swift; sourceTree = "<group>"; };
 		A1B2C3D4E5F60101000013 /* MainNavigationView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainNavigationView.swift; sourceTree = "<group>"; };
 		A1B2C3D4E5F60101000014 /* OnboardingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingView.swift; sourceTree = "<group>"; };
@@ -77,20 +68,29 @@
 		A1B2C3D4E5F60101000016 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		A1B2C3D4E5F60101000017 /* SharedConversationsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SharedConversationsView.swift; sourceTree = "<group>"; };
 		A1B2C3D4E5F60101000018 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		A1B2C3D4E5F60101000019 /* PromptSuggestionsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PromptSuggestionsView.swift; sourceTree = "<group>"; };
+		A1B2C3D4E5F6010100001A /* ShareChatView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShareChatView.swift; sourceTree = "<group>"; };
 		A1B2C3D4E5F6010100001B /* PasscodeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PasscodeView.swift; sourceTree = "<group>"; };
 		A1B2C3D4E5F6010100001C /* PasscodeService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PasscodeService.swift; sourceTree = "<group>"; };
-		A1B2C3D4E5F6010100001E /* CalendarService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CalendarService.swift; sourceTree = "<group>"; };
 		A1B2C3D4E5F6010100001D /* HealthService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthService.swift; sourceTree = "<group>"; };
+		A1B2C3D4E5F6010100001E /* CalendarService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CalendarService.swift; sourceTree = "<group>"; };
+		A1B2C3D4E5F6010100001F /* MemoryService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MemoryService.swift; sourceTree = "<group>"; };
+		A1B2C3D4E5F60101000020 /* MemoriesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MemoriesView.swift; sourceTree = "<group>"; };
 		A1B2C3D4E5F60101000021 /* Project.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Project.swift; sourceTree = "<group>"; };
 		A1B2C3D4E5F60101000022 /* ProjectService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProjectService.swift; sourceTree = "<group>"; };
 		A1B2C3D4E5F60101000023 /* ProjectsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProjectsView.swift; sourceTree = "<group>"; };
 		A1B2C3D4E5F60101000024 /* ProjectDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProjectDetailView.swift; sourceTree = "<group>"; };
-		A1B2C3D4E5F6010100001F /* MemoryService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MemoryService.swift; sourceTree = "<group>"; };
-		A1B2C3D4E5F60101000020 /* MemoriesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MemoriesView.swift; sourceTree = "<group>"; };
 		A1B2C3D4E5F60101000025 /* Artifact.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Artifact.swift; sourceTree = "<group>"; };
 		A1B2C3D4E5F60101000026 /* ArtifactService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArtifactService.swift; sourceTree = "<group>"; };
 		A1B2C3D4E5F60101000027 /* ArtifactsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArtifactsView.swift; sourceTree = "<group>"; };
 		A1B2C3D4E5F60101000028 /* ArtifactEditorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArtifactEditorView.swift; sourceTree = "<group>"; };
+		A1B2C3D4E5F60201000001 /* ToGODer.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = ToGODer.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		A1B2C3D4E5F610100000A /* ChatService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatService.swift; sourceTree = "<group>"; };
+		A1B2C3D4E5F610100000B /* SettingsService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsService.swift; sourceTree = "<group>"; };
+		A1B2C3D4E5F610100000C /* StorageService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StorageService.swift; sourceTree = "<group>"; };
+		A1B2C3D4E5F610100000D /* SyncService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncService.swift; sourceTree = "<group>"; };
+		A1B2C3D4E5F610100000E /* AccountView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccountView.swift; sourceTree = "<group>"; };
+		A1B2C3D4E5F610100000F /* LoginView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoginView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -104,20 +104,12 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
-		A1B2C3D4E5F60401000001 /* = root group */ = {
+		A1B2C3D4E5F60401000001 = {
 			isa = PBXGroup;
 			children = (
 				A1B2C3D4E5F60401000002 /* ToGODer */,
 				A1B2C3D4E5F60401000099 /* Products */,
 			);
-			sourceTree = "<group>";
-		};
-		A1B2C3D4E5F60401000099 /* Products */ = {
-			isa = PBXGroup;
-			children = (
-				A1B2C3D4E5F60201000001 /* ToGODer.app */,
-			);
-			name = Products;
 			sourceTree = "<group>";
 		};
 		A1B2C3D4E5F60401000002 /* ToGODer */ = {
@@ -219,6 +211,14 @@
 			path = Donate;
 			sourceTree = "<group>";
 		};
+		A1B2C3D4E5F60401000099 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				A1B2C3D4E5F60201000001 /* ToGODer.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
 		A1B2C3D4E5F604010000A /* Onboarding */ = {
 			isa = PBXGroup;
 			children = (
@@ -298,7 +298,7 @@
 				en,
 				Base,
 			);
-			mainGroup = A1B2C3D4E5F60401000001 /* = root group */;
+			mainGroup = A1B2C3D4E5F60401000001;
 			productRefGroup = A1B2C3D4E5F60401000099 /* Products */;
 			projectDirPath = "";
 			projectRoot = "";
@@ -495,7 +495,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = "";
+				DEVELOPMENT_TEAM = 58Q847YBLM;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = ToGODer;
 				INFOPLIST_KEY_NSHealthShareUsageDescription = "ToGODer uses your health data to provide personalized AI conversations with context about your exercise and sleep patterns.";
@@ -528,7 +528,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = "";
+				DEVELOPMENT_TEAM = 58Q847YBLM;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = ToGODer;
 				INFOPLIST_KEY_NSHealthShareUsageDescription = "ToGODer uses your health data to provide personalized AI conversations with context about your exercise and sleep patterns.";

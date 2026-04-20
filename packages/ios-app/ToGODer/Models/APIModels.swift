@@ -169,14 +169,8 @@ struct PromptOption: Codable {
 // MARK: - Billing
 
 struct BillingResponse: Codable {
-    let credits: Double?
-    let subscription: Subscription?
-}
-
-struct Subscription: Codable {
-    let active: Bool
-    let plan: String?
-    let expiresAt: String?
+    let balance: Double?
+    let globalBalance: Double?
 }
 
 // MARK: - Sharing

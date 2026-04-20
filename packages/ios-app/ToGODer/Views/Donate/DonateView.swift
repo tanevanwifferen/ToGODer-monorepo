@@ -2,6 +2,7 @@ import SwiftUI
 
 struct DonateView: View {
     @EnvironmentObject var settingsService: SettingsService
+    @EnvironmentObject var appState: AppState
 
     var body: some View {
         List {
@@ -9,6 +10,16 @@ struct DonateView: View {
                 Text("ToGODer is built with care and provided for free. If you find it helpful, consider supporting its development.")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
+            }
+
+            Section("Community Balance") {
+                HStack {
+                    Text("Donated Balance")
+                    Spacer()
+                    Text(String(format: "$%.2f", appState.balanceService.globalBalance))
+                        .fontWeight(.semibold)
+                        .foregroundStyle(.tint)
+                }
             }
 
             if let options = settingsService.globalConfig?.donateOptions {
@@ -47,5 +58,8 @@ struct DonateView: View {
             }
         }
         .navigationTitle("Support ToGODer")
+        .task {
+            await appState.balanceService.fetchBalance()
+        }
     }
 }
