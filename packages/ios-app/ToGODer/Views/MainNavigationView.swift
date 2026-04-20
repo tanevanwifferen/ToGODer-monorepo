@@ -82,7 +82,7 @@ struct MainNavigationView: View {
                                 .lineLimit(1)
                                 .fontWeight(chat.id == chatService.currentChatId ? .semibold : .regular)
                             if let date = chat.lastUpdate {
-                                Text(date, style: .relative)
+                                Text(date.formatted(.relative(presentation: .named)))
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
                             }

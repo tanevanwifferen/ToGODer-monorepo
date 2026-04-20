@@ -203,9 +203,15 @@ struct ShareRequest: Codable {
 }
 
 struct SignedMessage: Codable {
-    let content: String
-    let role: String
-    let signature: String?
+    struct MessageContent: Codable {
+        let role: String
+        let content: String
+    }
+    let message: MessageContent
+    let signature: String
+
+    var role: String { message.role }
+    var content: String { message.content }
 }
 
 struct SharedChat: Codable, Identifiable {
