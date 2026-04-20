@@ -9,26 +9,24 @@ struct MainNavigationView: View {
     @EnvironmentObject var chatService: ChatService
     @EnvironmentObject var authService: AuthService
     @EnvironmentObject var settingsService: SettingsService
-    @State private var showingSidebar = false
-    @State private var columnVisibility = NavigationSplitViewVisibility.automatic
     @State private var searchText = ""
     @State private var showAllChats = false
     private let initialChatLimit = 20
 
+    @State private var navigationPath = NavigationPath()
+
     var body: some View {
-        NavigationSplitView(columnVisibility: $columnVisibility) {
+        NavigationStack(path: $navigationPath) {
             sidebar
-        } detail: {
-            if let chatId = chatService.currentChatId,
-               let _ = chatService.chats[chatId] {
-                ChatView(chatId: chatId)
-            } else {
-                EmptyChatView()
-            }
+                .navigationDestination(for: String.self) { chatId in
+                    ChatView(chatId: chatId)
+                }
         }
         .onChange(of: chatService.currentChatId) { _, newValue in
-            if newValue != nil {
-                columnVisibility = .detailOnly
+            if let chatId = newValue {
+                // Clear and push to avoid stacking multiple chat views
+                navigationPath = NavigationPath()
+                navigationPath.append(chatId)
             }
         }
         .sheet(item: $appState.deepLinkSharedChatId) { id in
@@ -63,19 +61,8 @@ struct MainNavigationView: View {
         filteredChats.count - initialChatLimit
     }
 
-    private var chatSelectionBinding: Binding<String?> {
-        Binding(
-            get: { chatService.currentChatId },
-            set: { newValue in
-                if let id = newValue {
-                    chatService.selectChat(id)
-                }
-            }
-        )
-    }
-
     private var sidebar: some View {
-        List(selection: chatSelectionBinding) {
+        List {
             Section {
                 Button {
                     let chat = chatService.createChat()
@@ -87,7 +74,9 @@ struct MainNavigationView: View {
 
             Section("Conversations") {
                 ForEach(visibleChats) { chat in
-                    NavigationLink(value: chat.id) {
+                    Button {
+                        chatService.selectChat(chat.id)
+                    } label: {
                         VStack(alignment: .leading, spacing: 4) {
                             Text(chat.displayTitle)
                                 .lineLimit(1)
