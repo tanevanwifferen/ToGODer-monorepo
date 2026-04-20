@@ -16,6 +16,9 @@ final class ChatService: ObservableObject {
     var healthService: HealthService?
     var syncService: SyncService?
     var artifactService: ArtifactService?
+    var memoryService: MemoryService?
+    weak var personalDataService: PersonalDataService?
+    private var pendingMemoryUpdate = false
     private var streamTask: Task<Void, Never>?
 
     init(apiClient: APIClient, storage: StorageService, settingsService: SettingsService) {
@@ -184,6 +187,9 @@ final class ChatService: ObservableObject {
             storage.getMemoryValues(for: keys)
         }
 
+        let personalData = personalDataService?.data ?? ""
+        let configurableData = personalData.isEmpty ? settings.persona : personalData
+
         let request = ChatRequest(
             model: settings.model,
             humanPrompt: settings.humanPrompt,
@@ -192,7 +198,7 @@ final class ChatService: ObservableObject {
             holisticTherapist: settings.holisticTherapist,
             communicationStyle: settings.communicationStyle.rawValue,
             prompts: prompts,
-            configurableData: settings.persona,
+            configurableData: configurableData,
             staticData: StaticData(
                 date: ISO8601DateFormatter().string(from: Date()),
                 calendarEvents: calendarService?.calendarSummary,
@@ -287,6 +293,9 @@ final class ChatService: ObservableObject {
                 if chats[chatId]?.title == nil && !accumulatedContent.isEmpty {
                     await generateTitle(for: chatId)
                 }
+
+                // Fire-and-forget short-term memory update
+                triggerMemoryUpdate(for: chatId)
             } catch {
                 if !Task.isCancelled {
                     let errorMessage = error.localizedDescription
@@ -302,6 +311,66 @@ final class ChatService: ObservableObject {
 
             isStreaming = false
             streamingContent = ""
+        }
+    }
+
+    // MARK: - Memory Update
+
+    /// Asks the backend to derive an updated short-term memory from the latest
+    /// conversation. Runs asynchronously so it never blocks the UI.
+    private func triggerMemoryUpdate(for chatId: String) {
+        guard !pendingMemoryUpdate else { return }
+        guard let chat = chats[chatId] else { return }
+        guard let personalDataService else { return }
+        pendingMemoryUpdate = true
+
+        let settings = settingsService.settings
+        let prompts = chat.activeMessages.map { msg in
+            APIChatMessage(
+                content: msg.content,
+                role: msg.role.rawValue,
+                signature: msg.signature,
+                timestamp: msg.timestamp?.timeIntervalSince1970,
+                hidden: msg.hidden
+            )
+        }
+        let currentMemories = storage.loadMemories()
+        let memoryIndex = Array(currentMemories.keys)
+
+        let request = ChatRequest(
+            model: settings.model,
+            humanPrompt: settings.humanPrompt,
+            keepGoing: settings.keepGoing,
+            outsideBox: settings.outsideBox,
+            holisticTherapist: settings.holisticTherapist,
+            communicationStyle: settings.communicationStyle.rawValue,
+            prompts: prompts,
+            configurableData: personalDataService.data,
+            staticData: StaticData(
+                date: ISO8601DateFormatter().string(from: Date()),
+                calendarEvents: calendarService?.calendarSummary,
+                health: healthService?.healthSummary
+            ),
+            assistantName: settings.assistantName,
+            memoryIndex: memoryIndex,
+            memories: currentMemories,
+            customSystemPrompt: settings.customSystemPrompt,
+            persona: settings.persona
+        )
+
+        Task {
+            defer { self.pendingMemoryUpdate = false }
+            do {
+                let response: MemoryUpdateResponse = try await apiClient.post(
+                    "/chat/memory-update",
+                    body: request
+                )
+                if let data = response.updateData {
+                    personalDataService.set(data)
+                }
+            } catch {
+                // Memory update is best-effort
+            }
         }
     }
 

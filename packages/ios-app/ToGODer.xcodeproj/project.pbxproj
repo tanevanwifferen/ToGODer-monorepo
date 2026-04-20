@@ -47,6 +47,9 @@
 		A1B2C3D4E5F60001000026 /* ArtifactService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60101000026 /* ArtifactService.swift */; };
 		A1B2C3D4E5F60001000027 /* ArtifactsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60101000027 /* ArtifactsView.swift */; };
 		A1B2C3D4E5F60001000028 /* ArtifactEditorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60101000028 /* ArtifactEditorView.swift */; };
+		A1B2C3D4E5F60001000029 /* PersonalDataService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60101000029 /* PersonalDataService.swift */; };
+		A1B2C3D4E5F6000100002A /* MemoryLoopService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F6010100002A /* MemoryLoopService.swift */; };
+		A1B2C3D4E5F6000100002B /* DreamingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F6010100002B /* DreamingView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -84,6 +87,9 @@
 		A1B2C3D4E5F60101000026 /* ArtifactService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArtifactService.swift; sourceTree = "<group>"; };
 		A1B2C3D4E5F60101000027 /* ArtifactsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArtifactsView.swift; sourceTree = "<group>"; };
 		A1B2C3D4E5F60101000028 /* ArtifactEditorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArtifactEditorView.swift; sourceTree = "<group>"; };
+		A1B2C3D4E5F60101000029 /* PersonalDataService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PersonalDataService.swift; sourceTree = "<group>"; };
+		A1B2C3D4E5F6010100002A /* MemoryLoopService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MemoryLoopService.swift; sourceTree = "<group>"; };
+		A1B2C3D4E5F6010100002B /* DreamingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DreamingView.swift; sourceTree = "<group>"; };
 		A1B2C3D4E5F60201000001 /* ToGODer.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = ToGODer.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		A1B2C3D4E5F610100000A /* ChatService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatService.swift; sourceTree = "<group>"; };
 		A1B2C3D4E5F610100000B /* SettingsService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsService.swift; sourceTree = "<group>"; };
@@ -162,6 +168,8 @@
 				A1B2C3D4E5F60101000026 /* ArtifactService.swift */,
 				A1B2C3D4E5F60101000022 /* ProjectService.swift */,
 				A1B2C3D4E5F6010100001F /* MemoryService.swift */,
+				A1B2C3D4E5F60101000029 /* PersonalDataService.swift */,
+				A1B2C3D4E5F6010100002A /* MemoryLoopService.swift */,
 			);
 			path = Services;
 			sourceTree = "<group>";
@@ -178,6 +186,7 @@
 				A1B2C3D4E5F604010000C /* Shared */,
 				A1B2C3D4E5F60101000013 /* MainNavigationView.swift */,
 				A1B2C3D4E5F60101000015 /* RootView.swift */,
+				A1B2C3D4E5F6010100002B /* DreamingView.swift */,
 			);
 			path = Views;
 			sourceTree = "<group>";
@@ -363,6 +372,9 @@
 				A1B2C3D4E5F60001000026 /* ArtifactService.swift in Sources */,
 				A1B2C3D4E5F60001000027 /* ArtifactsView.swift in Sources */,
 				A1B2C3D4E5F60001000028 /* ArtifactEditorView.swift in Sources */,
+				A1B2C3D4E5F60001000029 /* PersonalDataService.swift in Sources */,
+				A1B2C3D4E5F6000100002A /* MemoryLoopService.swift in Sources */,
+				A1B2C3D4E5F6000100002B /* DreamingView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

@@ -9,12 +9,17 @@ final class MemoryService: ObservableObject {
 
     private let apiClient: APIClient
     private let storage: StorageService
+    private weak var personalDataService: PersonalDataService?
 
     init(apiClient: APIClient, storage: StorageService) {
         self.apiClient = apiClient
         self.storage = storage
         self.memories = storage.loadMemories()
         self.memoryKeys = Array(memories.keys).sorted()
+    }
+
+    func setPersonalDataService(_ service: PersonalDataService) {
+        self.personalDataService = service
     }
 
     // MARK: - API Methods
@@ -36,16 +41,17 @@ final class MemoryService: ObservableObject {
         }
     }
 
+    /// Dream: consolidate a growing short-term memory into long-term key-value
+    /// memories. Splits overflowing personal data into separate keys and
+    /// returns a compressed short-term string.
     func compress(shortTermMemory: String) async {
         guard !isCompressing else { return }
+        guard !shortTermMemory.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
         isCompressing = true
         defer { isCompressing = false }
 
         do {
-            // Fetch relevant keys first
             let keys = await fetchKeys(from: shortTermMemory)
-
-            // Build long-term memory map from relevant keys
             let longTermMemory = getValues(for: keys)
 
             let request = MemoryCompressRequest(
@@ -57,18 +63,24 @@ final class MemoryService: ObservableObject {
                 body: request
             )
 
-            // Update stored memories with compressed result
             var updated = memories
             for (key, value) in response.longTermMemory {
-                if value.isEmpty || value == "null" {
+                let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+                if trimmed.isEmpty
+                    || trimmed == "null"
+                    || trimmed.rangeOfCharacter(from: .letters) == nil {
                     updated.removeValue(forKey: key)
                 } else {
-                    updated[key] = value
+                    updated[key] = trimmed
                 }
             }
             memories = updated
             memoryKeys = Array(updated.keys).sorted()
             storage.saveMemories(updated)
+
+            // Replace short-term memory with the compressed result so it
+            // doesn't keep growing unbounded.
+            personalDataService?.set(response.shortTermMemory)
         } catch {
             // Compression is non-critical
         }

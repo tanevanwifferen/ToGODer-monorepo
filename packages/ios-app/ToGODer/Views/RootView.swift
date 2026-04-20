@@ -3,6 +3,7 @@ import SwiftUI
 struct RootView: View {
     @EnvironmentObject var appState: AppState
     @EnvironmentObject var passcodeService: PasscodeService
+    @EnvironmentObject var memoryService: MemoryService
     @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
@@ -16,6 +17,11 @@ struct RootView: View {
             }
             .task {
                 await appState.loadGlobalConfig()
+            }
+
+            if memoryService.isCompressing {
+                DreamingView()
+                    .zIndex(1)
             }
 
             if passcodeService.isLocked {

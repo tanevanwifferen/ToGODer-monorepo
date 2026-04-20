@@ -18,6 +18,7 @@ struct ToGODerApp: App {
                 .environmentObject(appState.healthService)
                 .environmentObject(appState.calendarService)
                 .environmentObject(appState.memoryService)
+                .environmentObject(appState.personalDataService)
                 .onOpenURL { url in
                     appState.handleDeepLink(url)
                 }

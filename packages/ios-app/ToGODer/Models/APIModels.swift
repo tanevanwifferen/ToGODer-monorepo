@@ -265,6 +265,23 @@ struct MemoryCompressResponse: Codable {
     let longTermMemory: [String: String]
 }
 
+struct MemoryUpdateResponse: Codable {
+    let updateData: String?
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        if let str = try? container.decode(String.self, forKey: .updateData) {
+            updateData = str
+        } else if let _ = try? container.decodeNil(forKey: .updateData) {
+            updateData = nil
+        } else {
+            updateData = nil
+        }
+    }
+
+    enum CodingKeys: String, CodingKey { case updateData }
+}
+
 // MARK: - Tool Results
 
 struct ToolResult: Codable {

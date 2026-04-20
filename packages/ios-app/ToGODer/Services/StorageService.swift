@@ -14,6 +14,7 @@ final class StorageService {
         static let chats = "chats"
         static let userSettings = "userSettings"
         static let memories = "memories"
+        static let personalData = "personalData"
         static let syncVersion = "syncVersion"
         static let language = "language"
         static let passcode = "passcode"
@@ -151,6 +152,13 @@ final class StorageService {
                 result[key] = value
             }
         }
+    }
+
+    // MARK: - Personal Data (short-term memory)
+
+    var personalData: String {
+        get { defaults.string(forKey: Keys.personalData) ?? "" }
+        set { defaults.set(newValue, forKey: Keys.personalData) }
     }
 
     // MARK: - Sync
