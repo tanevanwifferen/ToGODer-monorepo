@@ -31,6 +31,18 @@ final class SettingsService: ObservableObject {
         } catch {
             // Non-critical
         }
+
+        // Fetch available prompts separately (not included in global_config)
+        do {
+            let prompts: [String: PromptOption] = try await apiClient.get("/prompts")
+            if globalConfig != nil {
+                globalConfig?.prompts = prompts
+            } else {
+                globalConfig = GlobalConfig(donateOptions: nil, quote: nil, models: nil, prompts: prompts, showLogin: nil, userOnboarded: nil, appFirstLaunch: nil, libraryIntegrationEnabled: nil, librarianApiUrl: nil, previousDefaultModel: nil)
+            }
+        } catch {
+            // Non-critical
+        }
     }
 
     private func applyDefaultModel(from config: GlobalConfig) {

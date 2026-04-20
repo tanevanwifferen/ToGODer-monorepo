@@ -138,7 +138,7 @@ struct GlobalConfig: Codable {
     let donateOptions: [DonateOption]?
     let quote: String?
     let models: [ModelOption]?
-    let prompts: [String: PromptOption]?
+    var prompts: [String: PromptOption]?
     let showLogin: Bool?
     let userOnboarded: Bool?
     let appFirstLaunch: Bool?

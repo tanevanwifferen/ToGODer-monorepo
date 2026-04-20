@@ -22,7 +22,7 @@ struct PromptSuggestionsView: View {
 
         if hasCustomPrompt && (filterText.isEmpty || "custom".contains(filterText)) {
             let customOption = PromptOption(prompt: "", description: "Use your custom system prompt", display: nil)
-            results.insert((key: "custom", value: customOption), at: 0)
+            results.insert((key: "/custom", value: customOption), at: 0)
         }
 
         return results
@@ -34,10 +34,10 @@ struct PromptSuggestionsView: View {
                 VStack(alignment: .leading, spacing: 0) {
                     ForEach(Array(filteredPrompts.enumerated()), id: \.element.key) { index, entry in
                         Button {
-                            onSelect("/\(entry.key)")
+                            onSelect(entry.key.hasPrefix("/") ? entry.key : "/\(entry.key)")
                         } label: {
                             VStack(alignment: .leading, spacing: 2) {
-                                Text("/\(entry.key)")
+                                Text(entry.key.hasPrefix("/") ? entry.key : "/\(entry.key)")
                                     .font(.body)
                                     .fontWeight(.medium)
                                     .foregroundStyle(.primary)
