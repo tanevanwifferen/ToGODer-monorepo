@@ -11,6 +11,9 @@ struct MainNavigationView: View {
     @EnvironmentObject var settingsService: SettingsService
     @State private var showingSidebar = false
     @State private var columnVisibility = NavigationSplitViewVisibility.automatic
+    @State private var searchText = ""
+    @State private var showAllChats = false
+    private let initialChatLimit = 20
 
     var body: some View {
         NavigationSplitView(columnVisibility: $columnVisibility) {
@@ -23,6 +26,11 @@ struct MainNavigationView: View {
                 EmptyChatView()
             }
         }
+        .onChange(of: chatService.currentChatId) { _, newValue in
+            if newValue != nil {
+                columnVisibility = .detailOnly
+            }
+        }
         .sheet(item: $appState.deepLinkSharedChatId) { id in
             NavigationStack {
                 DeepLinkSharedChatSheet(sharedChatId: id)
@@ -31,8 +39,43 @@ struct MainNavigationView: View {
         }
     }
 
+    private var filteredChats: [Chat] {
+        let chats = chatService.sortedChats
+        if searchText.isEmpty {
+            return chats
+        }
+        return chats.filter { $0.displayTitle.localizedCaseInsensitiveContains(searchText) }
+    }
+
+    private var visibleChats: [Chat] {
+        let chats = filteredChats
+        if showAllChats || !searchText.isEmpty {
+            return chats
+        }
+        return Array(chats.prefix(initialChatLimit))
+    }
+
+    private var hasMoreChats: Bool {
+        searchText.isEmpty && !showAllChats && filteredChats.count > initialChatLimit
+    }
+
+    private var hiddenChatCount: Int {
+        filteredChats.count - initialChatLimit
+    }
+
+    private var chatSelectionBinding: Binding<String?> {
+        Binding(
+            get: { chatService.currentChatId },
+            set: { newValue in
+                if let id = newValue {
+                    chatService.selectChat(id)
+                }
+            }
+        )
+    }
+
     private var sidebar: some View {
-        List {
+        List(selection: chatSelectionBinding) {
             Section {
                 Button {
                     let chat = chatService.createChat()
@@ -43,10 +86,8 @@ struct MainNavigationView: View {
             }
 
             Section("Conversations") {
-                ForEach(chatService.sortedChats) { chat in
-                    Button {
-                        chatService.selectChat(chat.id)
-                    } label: {
+                ForEach(visibleChats) { chat in
+                    NavigationLink(value: chat.id) {
                         VStack(alignment: .leading, spacing: 4) {
                             Text(chat.displayTitle)
                                 .lineLimit(1)
@@ -64,6 +105,28 @@ struct MainNavigationView: View {
                         } label: {
                             Label("Delete", systemImage: "trash")
                         }
+                    }
+                }
+
+                if hasMoreChats {
+                    Button {
+                        withAnimation {
+                            showAllChats = true
+                        }
+                    } label: {
+                        Label("Show \(hiddenChatCount) More", systemImage: "ellipsis.circle")
+                            .foregroundStyle(.secondary)
+                    }
+                }
+
+                if showAllChats && searchText.isEmpty {
+                    Button {
+                        withAnimation {
+                            showAllChats = false
+                        }
+                    } label: {
+                        Label("Show Less", systemImage: "chevron.up.circle")
+                            .foregroundStyle(.secondary)
                     }
                 }
             }
@@ -110,6 +173,12 @@ struct MainNavigationView: View {
         }
         .navigationTitle("ToGODer")
         .listStyle(.sidebar)
+        .searchable(text: $searchText, prompt: "Search conversations")
+        .onChange(of: searchText) {
+            if !searchText.isEmpty {
+                showAllChats = false
+            }
+        }
     }
 }
 
