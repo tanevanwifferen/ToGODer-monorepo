@@ -24,6 +24,8 @@
 		A1B2C3D4E5F6000100000F /* LoginView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F610100000F /* LoginView.swift */; };
 		A1B2C3D4E5F60001000010 /* ChatView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60101000010 /* ChatView.swift */; };
 		A1B2C3D4E5F60001000011 /* MessageBubble.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60101000011 /* MessageBubble.swift */; };
+		A1B2C3D4E5F60001000019 /* PromptSuggestionsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60101000019 /* PromptSuggestionsView.swift */; };
+		A1B2C3D4E5F6000100001A /* ShareChatView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F6010100001A /* ShareChatView.swift */; };
 		A1B2C3D4E5F60001000012 /* DonateView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60101000012 /* DonateView.swift */; };
 		A1B2C3D4E5F60001000013 /* MainNavigationView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60101000013 /* MainNavigationView.swift */; };
 		A1B2C3D4E5F60001000014 /* OnboardingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60101000014 /* OnboardingView.swift */; };
@@ -52,6 +54,8 @@
 		A1B2C3D4E5F610100000F /* LoginView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoginView.swift; sourceTree = "<group>"; };
 		A1B2C3D4E5F60101000010 /* ChatView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatView.swift; sourceTree = "<group>"; };
 		A1B2C3D4E5F60101000011 /* MessageBubble.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MessageBubble.swift; sourceTree = "<group>"; };
+		A1B2C3D4E5F60101000019 /* PromptSuggestionsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PromptSuggestionsView.swift; sourceTree = "<group>"; };
+		A1B2C3D4E5F6010100001A /* ShareChatView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShareChatView.swift; sourceTree = "<group>"; };
 		A1B2C3D4E5F60101000012 /* DonateView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DonateView.swift; sourceTree = "<group>"; };
 		A1B2C3D4E5F60101000013 /* MainNavigationView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainNavigationView.swift; sourceTree = "<group>"; };
 		A1B2C3D4E5F60101000014 /* OnboardingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingView.swift; sourceTree = "<group>"; };
@@ -163,6 +167,8 @@
 			children = (
 				A1B2C3D4E5F60101000010 /* ChatView.swift */,
 				A1B2C3D4E5F60101000011 /* MessageBubble.swift */,
+				A1B2C3D4E5F60101000019 /* PromptSuggestionsView.swift */,
+				A1B2C3D4E5F6010100001A /* ShareChatView.swift */,
 			);
 			path = Chat;
 			sourceTree = "<group>";
@@ -285,6 +291,8 @@
 				A1B2C3D4E5F6000100000F /* LoginView.swift in Sources */,
 				A1B2C3D4E5F60001000010 /* ChatView.swift in Sources */,
 				A1B2C3D4E5F60001000011 /* MessageBubble.swift in Sources */,
+				A1B2C3D4E5F60001000019 /* PromptSuggestionsView.swift in Sources */,
+				A1B2C3D4E5F6000100001A /* ShareChatView.swift in Sources */,
 				A1B2C3D4E5F60001000012 /* DonateView.swift in Sources */,
 				A1B2C3D4E5F60001000013 /* MainNavigationView.swift in Sources */,
 				A1B2C3D4E5F60001000014 /* OnboardingView.swift in Sources */,

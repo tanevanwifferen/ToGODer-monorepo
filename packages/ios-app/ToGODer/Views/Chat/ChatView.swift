@@ -5,9 +5,11 @@ struct ChatView: View {
 
     @EnvironmentObject var chatService: ChatService
     @EnvironmentObject var settingsService: SettingsService
+    @EnvironmentObject var authService: AuthService
     @State private var inputText = ""
     @State private var editingMessageId: String?
     @State private var editText = ""
+    @State private var showShareSheet = false
     @FocusState private var isInputFocused: Bool
 
     private var chat: Chat? {
@@ -20,10 +22,37 @@ struct ChatView: View {
             if chatService.isStreaming {
                 streamingIndicator
             }
+            if showRetryBar {
+                retryBar
+            }
+            if showPromptSuggestions {
+                PromptSuggestionsView(
+                    inputText: inputText,
+                    prompts: settingsService.globalConfig?.prompts ?? [:],
+                    hasCustomPrompt: settingsService.settings.customSystemPrompt != nil,
+                    onSelect: { key in inputText = key }
+                )
+            }
             inputBar
         }
         .navigationTitle(chat?.displayTitle ?? "Chat")
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            if authService.isAuthenticated, let chat, !chat.activeMessages.isEmpty {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
+                        showShareSheet = true
+                    } label: {
+                        Image(systemName: "square.and.arrow.up")
+                    }
+                }
+            }
+        }
+        .sheet(isPresented: $showShareSheet) {
+            if let chat {
+                ShareChatView(chat: chat, apiClient: chatService.apiClient)
+            }
+        }
         .onAppear {
             inputText = chat?.draftInputText ?? ""
         }
@@ -51,6 +80,9 @@ struct ChatView: View {
                                 },
                                 onRegenerate: message.isAssistant ? {
                                     Task { await chatService.regenerateLastResponse(in: chatId) }
+                                } : nil,
+                                onRetry: message.isAssistant && (message.content.contains("Failed to get response") || message.content.hasPrefix("Error:")) ? {
+                                    Task { await chatService.retryLastMessage(in: chatId) }
                                 } : nil
                             )
                             .id(message.id)
@@ -98,6 +130,41 @@ struct ChatView: View {
             }
             .font(.caption)
             .foregroundStyle(.red)
+        }
+        .padding(.horizontal)
+        .padding(.vertical, 8)
+        .background(.ultraThinMaterial)
+    }
+
+    // MARK: - Prompt Suggestions
+
+    private var showPromptSuggestions: Bool {
+        let hasNoMessages = chat?.activeMessages.isEmpty ?? true
+        return hasNoMessages && !chatService.isStreaming
+    }
+
+    // MARK: - Retry Bar
+
+    private var showRetryBar: Bool {
+        guard !chatService.isStreaming,
+              let lastMessage = chat?.activeMessages.last,
+              lastMessage.role == .assistant else { return false }
+        return lastMessage.content.contains("Failed to get response") || lastMessage.content.hasPrefix("Error:")
+    }
+
+    private var retryBar: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "exclamationmark.triangle")
+                .foregroundStyle(.orange)
+            Text("Response failed")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            Spacer()
+            Button("Retry") {
+                Task { await chatService.retryLastMessage(in: chatId) }
+            }
+            .font(.caption)
+            .foregroundStyle(.blue)
         }
         .padding(.horizontal)
         .padding(.vertical, 8)

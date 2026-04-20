@@ -100,6 +100,7 @@ struct EmptyChatView: View {
     @EnvironmentObject var chatService: ChatService
     @EnvironmentObject var settingsService: SettingsService
     @State private var quote: String?
+    @State private var isLoadingExperience = false
 
     var body: some View {
         VStack(spacing: 24) {
@@ -125,11 +126,51 @@ struct EmptyChatView: View {
             }
             .buttonStyle(.borderedProminent)
             .controlSize(.large)
+
+            if isLoadingExperience {
+                ProgressView("Starting experience...")
+            } else {
+                VStack(spacing: 12) {
+                    Text("Quick Start")
+                        .font(.headline)
+                        .foregroundStyle(.secondary)
+
+                    HStack(spacing: 12) {
+                        Button {
+                            startExperience()
+                        } label: {
+                            Label("5-Minute Check-in", systemImage: "clock")
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.regular)
+
+                        Button {
+                            startExperience()
+                        } label: {
+                            Label("15-Minute Deep Dive", systemImage: "brain.head.profile")
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.regular)
+                    }
+                }
+                .padding(.top, 8)
+            }
         }
         .task {
             if let config = settingsService.globalConfig {
                 quote = config.quote
             }
+        }
+    }
+
+    private func startExperience() {
+        isLoadingExperience = true
+        Task {
+            let chatId = await chatService.startExperience(
+                language: settingsService.settings.language
+            )
+            chatService.selectChat(chatId)
+            isLoadingExperience = false
         }
     }
 }

@@ -58,6 +58,22 @@ final class ChatService: ObservableObject {
         chats[chatId]?.draftInputText = text
     }
 
+    // MARK: - Experiences
+
+    func startExperience(language: String) async -> String {
+        let chat = createChat()
+        do {
+            let response: ExperienceResponse = try await apiClient.post(
+                "/experience",
+                body: ExperienceRequest(language: language)
+            )
+            appendAssistantMessage(response.content, to: chat.id)
+        } catch {
+            // Chat is still created even if experience fetch fails
+        }
+        return chat.id
+    }
+
     // MARK: - Message Sending
 
     func sendMessage(_ content: String, in chatId: String) async {
@@ -113,6 +129,20 @@ final class ChatService: ObservableObject {
         chat.messages[index].deletedAt = Date()
         chats[chatId] = chat
         save()
+    }
+
+    func retryLastMessage(in chatId: String) async {
+        guard var chat = chats[chatId] else { return }
+
+        // Remove the failed assistant message
+        if let lastIndex = chat.messages.lastIndex(where: { $0.role == .assistant && $0.deleted != true }) {
+            chat.messages[lastIndex].deleted = true
+            chat.messages[lastIndex].deletedAt = Date()
+            chats[chatId] = chat
+            save()
+        }
+
+        await streamResponse(for: chatId)
     }
 
     func cancelStreaming() {

@@ -5,6 +5,7 @@ struct MessageBubble: View {
     let onEdit: (() -> Void)?
     let onDelete: (() -> Void)?
     var onRegenerate: (() -> Void)? = nil
+    var onRetry: (() -> Void)? = nil
     @State private var showActions = false
 
     var body: some View {
@@ -45,6 +46,14 @@ struct MessageBubble: View {
                         onRegenerate()
                     } label: {
                         Label("Regenerate", systemImage: "arrow.clockwise")
+                    }
+                }
+
+                if let onRetry = onRetry {
+                    Button {
+                        onRetry()
+                    } label: {
+                        Label("Retry", systemImage: "arrow.counterclockwise")
                     }
                 }
 
