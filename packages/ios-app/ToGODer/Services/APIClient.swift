@@ -88,19 +88,24 @@ actor APIClient {
                     request.setValue("application/json", forHTTPHeaderField: "Content-Type")
                     request.setValue("text/event-stream", forHTTPHeaderField: "Accept")
                     request.setValue("no-cache", forHTTPHeaderField: "Cache-Control")
-                    // Prevent URLSession from buffering a compressed response; SSE
-                    // must be delivered incrementally.
-                    request.setValue("identity", forHTTPHeaderField: "Accept-Encoding")
                     // SSE streams can idle for long stretches before the first chunk
                     // (slow LLM TTFT, memory lookups, tool calls). The session-level
                     // 60s inter-byte timeout is too aggressive for chat streaming.
                     request.timeoutInterval = 300
 
                     let (bytes, response) = try await self.session.bytes(for: request)
+                    if let http = response as? HTTPURLResponse {
+                        print("[APIClient.stream] status=\(http.statusCode) content-type=\(http.value(forHTTPHeaderField: "Content-Type") ?? "nil") content-encoding=\(http.value(forHTTPHeaderField: "Content-Encoding") ?? "nil")")
+                    }
                     try self.validateResponse(response)
 
                     var buffer = ""
+                    var lineCount = 0
                     for try await line in bytes.lines {
+                        lineCount += 1
+                        if lineCount <= 5 || lineCount % 20 == 0 {
+                            print("[APIClient.stream] line \(lineCount): \(line.prefix(80))")
+                        }
                         // Skip SSE comment lines (keep-alive, padding)
                         if line.hasPrefix(":") { continue }
                         buffer += line + "\n"
@@ -116,7 +121,7 @@ actor APIClient {
                             buffer = ""
                         }
                     }
-                    print("[APIClient.stream] bytes.lines completed (stream closed)")
+                    print("[APIClient.stream] bytes.lines completed (stream closed) after \(lineCount) lines")
                     continuation.finish()
                 } catch {
                     continuation.finish(throwing: error)
