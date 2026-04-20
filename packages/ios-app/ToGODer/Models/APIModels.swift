@@ -171,6 +171,26 @@ struct PromptOption: Codable {
 struct BillingResponse: Codable {
     let balance: Double?
     let globalBalance: Double?
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        balance = Self.decodeFlexibleDouble(from: container, key: .balance)
+        globalBalance = Self.decodeFlexibleDouble(from: container, key: .globalBalance)
+    }
+
+    private static func decodeFlexibleDouble(from container: KeyedDecodingContainer<CodingKeys>, key: CodingKeys) -> Double? {
+        if let value = try? container.decode(Double.self, forKey: key) {
+            return value
+        }
+        if let str = try? container.decode(String.self, forKey: key) {
+            return Double(str)
+        }
+        return nil
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case balance, globalBalance
+    }
 }
 
 // MARK: - Sharing

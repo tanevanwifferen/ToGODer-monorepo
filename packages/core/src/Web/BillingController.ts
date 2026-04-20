@@ -19,7 +19,7 @@ export function GetBillingRouter(
       var r = req as ToGODerRequest;
       var balance = await billingApi.GetBalance(r.togoder_auth!.user!.email);
       var globalBalance = await billingApi.GetGlobalBalance();
-      res.json({ balance: balance.toNumber(), globalBalance: globalBalance.toNumber() });
+      res.json({ balance: balance, globalBalance: globalBalance });
     }
   );
 
