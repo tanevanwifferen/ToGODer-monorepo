@@ -6,7 +6,7 @@ enum Configuration {
            let url = URL(string: urlString) {
             return url
         }
-        return URL(string: "https://dev.togoder.click/api")!
+        return URL(string: "https://dev.togoder.click/api/")!
     }()
 
     static let shareBaseURL: URL = {

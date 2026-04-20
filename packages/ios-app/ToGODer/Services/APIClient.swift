@@ -116,7 +116,8 @@ actor APIClient {
     // MARK: - Private
 
     private func buildRequest(path: String, method: String) throws -> URLRequest {
-        guard let url = URL(string: path, relativeTo: baseURL) else {
+        let relativePath = path.hasPrefix("/") ? String(path.dropFirst()) : path
+        guard let url = URL(string: relativePath, relativeTo: baseURL) else {
             throw APIError.invalidURL
         }
         var request = URLRequest(url: url)
