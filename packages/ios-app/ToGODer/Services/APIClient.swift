@@ -87,6 +87,14 @@ actor APIClient {
                     request.httpBody = try self.encoder.encode(body)
                     request.setValue("application/json", forHTTPHeaderField: "Content-Type")
                     request.setValue("text/event-stream", forHTTPHeaderField: "Accept")
+                    request.setValue("no-cache", forHTTPHeaderField: "Cache-Control")
+                    // Prevent URLSession from buffering a compressed response; SSE
+                    // must be delivered incrementally.
+                    request.setValue("identity", forHTTPHeaderField: "Accept-Encoding")
+                    // SSE streams can idle for long stretches before the first chunk
+                    // (slow LLM TTFT, memory lookups, tool calls). The session-level
+                    // 60s inter-byte timeout is too aggressive for chat streaming.
+                    request.timeoutInterval = 300
 
                     let (bytes, response) = try await self.session.bytes(for: request)
                     try self.validateResponse(response)
@@ -98,6 +106,7 @@ actor APIClient {
                         buffer += line + "\n"
                         if line.isEmpty {
                             if let event = SSEEvent.parse(buffer) {
+                                print("[APIClient.stream] yielding event: \(event)")
                                 continuation.yield(event)
                                 if case .done = event {
                                     continuation.finish()
@@ -107,6 +116,7 @@ actor APIClient {
                             buffer = ""
                         }
                     }
+                    print("[APIClient.stream] bytes.lines completed (stream closed)")
                     continuation.finish()
                 } catch {
                     continuation.finish(throwing: error)
@@ -208,7 +218,7 @@ enum SSEEvent {
         case "memory_request":
             guard let d = data else { return nil }
             // Backend sends {"keys":["key1","key2"]} directly
-            if let parsed = try? JSONDecoder().decode(MemoryRequest.self, from: Data(d.utf8)) {
+            if let parsed = try? JSONDecoder().decode(SSEMemoryRequestData.self, from: Data(d.utf8)) {
                 return .memoryRequest(parsed.keys)
             }
             return nil
@@ -251,6 +261,11 @@ private struct SSEErrorData: Codable {
 /// Legacy/fallback format: {"data":"text"}
 private struct SSEStringField: Codable {
     let data: String
+}
+
+/// Backend memory request format: {"keys":["a","b"]}
+private struct SSEMemoryRequestData: Codable {
+    let keys: [String]
 }
 
 struct ToolCallData: Codable {
