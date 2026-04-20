@@ -14,6 +14,7 @@ final class ChatService: ObservableObject {
     var calendarService: CalendarService?
     var healthService: HealthService?
     var syncService: SyncService?
+    var artifactService: ArtifactService?
     private var streamTask: Task<Void, Never>?
 
     init(apiClient: APIClient, storage: StorageService, settingsService: SettingsService) {
@@ -203,7 +204,8 @@ final class ChatService: ObservableObject {
             persona: settings.persona,
             libraryIntegrationEnabled: settings.libraryIntegrationEnabled,
             memoryLoopCount: memoryLoopCount,
-            memoryLoopLimitReached: memoryLoopCount >= Configuration.maxMemoryLoops
+            memoryLoopLimitReached: memoryLoopCount >= Configuration.maxMemoryLoops,
+            artifactIndex: chat.projectId.flatMap { artifactService?.artifactIndex(for: $0) }
         )
 
         streamTask = Task {
@@ -254,7 +256,14 @@ final class ChatService: ObservableObject {
                                 }
                             }
                         }
-                        // Other tool calls (artifacts, etc.) not yet handled
+                        if toolData.name == "write_artifact",
+                           let path = toolData.arguments?["path"],
+                           let fileContent = toolData.arguments?["content"],
+                           let projectId = chat.projectId {
+                            accumulatedContent += "\n\n*Writing artifact: \(path)...*\n\n"
+                            streamingContent = accumulatedContent
+                            self.artifactService?.writeArtifact(path: path, content: fileContent, projectId: projectId)
+                        }
 
                     case .error(let msg):
                         appendAssistantMessage("Error: \(msg)", to: chatId)

@@ -18,6 +18,7 @@ final class StorageService {
         static let language = "language"
         static let passcode = "passcode"
         static let projects = "projects"
+        static let artifacts = "artifacts"
     }
 
     // MARK: - App State
@@ -93,6 +94,22 @@ final class StorageService {
             return [:]
         }
         return projects
+    }
+
+    // MARK: - Artifacts
+
+    func saveArtifacts(_ artifacts: [String: Artifact]) {
+        if let data = try? encoder.encode(artifacts) {
+            defaults.set(data, forKey: Keys.artifacts)
+        }
+    }
+
+    func loadArtifacts() -> [String: Artifact] {
+        guard let data = defaults.data(forKey: Keys.artifacts),
+              let artifacts = try? decoder.decode([String: Artifact].self, from: data) else {
+            return [:]
+        }
+        return artifacts
     }
 
     // MARK: - Settings

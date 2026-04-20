@@ -17,6 +17,7 @@ final class AppState: ObservableObject {
     let healthService: HealthService
     let memoryService: MemoryService
     let projectService: ProjectService
+    let artifactService: ArtifactService
 
     private let apiClient: APIClient
     private let storage: StorageService
@@ -42,9 +43,11 @@ final class AppState: ObservableObject {
         self.calendarService = CalendarService()
         self.healthService = HealthService()
         self.memoryService = MemoryService(apiClient: apiClient, storage: storage)
+        self.artifactService = ArtifactService(storage: storage)
         self.chatService.calendarService = calendarService
         self.chatService.healthService = healthService
         self.chatService.syncService = syncService
+        self.chatService.artifactService = artifactService
         self.projectService = ProjectService(storage: storage, chatService: chatService)
 
         setupBindings()

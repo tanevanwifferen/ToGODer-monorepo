@@ -14,6 +14,7 @@ struct ToGODerApp: App {
                 .environmentObject(appState.syncService)
                 .environmentObject(appState.passcodeService)
                 .environmentObject(appState.projectService)
+                .environmentObject(appState.artifactService)
                 .environmentObject(appState.healthService)
                 .environmentObject(appState.calendarService)
                 .environmentObject(appState.memoryService)

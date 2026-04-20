@@ -43,6 +43,10 @@
 		A1B2C3D4E5F60001000024 /* ProjectDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60101000024 /* ProjectDetailView.swift */; };
 		A1B2C3D4E5F6000100001F /* MemoryService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F6010100001F /* MemoryService.swift */; };
 		A1B2C3D4E5F60001000020 /* MemoriesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60101000020 /* MemoriesView.swift */; };
+		A1B2C3D4E5F60001000025 /* Artifact.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60101000025 /* Artifact.swift */; };
+		A1B2C3D4E5F60001000026 /* ArtifactService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60101000026 /* ArtifactService.swift */; };
+		A1B2C3D4E5F60001000027 /* ArtifactsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60101000027 /* ArtifactsView.swift */; };
+		A1B2C3D4E5F60001000028 /* ArtifactEditorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60101000028 /* ArtifactEditorView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -83,6 +87,10 @@
 		A1B2C3D4E5F60101000024 /* ProjectDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProjectDetailView.swift; sourceTree = "<group>"; };
 		A1B2C3D4E5F6010100001F /* MemoryService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MemoryService.swift; sourceTree = "<group>"; };
 		A1B2C3D4E5F60101000020 /* MemoriesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MemoriesView.swift; sourceTree = "<group>"; };
+		A1B2C3D4E5F60101000025 /* Artifact.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Artifact.swift; sourceTree = "<group>"; };
+		A1B2C3D4E5F60101000026 /* ArtifactService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArtifactService.swift; sourceTree = "<group>"; };
+		A1B2C3D4E5F60101000027 /* ArtifactsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArtifactsView.swift; sourceTree = "<group>"; };
+		A1B2C3D4E5F60101000028 /* ArtifactEditorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArtifactEditorView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -139,6 +147,7 @@
 			children = (
 				A1B2C3D4E5F60101000004 /* APIModels.swift */,
 				A1B2C3D4E5F60101000005 /* Chat.swift */,
+				A1B2C3D4E5F60101000025 /* Artifact.swift */,
 				A1B2C3D4E5F60101000021 /* Project.swift */,
 				A1B2C3D4E5F60101000006 /* UserSettings.swift */,
 			);
@@ -158,6 +167,7 @@
 				A1B2C3D4E5F610100000C /* StorageService.swift */,
 				A1B2C3D4E5F610100000D /* SyncService.swift */,
 				A1B2C3D4E5F6010100001C /* PasscodeService.swift */,
+				A1B2C3D4E5F60101000026 /* ArtifactService.swift */,
 				A1B2C3D4E5F60101000022 /* ProjectService.swift */,
 				A1B2C3D4E5F6010100001F /* MemoryService.swift */,
 			);
@@ -237,6 +247,8 @@
 		A1B2C3D4E5F604010000D /* Projects */ = {
 			isa = PBXGroup;
 			children = (
+				A1B2C3D4E5F60101000027 /* ArtifactsView.swift */,
+				A1B2C3D4E5F60101000028 /* ArtifactEditorView.swift */,
 				A1B2C3D4E5F60101000023 /* ProjectsView.swift */,
 				A1B2C3D4E5F60101000024 /* ProjectDetailView.swift */,
 			);
@@ -347,6 +359,10 @@
 				A1B2C3D4E5F60001000022 /* ProjectService.swift in Sources */,
 				A1B2C3D4E5F60001000023 /* ProjectsView.swift in Sources */,
 				A1B2C3D4E5F60001000024 /* ProjectDetailView.swift in Sources */,
+				A1B2C3D4E5F60001000025 /* Artifact.swift in Sources */,
+				A1B2C3D4E5F60001000026 /* ArtifactService.swift in Sources */,
+				A1B2C3D4E5F60001000027 /* ArtifactsView.swift in Sources */,
+				A1B2C3D4E5F60001000028 /* ArtifactEditorView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

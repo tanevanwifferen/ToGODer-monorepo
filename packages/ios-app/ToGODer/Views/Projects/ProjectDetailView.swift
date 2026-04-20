@@ -23,11 +23,17 @@ struct ProjectDetailView: View {
                     }
                     .tag(0)
 
+                ArtifactsView(projectId: projectId)
+                    .tabItem {
+                        Label("Artifacts", systemImage: "doc.text")
+                    }
+                    .tag(1)
+
                 infoTab(project: project)
                     .tabItem {
                         Label("Info", systemImage: "info.circle")
                     }
-                    .tag(1)
+                    .tag(2)
             }
             .navigationTitle(project.name)
             .navigationBarTitleDisplayMode(.inline)
