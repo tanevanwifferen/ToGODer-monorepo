@@ -71,8 +71,12 @@ final class AppState: ObservableObject {
                         }
                         await self.balanceService.fetchBalance()
                         await self.syncService.pull()
-                        // Reload chats after sync pull merges remote data
+                        // Reload all data after sync pull merges remote data
                         self.chatService.chats = self.storage.loadChats()
+                        self.projectService.projects = self.storage.loadProjects()
+                        self.artifactService.artifacts = self.storage.loadArtifacts()
+                        self.memoryService.memories = self.storage.loadMemories()
+                        self.memoryService.memoryKeys = Array(self.memoryService.memories.keys).sorted()
                     }
                 }
             }
