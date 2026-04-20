@@ -13,6 +13,7 @@ struct UserSettings: Codable {
     var calendarIntegrationEnabled: Bool
     var customSystemPrompt: String?
     var persona: String?
+    var updatedAt: Date?
 
     static let `default` = UserSettings(
         model: "meta-llama/llama-3.2-90b-vision-instruct",

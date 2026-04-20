@@ -21,6 +21,7 @@ struct SyncableChat: Codable {
     var title: String?
     var messages: [SyncableMessage]
     var isRequest: Bool
+    var last_update: Double? // epoch ms (RN legacy field)
     var memories: [String]?
     var draftInputText: String?
     var projectId: String?
@@ -35,7 +36,10 @@ struct SyncableMessage: Codable {
     var role: String
     var signature: String?
     var timestamp: Double // epoch ms
+    var updateData: String? // matches RN ApiChatMessage
     var hidden: Bool?
+    var artifactId: String? // matches RN ApiChatMessage
+    var tool_call_id: String? // matches RN ApiChatMessage
     var deleted: Bool?
     var deletedAt: Double? // epoch ms
 }
@@ -56,6 +60,8 @@ struct SyncableUserSettings: Codable {
     var assistant_name: String?
     var language: String?
     var libraryIntegrationEnabled: Bool?
+    var customSystemPrompt: String? // matches RN ChatSettings
+    var persona: String? // matches RN ChatSettings
     var updatedAt: Double // epoch ms
 }
 
@@ -373,20 +379,25 @@ final class SyncService: ObservableObject {
                     role: msg.role.rawValue,
                     signature: msg.signature,
                     timestamp: (msg.timestamp ?? .distantPast).timeIntervalSince1970 * 1000,
+                    updateData: msg.updateData,
                     hidden: msg.hidden,
+                    artifactId: msg.artifactId,
+                    tool_call_id: msg.toolCallId,
                     deleted: msg.deleted,
                     deletedAt: msg.deletedAt.map { $0.timeIntervalSince1970 * 1000 }
                 )
             }
+            let chatUpdatedAt = (chat.lastUpdate ?? .distantPast).timeIntervalSince1970 * 1000
             syncChats[id] = SyncableChat(
                 id: id,
                 title: chat.title,
                 messages: syncMessages,
                 isRequest: chat.isRequest,
+                last_update: chatUpdatedAt,
                 memories: chat.memories,
                 draftInputText: chat.draftInputText,
                 projectId: chat.projectId,
-                updatedAt: (chat.lastUpdate ?? .distantPast).timeIntervalSince1970 * 1000,
+                updatedAt: chatUpdatedAt,
                 deleted: chat.deleted,
                 deletedAt: chat.deletedAt.map { $0.timeIntervalSince1970 * 1000 }
             )
@@ -403,7 +414,9 @@ final class SyncService: ObservableObject {
             assistant_name: settings.assistantName,
             language: settings.language,
             libraryIntegrationEnabled: settings.libraryIntegrationEnabled,
-            updatedAt: Date().timeIntervalSince1970 * 1000
+            customSystemPrompt: settings.customSystemPrompt,
+            persona: settings.persona,
+            updatedAt: (settings.updatedAt ?? .distantPast).timeIntervalSince1970 * 1000
         )
 
         // Convert projects
@@ -438,6 +451,10 @@ final class SyncService: ObservableObject {
             )
         }
 
+        // Personal data: use settings.updatedAt for persona timestamp
+        // The RN app stores persona in both personal.persona and userSettings.persona
+        let personalUpdatedAt = (settings.updatedAt ?? .distantPast).timeIntervalSince1970 * 1000
+
         return SyncPayload(
             version: 1,
             syncedAt: Date().timeIntervalSince1970 * 1000,
@@ -445,7 +462,7 @@ final class SyncService: ObservableObject {
             personal: SyncablePersonal(
                 data: nil,
                 persona: settings.persona ?? "",
-                updatedAt: 0
+                updatedAt: personalUpdatedAt
             ),
             userSettings: syncSettings,
             projects: syncProjects,
@@ -453,36 +470,125 @@ final class SyncService: ObservableObject {
         )
     }
 
-    // MARK: - LWW Merge
+    // MARK: - Message-level LWW Merge (matches RN mergeUtils)
+
+    /// Get the effective timestamp for a syncable chat by considering both
+    /// updatedAt and the newest message timestamp (matches RN getEffectiveTimestamp)
+    private func getEffectiveTimestamp(_ chat: SyncableChat) -> Double {
+        var maxMessageTimestamp: Double = 0
+        for msg in chat.messages {
+            let ts = msg.deletedAt ?? msg.timestamp
+            if ts > maxMessageTimestamp {
+                maxMessageTimestamp = ts
+            }
+        }
+        return max(chat.updatedAt, maxMessageTimestamp)
+    }
+
+    /// Merge messages at the message level using LWW (matches RN mergeMessages)
+    private func mergeMessages(_ local: [SyncableMessage], _ remote: [SyncableMessage]) -> [SyncableMessage] {
+        var messageMap: [String: SyncableMessage] = [:]
+
+        // Index all local messages (including tombstones)
+        for msg in local {
+            messageMap[msg.id] = msg
+        }
+
+        // Merge with remote messages
+        for remoteMsg in remote {
+            if let localMsg = messageMap[remoteMsg.id] {
+                // Message exists on both sides, use LWW
+                let localTimestamp = localMsg.deletedAt ?? localMsg.timestamp
+                let remoteTimestamp = remoteMsg.deletedAt ?? remoteMsg.timestamp
+                if remoteTimestamp > localTimestamp {
+                    messageMap[remoteMsg.id] = remoteMsg
+                }
+            } else {
+                // Remote message doesn't exist locally - add it (including tombstones)
+                messageMap[remoteMsg.id] = remoteMsg
+            }
+        }
+
+        // Sort by timestamp, keeping tombstones for sync
+        return messageMap.values.sorted { $0.timestamp < $1.timestamp }
+    }
+
+    /// Merge a single chat with message-level merge (matches RN mergeSingleChat)
+    private func mergeSingleChat(_ local: SyncableChat?, _ remote: SyncableChat?, chatId: String) -> SyncableChat? {
+        guard local != nil || remote != nil else { return nil }
+
+        // Handle deleted chats (tombstones)
+        if let local = local, local.deleted == true, let remote = remote, remote.deleted == true {
+            return (local.deletedAt ?? 0) >= (remote.deletedAt ?? 0) ? local : remote
+        }
+
+        if let local = local, local.deleted == true {
+            guard let remote = remote else { return local }
+            let remoteEffective = getEffectiveTimestamp(remote)
+            if (local.deletedAt ?? 0) > remoteEffective {
+                return local
+            }
+            return remote
+        }
+
+        if let remote = remote, remote.deleted == true {
+            guard let local = local else { return remote }
+            let localEffective = getEffectiveTimestamp(local)
+            if (remote.deletedAt ?? 0) > localEffective {
+                return remote
+            }
+            return local
+        }
+
+        // Neither is deleted
+        guard let local = local else { return remote }
+        guard let remote = remote else { return local }
+
+        // Both exist, merge messages and metadata
+        let mergedMessages = mergeMessages(local.messages, remote.messages)
+        let localEffective = getEffectiveTimestamp(local)
+        let remoteEffective = getEffectiveTimestamp(remote)
+        let metadataWinner = localEffective >= remoteEffective ? local : remote
+        let effectiveMax = max(localEffective, remoteEffective)
+
+        var merged = metadataWinner
+        merged.messages = mergedMessages
+        merged.updatedAt = effectiveMax
+        merged.last_update = effectiveMax
+
+        print("[SyncService] Chat \(chatId): merged local(\(local.messages.count) msgs, effective=\(localEffective)) + remote(\(remote.messages.count) msgs, effective=\(remoteEffective)) = \(merged.messages.count) msgs")
+        return merged
+    }
 
     private func mergePayload(_ remote: SyncPayload) {
         print("[SyncService] Starting merge...")
 
-        // Merge chats using LWW on updatedAt (epoch ms)
-        var localChats = storage.loadChats()
-        for (id, remoteChat) in remote.chats {
-            let localChat = localChats[id]
-            if let localChat = localChat {
-                let localTime = (localChat.lastUpdate ?? .distantPast).timeIntervalSince1970 * 1000
-                let remoteTime = remoteChat.updatedAt
-                if remoteTime > localTime {
-                    localChats[id] = convertToChat(remoteChat)
-                    print("[SyncService] Chat \(id): remote wins (remote=\(remoteTime) > local=\(localTime))")
-                } else {
-                    print("[SyncService] Chat \(id): local wins (local=\(localTime) >= remote=\(remoteTime))")
-                }
-            } else {
-                localChats[id] = convertToChat(remoteChat)
-                print("[SyncService] Chat \(id): new from remote")
+        // Build local payload in sync format for proper comparison
+        let localPayload = buildLocalPayload()
+
+        // Merge chats using message-level LWW (matches RN mergeChats)
+        let allChatIds = Set(localPayload.chats.keys).union(Set(remote.chats.keys))
+        var mergedSyncChats: [String: SyncableChat] = [:]
+        for id in allChatIds {
+            if let merged = mergeSingleChat(localPayload.chats[id], remote.chats[id], chatId: id) {
+                mergedSyncChats[id] = merged
             }
         }
-        storage.saveChats(localChats)
-        print("[SyncService] Merged chats: \(localChats.count) total")
 
-        // Merge settings from userSettings field
-        if let model = remote.userSettings.model, !model.isEmpty {
+        // Convert merged sync chats back to local Chat models
+        var mergedChats: [String: Chat] = [:]
+        for (id, syncChat) in mergedSyncChats {
+            mergedChats[id] = convertToChat(syncChat)
+        }
+        storage.saveChats(mergedChats)
+        print("[SyncService] Merged chats: \(mergedChats.count) total")
+
+        // Merge settings using whole-object LWW on updatedAt (matches RN mergeUserSettings)
+        let localSettingsTime = localPayload.userSettings.updatedAt
+        let remoteSettingsTime = remote.userSettings.updatedAt
+        if remoteSettingsTime > localSettingsTime {
             var settings = storage.loadSettings()
-            settings.model = model
+            if let model = remote.userSettings.model { settings.model = model }
             if let hp = remote.userSettings.humanPrompt { settings.humanPrompt = hp }
             if let kg = remote.userSettings.keepGoing { settings.keepGoing = kg }
             if let ob = remote.userSettings.outsideBox { settings.outsideBox = ob }
@@ -494,42 +600,110 @@ final class SyncService: ObservableObject {
             if let name = remote.userSettings.assistant_name { settings.assistantName = name }
             if let lang = remote.userSettings.language { settings.language = lang }
             if let lib = remote.userSettings.libraryIntegrationEnabled { settings.libraryIntegrationEnabled = lib }
+            if let persona = remote.userSettings.persona { settings.persona = persona }
+            if let customPrompt = remote.userSettings.customSystemPrompt { settings.customSystemPrompt = customPrompt }
+            settings.updatedAt = Date(timeIntervalSince1970: remoteSettingsTime / 1000)
             storage.saveSettings(settings)
-            print("[SyncService] Merged settings")
+            print("[SyncService] Settings: remote wins (remote=\(remoteSettingsTime) > local=\(localSettingsTime))")
+        } else {
+            print("[SyncService] Settings: local wins (local=\(localSettingsTime) >= remote=\(remoteSettingsTime))")
         }
 
-        // Merge memories from personal.data if it contains memory-like data
-        // The RN app stores memories separately in the personal slice
-        // For now, we preserve local memories and don't overwrite from personal
+        // Merge personal data using LWW (matches RN mergePersonal)
+        let localPersonalTime = localPayload.personal.updatedAt
+        let remotePersonalTime = remote.personal.updatedAt
+        if remotePersonalTime > localPersonalTime {
+            // Apply remote persona to settings
+            var settings = storage.loadSettings()
+            settings.persona = remote.personal.persona
+            storage.saveSettings(settings)
+            print("[SyncService] Personal: remote wins (remote=\(remotePersonalTime) > local=\(localPersonalTime))")
+        } else {
+            print("[SyncService] Personal: local wins (local=\(localPersonalTime) >= remote=\(remotePersonalTime))")
+        }
 
-        // Merge projects
+        // Merge projects with tombstone support (matches RN mergeProjects/mergeDeletable)
         if let remoteProjects = remote.projects {
             var localProjects = storage.loadProjects()
-            for (id, remoteProject) in remoteProjects {
-                if let localProject = localProjects[id] {
-                    let localTime = localProject.updatedAt.timeIntervalSince1970 * 1000
-                    if remoteProject.updatedAt > localTime {
-                        localProjects[id] = convertToProject(remoteProject)
+            let allProjectIds = Set(localProjects.keys).union(Set(remoteProjects.keys))
+            for id in allProjectIds {
+                let remoteProject = remoteProjects[id]
+                let localProject = localProjects[id]
+
+                if let rp = remoteProject {
+                    if let lp = localProject {
+                        // Both exist - handle tombstones
+                        let localDeleted = lp.deleted == true
+                        let remoteDeleted = rp.deleted == true
+
+                        if localDeleted && remoteDeleted {
+                            let localDeletedAt = lp.deletedAt.map { $0.timeIntervalSince1970 * 1000 } ?? 0
+                            if (rp.deletedAt ?? 0) > localDeletedAt {
+                                localProjects[id] = convertToProject(rp)
+                            }
+                        } else if localDeleted {
+                            let localDeletedAt = lp.deletedAt.map { $0.timeIntervalSince1970 * 1000 } ?? 0
+                            if rp.updatedAt > localDeletedAt {
+                                localProjects[id] = convertToProject(rp)
+                            }
+                        } else if remoteDeleted {
+                            let localTime = lp.updatedAt.timeIntervalSince1970 * 1000
+                            if (rp.deletedAt ?? 0) > localTime {
+                                localProjects[id] = convertToProject(rp)
+                            }
+                        } else {
+                            let localTime = lp.updatedAt.timeIntervalSince1970 * 1000
+                            if rp.updatedAt > localTime {
+                                localProjects[id] = convertToProject(rp)
+                            }
+                        }
+                    } else {
+                        localProjects[id] = convertToProject(rp)
                     }
-                } else {
-                    localProjects[id] = convertToProject(remoteProject)
                 }
+                // If only local exists, keep it (already in localProjects)
             }
             storage.saveProjects(localProjects)
             print("[SyncService] Merged projects: \(localProjects.count) total")
         }
 
-        // Merge artifacts
+        // Merge artifacts with tombstone support (matches RN mergeArtifacts/mergeDeletable)
         if let remoteArtifacts = remote.artifacts {
             var localArtifacts = storage.loadArtifacts()
-            for (id, remoteArtifact) in remoteArtifacts {
-                if let localArtifact = localArtifacts[id] {
-                    let localTime = localArtifact.updatedAt.timeIntervalSince1970 * 1000
-                    if remoteArtifact.updatedAt > localTime {
-                        localArtifacts[id] = convertToArtifact(remoteArtifact)
+            let allArtifactIds = Set(localArtifacts.keys).union(Set(remoteArtifacts.keys))
+            for id in allArtifactIds {
+                let remoteArtifact = remoteArtifacts[id]
+                let localArtifact = localArtifacts[id]
+
+                if let ra = remoteArtifact {
+                    if let la = localArtifact {
+                        let localDeleted = la.deleted == true
+                        let remoteDeleted = ra.deleted == true
+
+                        if localDeleted && remoteDeleted {
+                            let localDeletedAt = la.deletedAt.map { $0.timeIntervalSince1970 * 1000 } ?? 0
+                            if (ra.deletedAt ?? 0) > localDeletedAt {
+                                localArtifacts[id] = convertToArtifact(ra)
+                            }
+                        } else if localDeleted {
+                            let localDeletedAt = la.deletedAt.map { $0.timeIntervalSince1970 * 1000 } ?? 0
+                            if ra.updatedAt > localDeletedAt {
+                                localArtifacts[id] = convertToArtifact(ra)
+                            }
+                        } else if remoteDeleted {
+                            let localTime = la.updatedAt.timeIntervalSince1970 * 1000
+                            if (ra.deletedAt ?? 0) > localTime {
+                                localArtifacts[id] = convertToArtifact(ra)
+                            }
+                        } else {
+                            let localTime = la.updatedAt.timeIntervalSince1970 * 1000
+                            if ra.updatedAt > localTime {
+                                localArtifacts[id] = convertToArtifact(ra)
+                            }
+                        }
+                    } else {
+                        localArtifacts[id] = convertToArtifact(ra)
                     }
-                } else {
-                    localArtifacts[id] = convertToArtifact(remoteArtifact)
                 }
             }
             storage.saveArtifacts(localArtifacts)
@@ -543,7 +717,7 @@ final class SyncService: ObservableObject {
 
     private func convertToChat(_ syncChat: SyncableChat) -> Chat {
         let messages = syncChat.messages.map { msg in
-            ChatMessage(
+            var chatMsg = ChatMessage(
                 id: msg.id,
                 content: msg.content,
                 role: MessageRole(rawValue: msg.role) ?? .user,
@@ -551,6 +725,12 @@ final class SyncService: ObservableObject {
                 timestamp: Date(timeIntervalSince1970: msg.timestamp / 1000),
                 hidden: msg.hidden
             )
+            chatMsg.updateData = msg.updateData
+            chatMsg.artifactId = msg.artifactId
+            chatMsg.toolCallId = msg.tool_call_id
+            chatMsg.deleted = msg.deleted
+            chatMsg.deletedAt = msg.deletedAt.map { Date(timeIntervalSince1970: $0 / 1000) }
+            return chatMsg
         }
         var chat = Chat(
             id: syncChat.id,

@@ -16,6 +16,7 @@ final class SettingsService: ObservableObject {
 
     func updateSettings(_ update: (inout UserSettings) -> Void) {
         update(&settings)
+        settings.updatedAt = Date()
         storage.saveSettings(settings)
     }
 
