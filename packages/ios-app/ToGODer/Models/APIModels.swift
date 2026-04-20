@@ -1,0 +1,246 @@
+import Foundation
+
+// MARK: - Auth
+
+struct SignInRequest: Codable {
+    let email: String
+    let password: String
+}
+
+struct SignInResponse: Codable {
+    let token: String
+    let userId: String
+}
+
+struct SignUpRequest: Codable {
+    let email: String
+    let password: String
+}
+
+struct UpdateTokenRequest: Codable {
+    let userId: String
+}
+
+struct UpdateTokenResponse: Codable {
+    let token: String
+}
+
+struct ChangePasswordRequest: Codable {
+    let oldPassword: String
+    let newPassword: String
+}
+
+struct ResetPasswordRequest: Codable {
+    let code: String
+    let newPassword: String
+}
+
+// MARK: - Chat
+
+struct ChatRequest: Codable {
+    let model: String
+    let humanPrompt: Bool
+    let keepGoing: Bool
+    let outsideBox: Bool
+    let holisticTherapist: Bool
+    let communicationStyle: Int
+    let prompts: [APIChatMessage]
+    var configurableData: String?
+    var staticData: StaticData?
+    var assistantName: String?
+    var memoryIndex: [String]?
+    var memories: [String: String]?
+    var customSystemPrompt: String?
+    var persona: String?
+    var libraryIntegrationEnabled: Bool?
+    var memoryLoopCount: Int?
+    var memoryLoopLimitReached: Bool?
+    var artifactIndex: [ArtifactIndexItem]?
+
+    enum CodingKeys: String, CodingKey {
+        case model, humanPrompt, keepGoing, outsideBox, holisticTherapist
+        case communicationStyle, prompts, configurableData, staticData
+        case assistantName = "assistant_name"
+        case memoryIndex, memories, customSystemPrompt, persona
+        case libraryIntegrationEnabled, memoryLoopCount, memoryLoopLimitReached
+        case artifactIndex
+    }
+}
+
+struct APIChatMessage: Codable {
+    let content: String
+    let role: String
+    var signature: String?
+    var timestamp: Double?
+    var hidden: Bool?
+}
+
+struct StaticData: Codable {
+    var date: String?
+    var calendarEvents: String?
+    var health: String?
+}
+
+struct ArtifactIndexItem: Codable {
+    let path: String
+    let mimeType: String?
+}
+
+// MARK: - Chat Responses
+
+struct MessageResponse: Codable {
+    let content: String
+    var signature: String?
+    var updateData: String?
+}
+
+struct MemoryRequestResponse: Codable {
+    let requestForMemory: [String]
+}
+
+struct TitleResponse: Codable {
+    let content: String
+}
+
+struct ExperienceRequest: Codable {
+    let language: String
+}
+
+struct ExperienceResponse: Codable {
+    let content: String
+}
+
+struct SystemPromptRequest: Codable {
+    let persona: String?
+    let language: String?
+    let configurableData: String?
+}
+
+struct SystemPromptResponse: Codable {
+    let systemPrompt: String?
+    let requestForMemory: MemoryRequest?
+    let assistantName: String?
+
+    enum CodingKeys: String, CodingKey {
+        case systemPrompt
+        case requestForMemory
+        case assistantName = "assistant_name"
+    }
+}
+
+struct MemoryRequest: Codable {
+    let keys: [String]
+}
+
+// MARK: - Global Config
+
+struct GlobalConfig: Codable {
+    let donateOptions: [DonateOption]?
+    let quote: String?
+    let models: [ModelOption]?
+    let prompts: [String: PromptOption]?
+    let showLogin: Bool?
+    let userOnboarded: Bool?
+    let appFirstLaunch: Bool?
+    let libraryIntegrationEnabled: Bool?
+    let librarianApiUrl: String?
+    let previousDefaultModel: String?
+}
+
+struct DonateOption: Codable, Identifiable {
+    var id: String { name }
+    let name: String
+    let address: String?
+    let url: String?
+}
+
+struct ModelOption: Codable, Identifiable {
+    var id: String { model }
+    let model: String
+    let title: String
+}
+
+struct PromptOption: Codable {
+    let prompt: String
+    let description: String?
+    let display: String?
+}
+
+// MARK: - Billing
+
+struct BillingResponse: Codable {
+    let credits: Double?
+    let subscription: Subscription?
+}
+
+struct Subscription: Codable {
+    let active: Bool
+    let plan: String?
+    let expiresAt: String?
+}
+
+// MARK: - Sharing
+
+struct ShareRequest: Codable {
+    let messages: [SignedMessage]
+    let title: String
+    var description: String?
+    let visibility: String // "PUBLIC" or "PRIVATE"
+}
+
+struct SignedMessage: Codable {
+    let content: String
+    let role: String
+    let signature: String?
+}
+
+struct SharedChat: Codable, Identifiable {
+    let id: String
+    let ownerId: String
+    let title: String
+    var description: String?
+    let createdAt: String
+    let messages: String // JSON string of SignedMessage[]
+    let views: Int?
+    let visibility: String?
+    let owner: SharedChatOwner?
+}
+
+struct SharedChatOwner: Codable {
+    let id: String
+    let email: String?
+}
+
+// MARK: - Sync
+
+struct SyncResponse: Codable {
+    let encryptedData: String?
+    let version: Int?
+}
+
+struct SyncRequest: Codable {
+    let encryptedData: String
+    let version: Int
+}
+
+// MARK: - Memory
+
+struct MemoryFetchKeysRequest: Codable {
+    let shortTermMemory: String
+}
+
+struct MemoryFetchKeysResponse: Codable {
+    let keys: [String]
+}
+
+struct MemoryCompressRequest: Codable {
+    let shortTermMemory: String
+    let longTermMemories: [String: String]
+}
+
+// MARK: - Quote
+
+struct QuoteResponse: Codable {
+    let content: String?
+    let quote: String?
+}
