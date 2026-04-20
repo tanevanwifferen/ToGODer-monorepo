@@ -70,6 +70,7 @@ final class AppState: ObservableObject {
                             self.syncService.setCredentials(userId: userId, password: password)
                         }
                         await self.balanceService.fetchBalance()
+                        await self.settingsService.loadGlobalConfig(apiClient: self.apiClient)
                         await self.syncService.pull()
                         // Reload all data after sync pull merges remote data
                         self.chatService.chats = self.storage.loadChats()
