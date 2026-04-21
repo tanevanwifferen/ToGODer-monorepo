@@ -20,18 +20,16 @@ export enum AIProvider {
   Claude4Sonnet = 'anthropic/claude-sonnet-4',
   Claude45Sonnet = 'anthropic/claude-sonnet-4.5',
   Claude46Opus = 'anthropic/claude-opus-4.6',
+  Claude47Opus = 'anthropic/claude-opus-4.7',
   DeepSeekV3 = 'deepseek/deepseek-chat-v3.1',
   DeepSeekV32 = 'deepseek/deepseek-v3.2',
-  LLama3 = 'perplexity/llama-3-sonar-large-32k-chat',
-  LLama3170b = 'meta-llama/llama-3.1-70b-instruct',
-  LLama31405b = 'meta-llama/llama-3.1-405b-instruct',
-  LLama3290b = 'meta-llama/llama-3.2-90b-vision-instruct',
   LLama3370b = 'meta-llama/llama-3.3-70b-instruct',
   Llama4Maverick = 'meta-llama/llama-4-maverick',
   Grok3Mini = 'x-ai/grok-3-mini',
   Grok4 = 'x-ai/grok-4',
   Gemini31Pro = 'google/gemini-3.1-pro-preview',
   Qwen3Coder = 'moonshotai/kimi-k2.5',
+  Qwen36Plus = 'qwen/qwen3.6-plus',
   Ministral = 'mistralai/ministral-8b-2512'
 }
 
@@ -49,18 +47,16 @@ export function getAIWrapper(model: AIProvider): AIWrapper {
     case AIProvider.Claude4Sonnet:
     case AIProvider.Claude45Sonnet:
     case AIProvider.Claude46Opus:
+    case AIProvider.Claude47Opus:
     case AIProvider.DeepSeekV3:
     case AIProvider.DeepSeekV32:
-    case AIProvider.LLama3:
-    case AIProvider.LLama3170b:
-    case AIProvider.LLama31405b:
-    case AIProvider.LLama3290b:
     case AIProvider.LLama3370b:
     case AIProvider.Llama4Maverick:
     case AIProvider.Grok3Mini:
     case AIProvider.Grok4:
     case AIProvider.Gemini31Pro:
     case AIProvider.Qwen3Coder:
+    case AIProvider.Qwen36Plus:
     case AIProvider.Ministral:
       return new OpenRouterWrapper(model);
     default:
@@ -81,6 +77,7 @@ export function getTokenCost(model: AIProvider): AICost {
       };
       break;
     case AIProvider.Claude46Opus:
+    case AIProvider.Claude47Opus:
       torReturn = {
         input_cost_per_million: new Decimal('5'),
         output_cost_per_million: new Decimal('25'),
@@ -96,30 +93,6 @@ export function getTokenCost(model: AIProvider): AICost {
       torReturn = {
         input_cost_per_million: new Decimal('0.27'),
         output_cost_per_million: new Decimal('0.42'),
-      };
-      break;
-    case AIProvider.LLama3:
-      torReturn = {
-        input_cost_per_million: new Decimal('1'),
-        output_cost_per_million: new Decimal('1'),
-      };
-      break;
-    case AIProvider.LLama31405b:
-      torReturn = {
-        input_cost_per_million: new Decimal('4.5'),
-        output_cost_per_million: new Decimal('4.5'),
-      };
-      break;
-    case AIProvider.LLama3170b:
-      torReturn = {
-        input_cost_per_million: new Decimal('1'),
-        output_cost_per_million: new Decimal('1'),
-      };
-      break;
-    case AIProvider.LLama3290b:
-      torReturn = {
-        input_cost_per_million: new Decimal('1.08'),
-        output_cost_per_million: new Decimal('1.08'),
       };
       break;
     case AIProvider.LLama3370b:
@@ -188,6 +161,12 @@ export function getTokenCost(model: AIProvider): AICost {
         output_cost_per_million: new Decimal('2.2'),
       };
       break;
+    case AIProvider.Qwen36Plus:
+      torReturn = {
+        input_cost_per_million: new Decimal('2'),
+        output_cost_per_million: new Decimal('6'),
+      };
+      break;
     case AIProvider.Ministral:
       torReturn = {
         input_cost_per_million: new Decimal('0.15'),
@@ -229,18 +208,12 @@ export function GetModelName(provider: AIProvider): string {
       return 'Claude 4.5 Sonnet';
     case AIProvider.Claude46Opus:
       return 'Claude 4.6 Opus';
+    case AIProvider.Claude47Opus:
+      return 'Claude 4.7 Opus';
     case AIProvider.DeepSeekV3:
       return 'DeepSeek V3';
     case AIProvider.DeepSeekV32:
       return 'DeepSeek V3.2';
-    case AIProvider.LLama3:
-      return 'LLama3 sonar 32k';
-    case AIProvider.LLama3170b:
-      return 'Llama 3.1 70b';
-    case AIProvider.LLama31405b:
-      return 'Llama 3.1 405b';
-    case AIProvider.LLama3290b:
-      return 'Llama 3.2 90b';
     case AIProvider.LLama3370b:
       return 'Llama 3.3 70b';
     case AIProvider.Llama4Maverick:
@@ -251,6 +224,8 @@ export function GetModelName(provider: AIProvider): string {
       return 'Gemini 3.1 Pro preview';
     case AIProvider.Qwen3Coder:
       return 'Qwen 3 Coder';
+    case AIProvider.Qwen36Plus:
+      return 'Qwen 3.6 Plus';
     case AIProvider.Ministral:
       return 'Ministral 8K';
     default:
@@ -271,8 +246,6 @@ export function ListModels(): AIProvider[] {
     AIProvider.gpt5,
     AIProvider.gpt51Chat,
     AIProvider.Gpt4oMini,
-    AIProvider.LLama31405b,
-    AIProvider.LLama3170b,
     AIProvider.Gpt4o,
     AIProvider.Gpt35turbo,
     AIProvider.gpt41,
@@ -281,12 +254,12 @@ export function ListModels(): AIProvider[] {
     AIProvider.Claude4Sonnet,
     AIProvider.Claude45Sonnet,
     AIProvider.Claude46Opus,
-    AIProvider.LLama3,
-    AIProvider.LLama3290b,
+    AIProvider.Claude47Opus,
     AIProvider.LLama3370b,
     AIProvider.Llama4Maverick,
     AIProvider.Gemini31Pro,
     AIProvider.Grok4,
+    AIProvider.Qwen36Plus,
   ].filter((x) => {
     try {
       var a: AIWrapper | null = null;
@@ -304,16 +277,14 @@ export function ListModels(): AIProvider[] {
         case AIProvider.Claude4Sonnet:
         case AIProvider.Claude45Sonnet:
         case AIProvider.Claude46Opus:
+        case AIProvider.Claude47Opus:
         case AIProvider.DeepSeekV3:
         case AIProvider.DeepSeekV32:
-        case AIProvider.LLama3:
-        case AIProvider.LLama3170b:
-        case AIProvider.LLama31405b:
-        case AIProvider.LLama3290b:
         case AIProvider.LLama3370b:
         case AIProvider.Llama4Maverick:
         case AIProvider.Gemini31Pro:
         case AIProvider.Grok4:
+        case AIProvider.Qwen36Plus:
         case AIProvider.Ministral:
           a = new OpenRouterWrapper(x);
           break;
