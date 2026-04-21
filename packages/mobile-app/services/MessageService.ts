@@ -824,6 +824,41 @@ export class MessageService {
       isError: boolean;
     }> = [];
 
+    // Accumulate assistant tool_calls emitted during this iteration so we can
+    // attach them to the assistant placeholder message before the tool results.
+    // Anthropic requires that each tool_result message have a corresponding
+    // tool_use block in the immediately previous assistant message.
+    const assistantToolCalls: Array<{
+      id: string;
+      type: "function";
+      function: { name: string; arguments: string };
+    }> = [];
+
+    // Artifact operation notes (write/delete) are user-facing summaries. They
+    // must NOT be inserted between the assistant's tool_use and the tool_result
+    // (that breaks Anthropic's pairing rule), so we defer them until after the
+    // tool_result messages are pushed.
+    const deferredArtifactNotes: ApiChatMessage[] = [];
+
+    const ensurePlaceholder = () => {
+      if (placeholderCreated) return;
+      const currentState = store.getState();
+      const currentChat = currentState.chats.chats[chatId];
+      const preLength = currentChat.messages.length;
+      store.dispatch(
+        addMessage({
+          id: chatId,
+          message: {
+            role: "assistant",
+            content: "",
+            signature: undefined,
+          } as ApiChatMessage,
+        })
+      );
+      assistantIndex = preLength;
+      placeholderCreated = true;
+    };
+
     try {
       // Check if already aborted before starting
       if (signal?.aborted) {
@@ -855,24 +890,7 @@ export class MessageService {
         switch (evt.type) {
           case "chunk": {
             // Create placeholder on first chunk
-            if (!placeholderCreated) {
-              const currentState = store.getState();
-              const currentChat = currentState.chats.chats[chatId];
-              const preLength = currentChat.messages.length;
-
-              store.dispatch(
-                addMessage({
-                  id: chatId,
-                  message: {
-                    role: "assistant",
-                    content: "",
-                    signature: undefined,
-                  } as ApiChatMessage,
-                })
-              );
-              assistantIndex = preLength;
-              placeholderCreated = true;
-            }
+            ensurePlaceholder();
 
             const part = typeof evt.data === "string" ? evt.data : "";
             accumulated += part;
@@ -973,6 +991,21 @@ export class MessageService {
 
             // Handle the tool call if chat is associated with a project
             if (chat?.projectId) {
+              // Ensure the assistant placeholder exists even when the LLM
+              // emits a tool_call without any preceding text chunks.
+              ensurePlaceholder();
+
+              // Record the tool_use on the assistant message so the next
+              // request to Anthropic has a valid tool_use/tool_result pairing.
+              assistantToolCalls.push({
+                id: toolCall.id,
+                type: "function",
+                function: {
+                  name: toolCall.name,
+                  arguments: JSON.stringify(toolCall.arguments ?? {}),
+                },
+              });
+
               const result = this.handleArtifactToolCall(toolCall, chat.projectId);
 
               // Log the tool call result
@@ -986,9 +1019,12 @@ export class MessageService {
                 isError: result.isError,
               });
 
-              // Add artifact operation message to chat (for write/delete, not read)
+              // Queue artifact operation note (for write/delete, not read) to
+              // be appended AFTER the tool_result messages — placing it
+              // between the assistant tool_use and the tool_result would
+              // violate Anthropic's pairing rule.
               if (result.operation !== "read") {
-                const artifactMessage: ApiChatMessage = {
+                deferredArtifactNotes.push({
                   role: "assistant",
                   content: result.isError
                     ? `Error: ${result.message}`
@@ -996,8 +1032,7 @@ export class MessageService {
                   timestamp: Date.now(),
                   hidden: result.isError,
                   artifactId: result.isError ? undefined : result.artifactId,
-                };
-                store.dispatch(addMessage({ id: chatId, message: artifactMessage }));
+                });
               }
             }
             break;
@@ -1040,9 +1075,26 @@ export class MessageService {
       cancelFlush();
       if (pendingFlush) flushAccumulated();
 
+      // Attach accumulated tool_calls to the assistant placeholder so the
+      // history sent to the LLM pairs each tool_use with its tool_result.
+      if (
+        assistantToolCalls.length > 0 &&
+        placeholderCreated &&
+        assistantIndex >= 0
+      ) {
+        store.dispatch(
+          updateMessageAtIndex({
+            chatId,
+            messageIndex: assistantIndex,
+            tool_calls: assistantToolCalls,
+          })
+        );
+      }
+
       // If there were tool calls, send results back to AI for chaining
       if (toolCallResults.length > 0 && toolCallLoopCount < MAX_TOOL_CALL_LOOPS) {
-        // Create proper tool messages for each result
+        // Create proper tool messages for each result. These must come
+        // immediately after the assistant message with tool_calls.
         for (const result of toolCallResults) {
           const toolResultMessage: ApiChatMessage = {
             role: "tool",
@@ -1054,6 +1106,12 @@ export class MessageService {
 
           // Add to chat history
           store.dispatch(addMessage({ id: chatId, message: toolResultMessage }));
+        }
+
+        // Append deferred artifact operation notes AFTER tool_result messages
+        // so the tool_use/tool_result pairing isn't broken.
+        for (const note of deferredArtifactNotes) {
+          store.dispatch(addMessage({ id: chatId, message: note }));
         }
 
         // Get updated state with new messages

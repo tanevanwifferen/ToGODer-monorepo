@@ -16,6 +16,80 @@ import {
 const MAX_TOOL_LOOP_ITERATIONS = 10;
 
 /**
+ * Strip tool_result messages whose tool_call_id has no matching tool_use on
+ * the immediately preceding assistant message, and drop tool_calls on the
+ * preceding assistant message that have no matching tool_result right after.
+ *
+ * Anthropic requires that each tool_result block have a corresponding tool_use
+ * block in the previous message. Historical chats created before the
+ * tool_calls field was stored on assistant messages would otherwise keep
+ * failing with "unexpected tool_use_id found in tool_result blocks".
+ */
+function sanitizeToolMessages(
+  prompts: ChatCompletionMessageParam[]
+): ChatCompletionMessageParam[] {
+  const out: ChatCompletionMessageParam[] = [];
+
+  for (let i = 0; i < prompts.length; i++) {
+    const msg = prompts[i];
+
+    if (msg.role === 'tool') {
+      const toolCallId = (msg as any).tool_call_id as string | undefined;
+      const prev = out.length > 0 ? out[out.length - 1] : null;
+      const prevToolCalls =
+        prev && prev.role === 'assistant' && Array.isArray((prev as any).tool_calls)
+          ? ((prev as any).tool_calls as Array<{ id: string }>)
+          : null;
+      const hasMatch =
+        !!toolCallId &&
+        !!prevToolCalls &&
+        prevToolCalls.some((tc) => tc.id === toolCallId);
+      if (!hasMatch) {
+        // Orphan tool_result — drop it to keep the request valid.
+        continue;
+      }
+      out.push(msg);
+      continue;
+    }
+
+    if (msg.role === 'assistant' && Array.isArray((msg as any).tool_calls)) {
+      // Collect the tool_call_ids that actually have results immediately
+      // following this assistant message.
+      const toolCalls = (msg as any).tool_calls as Array<{ id: string }>;
+      const followingIds = new Set<string>();
+      for (let j = i + 1; j < prompts.length; j++) {
+        const next = prompts[j];
+        if (next.role !== 'tool') break;
+        const id = (next as any).tool_call_id as string | undefined;
+        if (id) followingIds.add(id);
+      }
+      const filteredCalls = toolCalls.filter((tc) => followingIds.has(tc.id));
+      if (filteredCalls.length === 0) {
+        // All tool_calls are orphans; strip the tool_calls field. Keep the
+        // message if it has text content, otherwise drop it entirely.
+        const content = (msg as any).content;
+        if (typeof content === 'string' && content.length > 0) {
+          const { tool_calls: _ignored, ...rest } = msg as any;
+          out.push(rest as ChatCompletionMessageParam);
+        }
+        continue;
+      }
+      if (filteredCalls.length !== toolCalls.length) {
+        const cloned: any = { ...msg, tool_calls: filteredCalls };
+        out.push(cloned as ChatCompletionMessageParam);
+        continue;
+      }
+      out.push(msg);
+      continue;
+    }
+
+    out.push(msg);
+  }
+
+  return out;
+}
+
+/**
  * Tool call event data for artifact operations
  */
 export interface ToolCallData {
@@ -69,6 +143,9 @@ export class StreamingChatService {
     user: User | null,
     signal?: AbortSignal
   ): AsyncGenerator<StreamEvent, void, void> {
+    if (Array.isArray(body.prompts)) {
+      body.prompts = sanitizeToolMessages(body.prompts);
+    }
     const totalMessages = Array.isArray(body.prompts) ? body.prompts.length : 0;
     const paywallMessage =
       'Insufficient balance. Please donate through KoFi with this email address to continue using the service.';

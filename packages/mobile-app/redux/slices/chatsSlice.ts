@@ -75,9 +75,11 @@ const chatsSlice = createSlice({
         messageIndex: number;
         content?: string;
         signature?: string;
+        tool_calls?: ApiChatMessage["tool_calls"];
       }>
     ) => {
-      const { chatId, messageIndex, content, signature } = action.payload;
+      const { chatId, messageIndex, content, signature, tool_calls } =
+        action.payload;
       const chat = state.chats[chatId];
       if (!chat) {
         console.warn(`Chat ${chatId} not found when updating message`);
@@ -99,6 +101,8 @@ const chatsSlice = createSlice({
               content: content !== undefined ? content : m.content,
               signature:
                 signature !== undefined ? signature : (m as any).signature,
+              tool_calls:
+                tool_calls !== undefined ? tool_calls : m.tool_calls,
               timestamp: m.timestamp || new Date().getTime(),
             }
           : m
