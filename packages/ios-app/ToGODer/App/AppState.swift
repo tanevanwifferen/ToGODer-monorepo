@@ -45,6 +45,7 @@ final class AppState: ObservableObject {
         self.calendarService = CalendarService()
         self.healthService = HealthService()
         self.memoryService = MemoryService(apiClient: apiClient, storage: storage)
+        self.memoryService.syncService = syncService
         self.personalDataService = PersonalDataService(storage: storage)
         self.memoryService.setPersonalDataService(personalDataService)
         self.memoryLoopService = MemoryLoopService(

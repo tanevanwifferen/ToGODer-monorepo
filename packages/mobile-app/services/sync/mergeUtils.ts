@@ -6,6 +6,7 @@ import {
   SyncableUserSettings,
   SyncableProject,
   SyncableArtifact,
+  SyncableMemory,
 } from "./types";
 
 /**
@@ -386,6 +387,35 @@ export function mergeArtifacts(
 }
 
 /**
+ * Merge memories using per-key LWW with tombstone support.
+ * Missing field on either side is treated as {} (backwards compatible with
+ * older clients that don't include memories in the sync payload).
+ */
+export function mergeMemories(
+  local: Record<string, SyncableMemory> | undefined,
+  remote: Record<string, SyncableMemory> | undefined
+): Record<string, SyncableMemory> {
+  const merged: Record<string, SyncableMemory> = {};
+  const l = local || {};
+  const r = remote || {};
+  const allKeys = new Set([...Object.keys(l), ...Object.keys(r)]);
+
+  for (const key of allKeys) {
+    const winner = mergeDeletable(l[key], r[key], key, "Memory");
+    if (winner) {
+      merged[key] = winner;
+    }
+  }
+
+  const active = Object.values(merged).filter((m) => !m.deleted).length;
+  const deleted = Object.values(merged).filter((m) => m.deleted).length;
+  console.log(
+    `[mergeUtils] mergeMemories result: ${active} active, ${deleted} deleted (tombstones)`
+  );
+  return merged;
+}
+
+/**
  * Merge complete sync payloads
  */
 export function mergeSyncPayloads(
@@ -402,6 +432,7 @@ export function mergeSyncPayloads(
       local.userSettings,
     projects: mergeProjects(local.projects || {}, remote.projects || {}),
     artifacts: mergeArtifacts(local.artifacts || {}, remote.artifacts || {}),
+    memories: mergeMemories(local.memories, remote.memories),
   };
 }
 
@@ -443,6 +474,14 @@ export function hasLocalChanges(
       if (artifact.updatedAt > remoteUpdatedAt) return true;
       if (artifact.deletedAt && artifact.deletedAt > remoteUpdatedAt)
         return true;
+    }
+  }
+
+  // Check memories (including deletions)
+  if (local.memories) {
+    for (const memory of Object.values(local.memories)) {
+      if (memory.updatedAt > remoteUpdatedAt) return true;
+      if (memory.deletedAt && memory.deletedAt > remoteUpdatedAt) return true;
     }
   }
 

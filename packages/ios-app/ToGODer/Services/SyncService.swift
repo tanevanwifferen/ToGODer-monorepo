@@ -14,6 +14,18 @@ struct SyncPayload: Codable {
     var userSettings: SyncableUserSettings
     var projects: [String: SyncableProject]?
     var artifacts: [String: SyncableArtifact]?
+    // Optional so payloads from older clients (without this field) still decode.
+    // Wire-compatible with RN `SyncableMemory` in services/sync/types.ts.
+    var memories: [String: SyncableMemory]?
+}
+
+/// A single long-term memory entry, versioned per key so entries written on
+/// different clients (iOS / RN) merge cleanly via LWW on updatedAt.
+struct SyncableMemory: Codable {
+    var value: String
+    var updatedAt: Double // epoch ms
+    var deleted: Bool?
+    var deletedAt: Double? // epoch ms
 }
 
 struct SyncableChat: Codable {
@@ -365,7 +377,7 @@ final class SyncService: ObservableObject {
     private func buildLocalPayload() -> SyncPayload {
         let localChats = storage.loadChats()
         let settings = storage.loadSettings()
-        let _ = storage.loadMemories() // loaded but not yet included in payload
+        let versionedMemories = storage.loadMemoriesVersioned()
         let projects = storage.loadProjects()
         let artifacts = storage.loadArtifacts()
 
@@ -466,8 +478,53 @@ final class SyncService: ObservableObject {
             ),
             userSettings: syncSettings,
             projects: syncProjects,
-            artifacts: syncArtifacts
+            artifacts: syncArtifacts,
+            memories: versionedMemories
         )
+    }
+
+    // MARK: - Memory merge (matches RN mergeMemories — per-key LWW with tombstones)
+
+    /// Per-key LWW merge with tombstone support. Missing side is treated as `[:]`
+    /// so older clients without the `memories` field merge cleanly.
+    func mergeMemories(
+        _ local: [String: SyncableMemory]?,
+        _ remote: [String: SyncableMemory]?
+    ) -> [String: SyncableMemory] {
+        let l = local ?? [:]
+        let r = remote ?? [:]
+        var merged: [String: SyncableMemory] = [:]
+
+        for key in Set(l.keys).union(r.keys) {
+            if let winner = mergeMemoryEntry(l[key], r[key]) {
+                merged[key] = winner
+            }
+        }
+        return merged
+    }
+
+    private func mergeMemoryEntry(
+        _ local: SyncableMemory?,
+        _ remote: SyncableMemory?
+    ) -> SyncableMemory? {
+        switch (local, remote) {
+        case (nil, nil): return nil
+        case (let l?, nil): return l
+        case (nil, let r?): return r
+        case (let l?, let r?):
+            let localDeleted = l.deleted == true
+            let remoteDeleted = r.deleted == true
+            if localDeleted && remoteDeleted {
+                return (l.deletedAt ?? 0) >= (r.deletedAt ?? 0) ? l : r
+            }
+            if localDeleted {
+                return (l.deletedAt ?? 0) > r.updatedAt ? l : r
+            }
+            if remoteDeleted {
+                return (r.deletedAt ?? 0) > l.updatedAt ? r : l
+            }
+            return l.updatedAt >= r.updatedAt ? l : r
+        }
     }
 
     // MARK: - Message-level LWW Merge (matches RN mergeUtils)
@@ -709,6 +766,15 @@ final class SyncService: ObservableObject {
             storage.saveArtifacts(localArtifacts)
             print("[SyncService] Merged artifacts: \(localArtifacts.count) total")
         }
+
+        // Merge memories per-key LWW with tombstones (matches RN mergeMemories)
+        let mergedMemories = mergeMemories(
+            storage.loadMemoriesVersioned(),
+            remote.memories
+        )
+        storage.saveMemoriesVersioned(mergedMemories)
+        let activeMemoryCount = mergedMemories.values.filter { $0.deleted != true }.count
+        print("[SyncService] Merged memories: \(mergedMemories.count) total, \(activeMemoryCount) active")
 
         print("[SyncService] Merge complete")
     }

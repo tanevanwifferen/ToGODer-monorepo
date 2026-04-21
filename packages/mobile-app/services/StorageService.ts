@@ -1,12 +1,26 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import { validate } from 'uuid';
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { store } from "../redux/store";
+import {
+  deleteMemory,
+  markMemoriesMigrated,
+  selectMemoriesState,
+  setMemory,
+} from "../redux/slices/memoriesSlice";
 
-const KEYS_INDEX_KEY = '@storage_keys_index';
+const LEGACY_KEYS_INDEX_KEY = "@storage_keys_index";
 
+/**
+ * StorageService is the stable key->value API used by chat/message/memory
+ * code. Under the hood it now routes through the Redux `memories` slice so
+ * entries ride on the encrypted sync blob (LWW-merged per key, with
+ * tombstones for deletions).
+ *
+ * A one-time migration moves existing AsyncStorage-backed entries into the
+ * slice on first call, then the legacy keys index is cleared.
+ */
 class StorageService {
   private static instance: StorageService;
-  private keysIndex: string[] = [];
-  private initialized = false;
+  private migrationPromise: Promise<void> | null = null;
 
   private constructor() {}
 
@@ -17,137 +31,105 @@ class StorageService {
     return StorageService.instance;
   }
 
-  private async initialize() {
-    if (this.initialized) return;
-    
-    try {
-      const storedIndex = await AsyncStorage.getItem(KEYS_INDEX_KEY);
-      if (storedIndex) {
-        this.keysIndex = JSON.parse(storedIndex);
-      }
-      this.initialized = true;
-    } catch (error) {
-      console.error('Failed to initialize StorageService:', error);
-      throw error;
-    }
-  }
-
-  private async saveIndex() {
-    try {
-      await AsyncStorage.setItem(KEYS_INDEX_KEY, JSON.stringify(this.keysIndex));
-    } catch (error) {
-      console.error('Failed to save keys index:', error);
-      throw error;
-    }
-  }
-
   private validateKey(key: string): void {
     if (!key) {
-      throw new Error('Key cannot be empty');
+      throw new Error("Key cannot be empty");
     }
-    if (!key.startsWith('/')) {
-      throw new Error('Key must start with /');
+    if (!key.startsWith("/")) {
+      throw new Error("Key must start with /");
     }
   }
 
   public keyIsValid(key: string): boolean {
-    try{
+    try {
       this.validateKey(key);
       return true;
-    }
-    catch(e){
+    } catch (e) {
       return false;
     }
   }
 
   /**
-   * Get a note by its key
-   * @param key - The key of the note (e.g., "/goals/learn-guitar")
-   * @returns The note content or null if not found
+   * Idempotent one-time migration from the legacy AsyncStorage layout into
+   * the Redux memories slice. Subsequent calls are no-ops.
    */
+  private async ensureMigrated(): Promise<void> {
+    const state = selectMemoriesState(store.getState() as any);
+    if (state.migratedAt !== null) return;
+
+    if (!this.migrationPromise) {
+      this.migrationPromise = (async () => {
+        try {
+          const storedIndex = await AsyncStorage.getItem(LEGACY_KEYS_INDEX_KEY);
+          const keys: string[] = storedIndex ? JSON.parse(storedIndex) : [];
+          const now = Date.now();
+
+          for (const key of keys) {
+            if (!this.keyIsValid(key)) continue;
+            try {
+              const value = await AsyncStorage.getItem(key);
+              if (value == null) continue;
+              // Only import if slice doesn't already have a newer entry.
+              const existing = (selectMemoriesState(store.getState() as any))
+                .memories[key];
+              if (existing && existing.updatedAt >= now) continue;
+              store.dispatch(setMemory({ key, value, updatedAt: now }));
+            } catch (e) {
+              console.warn("[StorageService] migrate failed for key", key, e);
+            }
+          }
+
+          // Clean up legacy storage so old values can't resurface.
+          await Promise.all(
+            keys.map((k) => AsyncStorage.removeItem(k).catch(() => {}))
+          );
+          await AsyncStorage.removeItem(LEGACY_KEYS_INDEX_KEY);
+
+          store.dispatch(markMemoriesMigrated(now));
+        } catch (error) {
+          console.error("[StorageService] migration error:", error);
+        }
+      })();
+    }
+
+    await this.migrationPromise;
+  }
+
   public async get(key: string): Promise<string | null> {
-    await this.initialize();
     this.validateKey(key);
-
-    try {
-      return await AsyncStorage.getItem(key);
-    } catch (error) {
-      console.error('Failed to get note:', error);
-      throw error;
-    }
+    await this.ensureMigrated();
+    const entry = (selectMemoriesState(store.getState() as any)).memories[key];
+    if (!entry || entry.deleted) return null;
+    return entry.value;
   }
 
-  /**
-   * Set a note with the given key and content
-   * @param key - The key for the note (e.g., "/goals/learn-guitar")
-   * @param content - The content of the note
-   */
   public async set(key: string, content: string): Promise<void> {
-    await this.initialize();
     this.validateKey(key);
-
-    try {
-      await AsyncStorage.setItem(key, content);
-      
-      if (!this.keysIndex.includes(key)) {
-        this.keysIndex.push(key);
-        await this.saveIndex();
-      }
-    } catch (error) {
-      console.error('Failed to set note:', error);
-      throw error;
-    }
+    await this.ensureMigrated();
+    store.dispatch(setMemory({ key, value: content }));
   }
 
-  /**
-   * Delete a note by its key
-   * @param key - The key of the note to delete
-   */
   public async delete(key: string): Promise<void> {
-    await this.initialize();
     this.validateKey(key);
-
-    try {
-      await AsyncStorage.removeItem(key);
-      
-      const keyIndex = this.keysIndex.indexOf(key);
-      if (keyIndex !== -1) {
-        this.keysIndex.splice(keyIndex, 1);
-        await this.saveIndex();
-      }
-    } catch (error) {
-      console.error('Failed to delete note:', error);
-      throw error;
-    }
+    await this.ensureMigrated();
+    store.dispatch(deleteMemory({ key }));
   }
 
-  /**
-   * List all keys in the storage
-   * @returns Array of all keys
-   */
   public async listKeys(): Promise<string[]> {
-    await this.initialize();
-    return [...this.keysIndex];
+    await this.ensureMigrated();
+    const map = (selectMemoriesState(store.getState() as any)).memories;
+    return Object.entries(map)
+      .filter(([, v]) => !v.deleted)
+      .map(([k]) => k);
   }
 
-  /**
-   * Clear all notes and reset the index
-   * Warning: This will delete all stored notes
-   */
   public async clear(): Promise<void> {
-    await this.initialize();
-    
-    try {
-      // Delete all notes
-      await Promise.all(this.keysIndex.map(key => AsyncStorage.removeItem(key)));
-      
-      // Reset and save the index
-      this.keysIndex = [];
-      await AsyncStorage.removeItem(KEYS_INDEX_KEY);
-      this.initialized = false;
-    } catch (error) {
-      console.error('Failed to clear storage:', error);
-      throw error;
+    await this.ensureMigrated();
+    const map = (selectMemoriesState(store.getState() as any)).memories;
+    for (const [key, entry] of Object.entries(map)) {
+      if (!entry.deleted) {
+        store.dispatch(deleteMemory({ key }));
+      }
     }
   }
 }

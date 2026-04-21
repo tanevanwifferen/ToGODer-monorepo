@@ -10,6 +10,7 @@ final class MemoryService: ObservableObject {
     private let apiClient: APIClient
     private let storage: StorageService
     private weak var personalDataService: PersonalDataService?
+    weak var syncService: SyncService?
 
     init(apiClient: APIClient, storage: StorageService) {
         self.apiClient = apiClient
@@ -69,14 +70,17 @@ final class MemoryService: ObservableObject {
                 if trimmed.isEmpty
                     || trimmed == "null"
                     || trimmed.rangeOfCharacter(from: .letters) == nil {
-                    updated.removeValue(forKey: key)
-                } else {
+                    if updated.removeValue(forKey: key) != nil {
+                        storage.deleteMemoryEntry(key: key)
+                    }
+                } else if updated[key] != trimmed {
                     updated[key] = trimmed
+                    storage.setMemoryEntry(key: key, value: trimmed)
                 }
             }
             memories = updated
             memoryKeys = Array(updated.keys).sorted()
-            storage.saveMemories(updated)
+            syncService?.schedulePush()
 
             // Replace short-term memory with the compressed result so it
             // doesn't keep growing unbounded.
@@ -91,13 +95,15 @@ final class MemoryService: ObservableObject {
     func updateMemory(key: String, value: String) {
         memories[key] = value
         memoryKeys = Array(memories.keys).sorted()
-        storage.saveMemories(memories)
+        storage.setMemoryEntry(key: key, value: value)
+        syncService?.schedulePush()
     }
 
     func deleteMemory(key: String) {
         memories.removeValue(forKey: key)
         memoryKeys = Array(memories.keys).sorted()
-        storage.saveMemories(memories)
+        storage.deleteMemoryEntry(key: key)
+        syncService?.schedulePush()
     }
 
     func getValues(for keys: [String]) -> [String: String] {

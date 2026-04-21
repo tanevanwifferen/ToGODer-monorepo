@@ -44,6 +44,9 @@ const SYNC_TRIGGERING_ACTIONS = [
   "artifacts/deleteArtifact",
   "artifacts/deleteProjectArtifacts",
   "artifacts/moveArtifact",
+  // Memory actions
+  "memories/setMemory",
+  "memories/deleteMemory",
 ];
 
 // Actions that come from sync and should NOT trigger another sync
@@ -53,6 +56,8 @@ const SYNC_INTERNAL_ACTIONS = [
   "userSettings/setUserSettingsFromSync",
   "projects/setProjectsFromSync",
   "artifacts/setArtifactsFromSync",
+  "memories/setMemoriesFromSync",
+  "memories/markMemoriesMigrated",
 ];
 
 /**

@@ -131,9 +131,8 @@ struct ShareChatView: View {
 
         let messages = chat.activeMessages.map { msg in
             SignedMessage(
-                content: msg.content,
-                role: msg.role.rawValue,
-                signature: msg.signature
+                message: .init(role: msg.role.rawValue, content: msg.content),
+                signature: msg.signature ?? ""
             )
         }
 
