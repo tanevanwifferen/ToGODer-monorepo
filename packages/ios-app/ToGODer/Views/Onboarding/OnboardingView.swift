@@ -3,7 +3,6 @@ import SwiftUI
 struct OnboardingView: View {
     @EnvironmentObject var appState: AppState
     @EnvironmentObject var settingsService: SettingsService
-    @EnvironmentObject var chatService: ChatService
     @State private var language = ""
     @State private var welcomeMessage: String?
     @State private var isLoading = false
@@ -101,27 +100,11 @@ struct OnboardingView: View {
 
             Spacer()
 
-            Button {
-                guard !isLoading else { return }
-                isLoading = true
-                Task {
-                    let chatId = await chatService.startExperience(
-                        language: settingsService.settings.language
-                    )
-                    chatService.selectChat(chatId)
-                    isLoading = false
-                    appState.completeOnboarding()
-                }
-            } label: {
-                if isLoading {
-                    ProgressView()
-                } else {
-                    Text("Let's Go")
-                }
+            Button("Let's Go") {
+                appState.completeOnboarding()
             }
             .buttonStyle(.borderedProminent)
             .controlSize(.large)
-            .disabled(isLoading)
 
             Spacer().frame(height: 60)
         }

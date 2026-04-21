@@ -1,4 +1,7 @@
 {
-  "database": "beads.db",
-  "jsonl_export": "issues.jsonl"
+  "database": "dolt",
+  "backend": "dolt",
+  "dolt_mode": "embedded",
+  "dolt_database": "togoder_monorepo",
+  "project_id": "13023763-8706-47a8-8993-f50d4c73d533"
 }
