@@ -23,6 +23,7 @@ export enum AIProvider {
   Claude47Opus = 'anthropic/claude-opus-4.7',
   DeepSeekV3 = 'deepseek/deepseek-chat-v3.1',
   DeepSeekV32 = 'deepseek/deepseek-v3.2',
+  DeepSeekV4Pro = 'deepseek/deepseek-v4-pro',
   LLama3370b = 'meta-llama/llama-3.3-70b-instruct',
   Llama4Maverick = 'meta-llama/llama-4-maverick',
   Grok3Mini = 'x-ai/grok-3-mini',
@@ -50,6 +51,7 @@ export function getAIWrapper(model: AIProvider): AIWrapper {
     case AIProvider.Claude47Opus:
     case AIProvider.DeepSeekV3:
     case AIProvider.DeepSeekV32:
+    case AIProvider.DeepSeekV4Pro:
     case AIProvider.LLama3370b:
     case AIProvider.Llama4Maverick:
     case AIProvider.Grok3Mini:
@@ -93,6 +95,12 @@ export function getTokenCost(model: AIProvider): AICost {
       torReturn = {
         input_cost_per_million: new Decimal('0.27'),
         output_cost_per_million: new Decimal('0.42'),
+      };
+      break;
+    case AIProvider.DeepSeekV4Pro:
+      torReturn = {
+        input_cost_per_million: new Decimal('4.45'),
+        output_cost_per_million: new Decimal('5.5'),
       };
       break;
     case AIProvider.LLama3370b:
@@ -214,6 +222,8 @@ export function GetModelName(provider: AIProvider): string {
       return 'DeepSeek V3';
     case AIProvider.DeepSeekV32:
       return 'DeepSeek V3.2';
+    case AIProvider.DeepSeekV4Pro:
+      return 'DeepSeek V4 Pro';
     case AIProvider.LLama3370b:
       return 'Llama 3.3 70b';
     case AIProvider.Llama4Maverick:
@@ -243,6 +253,7 @@ export function ListModels(): AIProvider[] {
     AIProvider.Ministral,
     AIProvider.DeepSeekV3,
     AIProvider.DeepSeekV32,
+    AIProvider.DeepSeekV4Pro,
     AIProvider.gpt5,
     AIProvider.gpt51Chat,
     AIProvider.Gpt4oMini,
@@ -280,6 +291,7 @@ export function ListModels(): AIProvider[] {
         case AIProvider.Claude47Opus:
         case AIProvider.DeepSeekV3:
         case AIProvider.DeepSeekV32:
+        case AIProvider.DeepSeekV4Pro:
         case AIProvider.LLama3370b:
         case AIProvider.Llama4Maverick:
         case AIProvider.Gemini31Pro:
