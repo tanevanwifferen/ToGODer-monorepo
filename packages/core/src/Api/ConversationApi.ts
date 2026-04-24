@@ -150,8 +150,8 @@ export class ConversationApi {
 
     console.log('memory response', json_response);
     var keys = JSON.parse(content) as { keys: string[] };
-    var existing_keys = Object.keys(body.memories);
-    keys.keys = keys.keys.filter((x) => !existing_keys.includes(x));
+    var existing_keys = Object.keys(body.memories ?? {});
+    keys.keys = (keys.keys ?? []).filter((x) => !existing_keys.includes(x));
     return keys;
   }
 
@@ -201,8 +201,8 @@ export class ConversationApi {
 
     console.log('memory response', content);
     var keys = JSON.parse(content) as { keys: string[] };
-    var existing_keys = Object.keys(existingMemories);
-    keys.keys = keys.keys.filter((x) => !existing_keys.includes(x));
+    var existing_keys = Object.keys(existingMemories ?? {});
+    keys.keys = (keys.keys ?? []).filter((x) => !existing_keys.includes(x));
     return keys;
   }
 
