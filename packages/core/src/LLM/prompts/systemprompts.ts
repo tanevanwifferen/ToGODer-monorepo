@@ -72,7 +72,7 @@ User prompt: "Can you tell me about my goals?"
 Memory object: ["/goals/learning_guitar", "/goals/learning_spanish", "/goals/sleep_earlier"]
 
 You will return:
-{keys: ["/goals/learning_guitar", "/goals/learning_spanish", "/goals/sleep_earlier"]}
+{"keys": ["/goals/learning_guitar", "/goals/learning_spanish", "/goals/sleep_earlier"]}
 
 Don't ask for too much context, try to keep it at a minimum.
 For example, when a five minute chat is requested, and there is already
@@ -83,13 +83,13 @@ the conversation starts going towards learning guitar.
 
 If you don't want to ask for any context, return this:
 
-{keys: []}
+{"keys": []}
 
 Also, if there's multiple keys in learning guitar, like learning_guitar/steps_taken, 
 learning_guitar/struggles, ask for each key separately, including the full property 
 name of the key.
 
-ONLY RETURN A RESPONSE IN THE FORM OF {keys: string[]}, NO FILLER TEXT, NO OTHER STUFF, PURE JSON
+ONLY RETURN A RESPONSE IN THE FORM OF {"keys": string[]}, NO FILLER TEXT, NO OTHER STUFF, PURE JSON
 `;
 
 export const requestForMemoryBasedOnSystemPromptPrompt = `
