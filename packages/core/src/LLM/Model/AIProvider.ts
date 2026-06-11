@@ -21,6 +21,7 @@ export enum AIProvider {
   Claude45Sonnet = 'anthropic/claude-sonnet-4.5',
   Claude46Opus = 'anthropic/claude-opus-4.6',
   Claude47Opus = 'anthropic/claude-opus-4.7',
+  Claude5Fable = 'anthropic/claude-fable-5',
   DeepSeekV3 = 'deepseek/deepseek-chat-v3.1',
   DeepSeekV32 = 'deepseek/deepseek-v3.2',
   DeepSeekV4Pro = 'deepseek/deepseek-v4-pro',
@@ -51,6 +52,7 @@ export function getAIWrapper(model: AIProvider): AIWrapper {
     case AIProvider.Claude45Sonnet:
     case AIProvider.Claude46Opus:
     case AIProvider.Claude47Opus:
+    case AIProvider.Claude5Fable:
     case AIProvider.DeepSeekV3:
     case AIProvider.DeepSeekV32:
     case AIProvider.DeepSeekV4Pro:
@@ -87,6 +89,12 @@ export function getTokenCost(model: AIProvider): AICost {
       torReturn = {
         input_cost_per_million: new Decimal('5'),
         output_cost_per_million: new Decimal('25'),
+      };
+      break;
+    case AIProvider.Claude5Fable:
+      torReturn = {
+        input_cost_per_million: new Decimal('10'),
+        output_cost_per_million: new Decimal('50'),
       };
       break;
     case AIProvider.DeepSeekV3:
@@ -234,6 +242,8 @@ export function GetModelName(provider: AIProvider): string {
       return 'Claude 4.6 Opus';
     case AIProvider.Claude47Opus:
       return 'Claude 4.7 Opus';
+    case AIProvider.Claude5Fable:
+      return 'Claude 5 Fable';
     case AIProvider.DeepSeekV3:
       return 'DeepSeek V3';
     case AIProvider.DeepSeekV32:
@@ -287,6 +297,7 @@ export function ListModels(): AIProvider[] {
     AIProvider.Claude45Sonnet,
     AIProvider.Claude46Opus,
     AIProvider.Claude47Opus,
+    AIProvider.Claude5Fable,
     AIProvider.LLama3370b,
     AIProvider.Llama4Maverick,
     AIProvider.Gemini31Pro,
@@ -311,6 +322,7 @@ export function ListModels(): AIProvider[] {
         case AIProvider.Claude45Sonnet:
         case AIProvider.Claude46Opus:
         case AIProvider.Claude47Opus:
+	case AIProvider.Claude5Fable:
         case AIProvider.DeepSeekV3:
         case AIProvider.DeepSeekV32:
         case AIProvider.DeepSeekV4Pro:

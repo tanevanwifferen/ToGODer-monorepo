@@ -66,6 +66,13 @@ final class ChatService: ObservableObject {
         chats[chatId]?.draftInputText = text
     }
 
+    func assignChat(_ chatId: String, toProject projectId: String?) {
+        guard chats[chatId] != nil else { return }
+        chats[chatId]?.projectId = projectId
+        chats[chatId]?.lastUpdate = Date()
+        save()
+    }
+
     // MARK: - Experiences
 
     func startExperience(language: String) async -> String {
@@ -430,7 +437,7 @@ final class ChatService: ObservableObject {
         }
 
         do {
-            let response: TitleResponse = try await apiClient.post("/title", body: ["prompts": prompts])
+            let response: TitleResponse = try await apiClient.post("/title", body: ["content": prompts])
             chats[chatId]?.title = response.content
             save()
         } catch {

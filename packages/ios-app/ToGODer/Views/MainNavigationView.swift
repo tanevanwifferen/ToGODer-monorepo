@@ -9,6 +9,7 @@ struct MainNavigationView: View {
     @EnvironmentObject var chatService: ChatService
     @EnvironmentObject var authService: AuthService
     @EnvironmentObject var settingsService: SettingsService
+    @EnvironmentObject var projectService: ProjectService
     @State private var searchText = ""
     @State private var showAllChats = false
     private let initialChatLimit = 20
@@ -22,12 +23,9 @@ struct MainNavigationView: View {
                     ChatView(chatId: chatId)
                 }
         }
-        .onChange(of: chatService.currentChatId) { _, newValue in
-            if let chatId = newValue {
-                // Clear and push to avoid stacking multiple chat views
-                navigationPath = NavigationPath()
-                navigationPath.append(chatId)
-            }
+        .onChange(of: chatService.currentChatId) { oldValue, newValue in
+            guard let chatId = newValue, oldValue != newValue else { return }
+            open(chatId: chatId)
         }
         .sheet(item: $appState.deepLinkSharedChatId) { id in
             NavigationStack {
@@ -35,6 +33,12 @@ struct MainNavigationView: View {
                     .environmentObject(chatService)
             }
         }
+    }
+
+    private func open(chatId: String) {
+        chatService.selectChat(chatId)
+        navigationPath = NavigationPath()
+        navigationPath.append(chatId)
     }
 
     private var filteredChats: [Chat] {
@@ -66,7 +70,7 @@ struct MainNavigationView: View {
             Section {
                 Button {
                     let chat = chatService.createChat()
-                    chatService.selectChat(chat.id)
+                    open(chatId: chat.id)
                 } label: {
                     Label("New Chat", systemImage: "plus.circle.fill")
                 }
@@ -75,7 +79,7 @@ struct MainNavigationView: View {
             Section("Conversations") {
                 ForEach(visibleChats) { chat in
                     Button {
-                        chatService.selectChat(chat.id)
+                        open(chatId: chat.id)
                     } label: {
                         VStack(alignment: .leading, spacing: 4) {
                             Text(chat.displayTitle)
@@ -89,6 +93,41 @@ struct MainNavigationView: View {
                         }
                     }
                     .swipeActions(edge: .trailing) {
+                        Button(role: .destructive) {
+                            chatService.deleteChat(chat.id)
+                        } label: {
+                            Label("Delete", systemImage: "trash")
+                        }
+                    }
+                    .contextMenu {
+                        Menu {
+                            Button {
+                                chatService.assignChat(chat.id, toProject: nil)
+                            } label: {
+                                if chat.projectId == nil {
+                                    Label("None", systemImage: "checkmark")
+                                } else {
+                                    Text("None")
+                                }
+                            }
+                            if !projectService.sortedProjects.isEmpty {
+                                Divider()
+                                ForEach(projectService.sortedProjects) { project in
+                                    Button {
+                                        chatService.assignChat(chat.id, toProject: project.id)
+                                    } label: {
+                                        if chat.projectId == project.id {
+                                            Label(project.name, systemImage: "checkmark")
+                                        } else {
+                                            Text(project.name)
+                                        }
+                                    }
+                                }
+                            }
+                        } label: {
+                            Label("Move to Project", systemImage: "folder")
+                        }
+
                         Button(role: .destructive) {
                             chatService.deleteChat(chat.id)
                         } label: {

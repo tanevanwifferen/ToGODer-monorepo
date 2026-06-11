@@ -1,5 +1,6 @@
 import Foundation
 import Combine
+import Security
 
 @MainActor
 final class AuthService: ObservableObject {
@@ -18,11 +19,21 @@ final class AuthService: ObservableObject {
         self.storage = storage
 
         if let token = storage.authToken, let userId = storage.userId {
-            self.isAuthenticated = true
-            self.email = storage.userEmail
-            Task {
-                await apiClient.setToken(token)
-                startTokenRefresh(userId: userId)
+            let storedPassword = AuthKeychain.load()
+            if storedPassword == nil {
+                // Pre-sync-feature install: token exists but no keychain password.
+                // Force re-auth so signIn populates the keychain for sync.
+                storage.authToken = nil
+                storage.userId = nil
+                storage.userEmail = nil
+            } else {
+                self.isAuthenticated = true
+                self.email = storage.userEmail
+                self.password = storedPassword
+                Task {
+                    await apiClient.setToken(token)
+                    startTokenRefresh(userId: userId)
+                }
             }
         }
     }
@@ -43,6 +54,7 @@ final class AuthService: ObservableObject {
             storage.userEmail = email
             self.email = email
             self.password = password
+            AuthKeychain.save(password)
             isAuthenticated = true
             startTokenRefresh(userId: response.userId)
         } catch let apiError as APIError {
@@ -62,6 +74,8 @@ final class AuthService: ObservableObject {
                 "/auth/signUp",
                 body: SignUpRequest(email: email, password: password)
             )
+            self.password = password
+            AuthKeychain.save(password)
         } catch let apiError as APIError {
             error = apiError.errorDescription
         } catch {
@@ -97,6 +111,7 @@ final class AuthService: ObservableObject {
                 body: ChangePasswordRequest(oldPassword: oldPassword, newPassword: newPassword)
             )
             self.password = newPassword
+            AuthKeychain.save(newPassword)
             return true
         } catch let apiError as APIError {
             error = apiError.errorDescription
@@ -115,6 +130,7 @@ final class AuthService: ObservableObject {
         storage.userId = nil
         storage.userEmail = nil
         password = nil
+        AuthKeychain.delete()
         email = nil
         isAuthenticated = false
     }
@@ -150,3 +166,54 @@ final class AuthService: ObservableObject {
 }
 
 private struct EmptyBody: Codable {}
+
+// MARK: - Keychain storage for sync encryption password
+
+private enum AuthKeychain {
+    private static let service = "click.togoder.ios"
+    private static let account = "sync.password"
+
+    static func save(_ password: String) {
+        guard let data = password.data(using: .utf8) else { return }
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: account,
+        ]
+        SecItemDelete(query as CFDictionary)
+        var attrs = query
+        attrs[kSecValueData as String] = data
+        attrs[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
+        let status = SecItemAdd(attrs as CFDictionary, nil)
+        if status != errSecSuccess {
+            print("[AuthKeychain] ERROR: save failed with status \(status)")
+        }
+    }
+
+    static func load() -> String? {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: account,
+            kSecReturnData as String: true,
+            kSecMatchLimit as String: kSecMatchLimitOne,
+        ]
+        var item: CFTypeRef?
+        let status = SecItemCopyMatching(query as CFDictionary, &item)
+        guard status == errSecSuccess,
+              let data = item as? Data,
+              let password = String(data: data, encoding: .utf8) else {
+            return nil
+        }
+        return password
+    }
+
+    static func delete() {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: account,
+        ]
+        SecItemDelete(query as CFDictionary)
+    }
+}

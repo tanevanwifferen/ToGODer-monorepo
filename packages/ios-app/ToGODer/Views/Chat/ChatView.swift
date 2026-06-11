@@ -10,6 +10,7 @@ struct ChatView: View {
     @State private var editingMessageId: String?
     @State private var editText = ""
     @State private var showShareSheet = false
+    @State private var showVoiceChat = false
     @FocusState private var isInputFocused: Bool
 
     private var chat: Chat? {
@@ -52,6 +53,9 @@ struct ChatView: View {
             if let chat {
                 ShareChatView(chat: chat, apiClient: chatService.apiClient)
             }
+        }
+        .fullScreenCover(isPresented: $showVoiceChat) {
+            VoiceChatView(chatId: chatId)
         }
         .onAppear {
             inputText = chat?.draftInputText ?? ""
@@ -103,6 +107,11 @@ struct ChatView: View {
                     }
                 }
                 .padding()
+            }
+            .onAppear {
+                if let lastId = chat?.activeMessages.last?.id {
+                    proxy.scrollTo(lastId, anchor: .bottom)
+                }
             }
             .onChange(of: chat?.messages.count) { _, _ in
                 withAnimation {
@@ -192,6 +201,17 @@ struct ChatView: View {
                 .lineLimit(1...6)
                 .focused($isInputFocused)
                 .onSubmit { sendMessage() }
+
+            if inputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                Button {
+                    showVoiceChat = true
+                } label: {
+                    Image(systemName: "waveform.circle.fill")
+                        .font(.title2)
+                        .foregroundStyle(.blue)
+                }
+                .disabled(chatService.isStreaming)
+            }
 
             Button {
                 sendMessage()
