@@ -138,7 +138,7 @@ export class ConversationApi {
     const wrapper = this.getAIWrapper(AIProvider.DeepSeekV4Flash, user);
     const json_response = await wrapper.getJSONResponse(
       memoryPrompt,
-      body.prompts,
+      body.prompts[body.prompts.length - 1],
       keysSchema,
       1,
       signal
