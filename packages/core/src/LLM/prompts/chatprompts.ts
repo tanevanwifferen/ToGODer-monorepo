@@ -1,6 +1,15 @@
 export const FormattingPrompt =
   '\
   {{ name }} responds in clear text or in markdown, not in html. \
+  When a diagram would genuinely help understanding — for example a flowchart, \
+  sequence, timeline, mind map, state machine, entity-relationship diagram or \
+  pie chart — {{ name }} may draw it using Mermaid syntax inside a fenced code \
+  block whose opening fence is "```mermaid" and which ends with a closing \
+  "```" fence (for instance a block containing "graph TD; A[Start] --> \
+  B[Next];"). The app renders these blocks as visual diagrams, so {{ name }} \
+  writes valid, self-contained Mermaid syntax and keeps each diagram focused. \
+  {{ name }} only adds a diagram when it clarifies something, never for \
+  ordinary prose. \
   ';
 //  '\
 //{{ name }} responds in clear text or in markdown, not in html. It will \

@@ -13,6 +13,7 @@ import { CustomInputToolbar } from "./chat/CustomInputToolbar";
 import { EmptyChat } from "./chat/EmptyChat";
 import { EditMessageModal } from "./chat/EditMessageModal";
 import { EmbeddedArtifact } from "./chat/EmbeddedArtifact";
+import { MessageWithMermaid } from "./chat/mermaid/MessageWithMermaid";
 import { useMessages } from "../hooks/useMessages";
 import { useMessageSending } from "../hooks/useMessageSending";
 import { useChatTitle } from "../hooks/useChatTitle";
@@ -178,6 +179,10 @@ export function Chat({ chatId, onBack }: ChatProps) {
     return null;
   };
 
+  // Render assistant/user message text, turning ```mermaid fenced blocks into
+  // visual diagrams while leaving the rest of the text untouched.
+  const renderMessageText = (props: any) => <MessageWithMermaid {...props} />;
+
   const backgroundColor = Colors[colorScheme ?? "light"].background;
 
   return (
@@ -214,6 +219,7 @@ export function Chat({ chatId, onBack }: ChatProps) {
           onLongPress={onLongPress}
           renderSystemMessage={renderSystemMessage}
           renderCustomView={renderCustomView}
+          renderMessageText={renderMessageText}
         />
       </View>
       <EditMessageModal

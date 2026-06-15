@@ -18,6 +18,7 @@ import { selectUserId } from '../../redux/slices/authSlice';
 import { Colors } from '../../constants/Colors';
 import { ThemedText } from '../ThemedText';
 import { ThemedView } from '../ThemedView';
+import { MermaidMessageContent } from '../chat/mermaid/MermaidMessageContent';
 import { SharedConversation } from '../../model/ShareTypes';
 import { ShareApiClient } from '../../apiClients/ShareApiClient';
 import { addChat, setCurrentChat } from '../../redux/slices/chatsSlice';
@@ -162,9 +163,10 @@ export function SharedConversationView({ conversation, onBack }: SharedConversat
               <ThemedText style={styles.messageRole}>
                 {msg.message.role === 'assistant' ? 'Assistant' : 'User'}
               </ThemedText>
-              <ThemedText style={styles.messageContent}>
-                {msg.message.content}
-              </ThemedText>
+              <MermaidMessageContent
+                content={msg.message.content}
+                textStyle={styles.messageContent}
+              />
             </View>
           ))}
         </View>

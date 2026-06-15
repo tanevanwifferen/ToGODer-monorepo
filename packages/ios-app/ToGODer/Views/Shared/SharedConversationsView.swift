@@ -121,12 +121,7 @@ struct SharedChatDetailView: View {
                     HStack(alignment: .top) {
                         if msg.role == "user" { Spacer(minLength: 60) }
 
-                        Text(msg.content)
-                            .textSelection(.enabled)
-                            .padding(.horizontal, 14)
-                            .padding(.vertical, 10)
-                            .background(msg.role == "user" ? Color.blue : Color(.systemGray6))
-                            .clipShape(RoundedRectangle(cornerRadius: 16))
+                        MermaidMessageText(content: msg.content, isUser: msg.role == "user")
 
                         if msg.role != "user" { Spacer(minLength: 60) }
                     }
