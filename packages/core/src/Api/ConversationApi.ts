@@ -12,7 +12,7 @@ import {
   lessBloatPrompt,
   outsideBoxPrompt,
 } from '../LLM/prompts/chatprompts';
-import { PromptList } from '../LLM/prompts/promptlist';
+import { PromptList, resolvePromptListItem } from '../LLM/prompts/promptlist';
 import {
   GetTitlePrompt,
   requestForMemoryPrompt,
@@ -222,15 +222,9 @@ export class ConversationApi {
     let systemPrompt =
       input.customSystemPrompt ?? PromptList['/default'].prompt;
 
-    const firstPrompt = (<string>input.prompts[0]?.content)?.split(' ')[0];
-    if (firstPrompt in PromptList) {
-      systemPrompt = PromptList[firstPrompt].prompt;
-    } else if (
-      Object.values(PromptList).some((x) => x.aliases?.includes(firstPrompt))
-    ) {
-      systemPrompt = Object.values(PromptList).find((x) =>
-        x.aliases?.includes(firstPrompt)
-      )?.prompt!;
+    const command = resolvePromptListItem(input.prompts);
+    if (command) {
+      systemPrompt = command.prompt;
     }
 
     if (input.persona && String(input.persona).length > 0) {

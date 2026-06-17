@@ -7,6 +7,7 @@ import { ConversationApi } from '../Api/ConversationApi';
 import { AIProvider, getDefaultModel } from '../LLM/Model/AIProvider';
 import { StreamChunk } from '../LLM/AIWrapper';
 import { ToolRegistry } from '../Tools/ToolRegistry';
+import { resolvePromptListItem } from '../LLM/prompts/promptlist';
 import {
   ChatCompletionMessageParam,
   ChatCompletionTool,
@@ -14,6 +15,12 @@ import {
 
 /** Maximum number of backend tool execution iterations before stopping */
 const MAX_TOOL_LOOP_ITERATIONS = 10;
+
+/**
+ * Higher iteration cap for agentic commands (e.g. /goal): the model is allowed
+ * many self-directed tool/distill steps before producing a final answer.
+ */
+const MAX_AGENTIC_LOOP_ITERATIONS = 50;
 
 /**
  * Strip tool_result messages whose tool_call_id has no matching tool_use on
@@ -146,6 +153,16 @@ export class StreamingChatService {
     if (Array.isArray(body.prompts)) {
       body.prompts = sanitizeToolMessages(body.prompts);
     }
+
+    // Agentic commands (e.g. /goal) run the model as an autonomous, multi-step
+    // research agent. They get a much larger tool-loop budget and the full set
+    // of tools a normal chat has — including the library, which we force on so
+    // the agent can always reach for it.
+    const isAgentic = !!resolvePromptListItem(body.prompts)?.agentic;
+    if (isAgentic) {
+      body.libraryIntegrationEnabled = true;
+    }
+
     const totalMessages = Array.isArray(body.prompts) ? body.prompts.length : 0;
     const paywallMessage =
       'Insufficient balance. Please donate through KoFi with this email address to continue using the service.';
@@ -218,7 +235,10 @@ export class StreamingChatService {
       registry.getDefinitionsForRequest(body).length > 0;
 
     if (hasTools) {
-      yield* this.streamWithToolLoop(body, user, signal);
+      const maxIterations = isAgentic
+        ? MAX_AGENTIC_LOOP_ITERATIONS
+        : MAX_TOOL_LOOP_ITERATIONS;
+      yield* this.streamWithToolLoop(body, user, signal, maxIterations);
     } else {
       yield* this.streamSimple(body, user, signal);
     }
@@ -265,7 +285,8 @@ export class StreamingChatService {
   private async *streamWithToolLoop(
     body: ChatRequest,
     user: User | null,
-    signal?: AbortSignal
+    signal?: AbortSignal,
+    maxIterations: number = MAX_TOOL_LOOP_ITERATIONS
   ): AsyncGenerator<StreamEvent, void, void> {
     const registry = ToolRegistry.getInstance();
 
@@ -276,7 +297,7 @@ export class StreamingChatService {
     const prompts: ChatCompletionMessageParam[] = [...body.prompts];
     let full = '';
 
-    for (let iteration = 0; iteration < MAX_TOOL_LOOP_ITERATIONS; iteration++) {
+    for (let iteration = 0; iteration < maxIterations; iteration++) {
       // Create a request copy with current prompts and merged tools
       const iterationBody: ChatRequest = {
         ...body,

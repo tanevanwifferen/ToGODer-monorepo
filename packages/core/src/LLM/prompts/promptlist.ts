@@ -17,14 +17,22 @@ import {
   ConnectionFacilitatorPrompt,
   RecursionPrompt,
   WakeUpPrompt,
+  GoalPrompt,
 } from './chatprompts';
 import { ExperiencePrompt } from './experienceprompts';
+import { ChatCompletionMessageParam } from 'openai/resources/index';
 
 interface PromptListItem {
   prompt: string;
   description: string;
   display: boolean;
   aliases?: string[];
+  /**
+   * When true, this command runs as an autonomous multi-step agent: the
+   * backend tool-execution loop is allowed many more iterations so the model
+   * can repeatedly call tools, distill, and continue towards the goal.
+   */
+  agentic?: boolean;
 }
 
 export const PromptList: Record<string, PromptListItem> = {
@@ -55,6 +63,16 @@ export const PromptList: Record<string, PromptListItem> = {
     prompt: RecursionPrompt,
     description: 'A recursive prompt. Beware.',
     display: true,
+  },
+  '/goal': {
+    prompt: GoalPrompt,
+    description:
+      'Set a goal or question and let the AI work towards it autonomously \
+      over many steps — repeatedly querying the library, distilling what it \
+      finds, and digging deeper — before giving a synthesised answer.',
+    display: true,
+    aliases: ['/research', '/deepdive'],
+    agentic: true,
   },
   '/growth': {
     prompt: PersonalGrowthPrompt,
@@ -169,3 +187,26 @@ export const PromptList: Record<string, PromptListItem> = {
     aliases: ['/morning', '/morningRoutine'],
   },
 };
+
+/**
+ * Resolve the PromptList command that a conversation is using, based on the
+ * leading slash-command token of its first message (e.g. "/goal what is...").
+ * Matches both canonical keys and aliases. Returns undefined when no command
+ * is present.
+ */
+export function resolvePromptListItem(
+  prompts: ChatCompletionMessageParam[] | undefined
+): PromptListItem | undefined {
+  const firstContent = prompts?.[0]?.content;
+  if (typeof firstContent !== 'string') {
+    return undefined;
+  }
+  const firstToken = firstContent.split(' ')[0];
+  if (!firstToken) {
+    return undefined;
+  }
+  if (firstToken in PromptList) {
+    return PromptList[firstToken];
+  }
+  return Object.values(PromptList).find((x) => x.aliases?.includes(firstToken));
+}
