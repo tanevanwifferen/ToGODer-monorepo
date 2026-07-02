@@ -50,13 +50,13 @@ final class SettingsService: ObservableObject {
         let previousDefault = config.previousDefaultModel ?? ""
         let currentModel = settings.model
         // Only update if the server default changed AND the user hasn't
-        // explicitly chosen a different model (still on the old default,
-        // or the current model isn't in the available list at all).
-        let currentIsInList = availableModels.contains { $0.model == currentModel }
+        // explicitly chosen a different model (still on the old default).
+        // An explicitly chosen model is never overwritten here — resetting
+        // it stamps updatedAt and the reset then syncs to every device.
         let userStillOnOldDefault = currentModel.isEmpty || currentModel == previousDefault
         if !defaultModel.isEmpty,
            defaultModel != currentModel,
-           userStillOnOldDefault || !currentIsInList {
+           userStillOnOldDefault {
             updateSettings { $0.model = defaultModel }
         }
     }

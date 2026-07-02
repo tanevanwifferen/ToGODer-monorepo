@@ -112,6 +112,9 @@ app.get('/api/global_config', (req, res) => {
       .trim()
       .toLowerCase() === 'true';
   const librarianApiUrl = process.env.LIBRARIAN_API_URL || '';
+  // When the default model changes, set PREVIOUS_DEFAULT_MODEL to the old
+  // default so clients can migrate users who never picked a model themselves.
+  const previousDefaultModel = process.env.PREVIOUS_DEFAULT_MODEL || '';
   res.json({
     donateOptions: donateOptions,
     quote: quote,
@@ -119,6 +122,7 @@ app.get('/api/global_config', (req, res) => {
     showLogin,
     libraryIntegrationEnabled,
     librarianApiUrl,
+    previousDefaultModel,
   });
 });
 

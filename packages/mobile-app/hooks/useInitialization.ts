@@ -103,9 +103,9 @@ export function useInitialization() {
       }
 
       if (isAuthenticated) {
-        // Start auth services with the fresh token
+        // Start auth services with the fresh token (startAuthServices
+        // already registers the app-focus handler)
         AuthService.startAuthServices();
-        AuthService.startAppFocusHandler();
         // Start memory loop service
         MemoryLoopService.startMemoryLoop();
         // Fetch initial balance if authenticated

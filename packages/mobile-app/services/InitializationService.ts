@@ -6,14 +6,10 @@
  */
 import { store } from '../redux/store';
 import { ApiClient } from '../apiClients/ApiClient';
-import { AuthService } from './AuthService';
-import { BalanceService } from './BalanceService';
 import { SyncService } from './SyncService';
 import { setGlobalConfig } from '../redux/slices/globalConfigSlice';
 import { addChat, setCurrentChat } from '../redux/slices/chatsSlice';
 import * as Calendar from 'expo-calendar';
-import { AuthApiClient } from '../apiClients/AuthApiClient';
-import { setAuthData } from '../redux/slices/authSlice';
 import { RouteService } from './RouteService';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -73,33 +69,12 @@ export class InitializationService {
       }));
     }
 
-    // Start token refresh service if user is authenticated
-    let isAuthenticated = InitializationService.selectIsAuthenticated(state);
-    const { email, password } = InitializationService.selectCredentials(state);
-    
-    // If we have credentials, always get a fresh token on app start
-    if (email && password) {
-      try {
-        console.log("Fetching fresh token with stored credentials");
-        const response = await AuthApiClient.login(email, password);
-        store.dispatch(setAuthData({ ...response }));
-        
-        // Store credentials in AuthService for potential re-authentication
-        AuthService.storeCredentials(email, password);
-        
-        isAuthenticated = true;
-      } catch (error) {
-        console.error("Failed to authenticate with stored credentials:", error);
-      }
-    }
-    
-    if (isAuthenticated) {
-      // Start auth services with the fresh token
-      AuthService.startAuthServices();
-      AuthService.startAppFocusHandler();
-      // Fetch initial balance if authenticated
-      BalanceService.getInstance().fetchBalance();
+    // Login, auth services, and balance are handled by the
+    // useInitialization hook; this service only initializes sync so the
+    // two init paths don't race each other with duplicate logins.
+    const isAuthenticated = InitializationService.selectIsAuthenticated(state);
 
+    if (isAuthenticated) {
       // Initialize sync service if we have credentials
       const currentState = store.getState();
       const userId = currentState.auth.userId;
@@ -113,18 +88,5 @@ export class InitializationService {
         }
       }
     }
-
-    // Subscribe to auth state changes
-    store.subscribe(() => {
-      const currentState = store.getState();
-      const currentIsAuthenticated = InitializationService.selectIsAuthenticated(currentState);
-      
-      if (currentIsAuthenticated && !AuthService.RefreshInterval) {
-        AuthService.startTokenRefreshService();
-        // Fetch balance when user becomes authenticated
-      } else {
-        AuthService.stopTokenRefreshService();
-      }
-    });
   }
 }

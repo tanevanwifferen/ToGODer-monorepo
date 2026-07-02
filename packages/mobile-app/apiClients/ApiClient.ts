@@ -49,9 +49,19 @@ export class ApiClient {
           } as RateLimitError);
         }
         console.error("API error:", error);
-        return Promise.reject(
-          (error as any)?.error ?? (error as any).response?.data
-        );
+        // Preserve the HTTP status on the rejection so callers can tell
+        // real auth failures (401/403) apart from transient errors.
+        const status = axios.isAxiosError(error)
+          ? error.response?.status
+          : undefined;
+        const payload =
+          (error as any)?.error ?? (error as any).response?.data;
+        const rejection: any =
+          payload && typeof payload === "object"
+            ? payload
+            : new String(payload ?? "Network request failed");
+        rejection.status = status;
+        return Promise.reject(rejection);
       }
     );
   }

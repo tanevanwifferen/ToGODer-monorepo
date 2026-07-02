@@ -71,7 +71,9 @@ export class AuthService {
       clearInterval(this.refreshInterval);
       this.refreshInterval = null;
     }
-    this.clearStoredCredentials();
+    // Credentials are cleared explicitly on logout (useAuth), not here:
+    // this method also runs on transient auth-state churn and wiping the
+    // credentials would make the next token refresh log the user out.
   }
 
   /**
@@ -97,9 +99,14 @@ export class AuthService {
       try {
         const response = await AuthApiClient.refreshToken(userId);
         store.dispatch(setAuthData(response));
-      } catch (error) {
-        // If refresh fails, try to re-authenticate
-        await this.tryReAuthenticate();
+      } catch (error: any) {
+        const status = error?.status ?? error?.response?.status;
+        if (status === 401 || status === 403) {
+          // Token rejected by the server: fall back to a full re-login
+          await this.tryReAuthenticate(state.auth.email, state.auth.password);
+        }
+        // Any other failure (network, 429, 5xx) is transient — keep the
+        // session and let the next interval retry.
       }
     }
   }
@@ -120,11 +127,19 @@ export class AuthService {
       try {
         const response = await AuthApiClient.login(useEmail, usePassword);
         store.dispatch(setAuthData(response));
-      } catch (error) {
-        store.dispatch(clearAuth());
-        console.error("Re-authentication failed:", error);
+      } catch (error: any) {
+        const status = error?.status ?? error?.response?.status;
+        if (status === 401 || status === 403) {
+          // The server explicitly rejected the credentials
+          store.dispatch(clearAuth());
+          console.error("Re-authentication rejected, logging out:", error);
+        } else {
+          // Transient failure (offline, rate limit, server error): keep
+          // the existing session and retry on the next refresh cycle.
+          console.error("Re-authentication failed transiently:", error);
+        }
       }
-    } else {
+    } else if (!store.getState().auth.token) {
       store.dispatch(clearAuth());
     }
   }
@@ -149,13 +164,16 @@ export class AuthService {
    * Sets up app focus monitoring
    */
   static startAppFocusHandler() {
+    // Remove any existing listener first so repeated calls don't stack
+    // duplicate handlers (each one used to fire its own login request).
+    this.stopAppFocusHandler();
     this.appStateSubscription = AppState.addEventListener(
       "change",
       (nextAppState) => {
         if (nextAppState === "active") {
-          // When app becomes active, get a fresh token if possible
-          const state = store.getState();
-          this.tryReAuthenticate(state.auth.email, state.auth.password);
+          // Refresh the token only if it's stale; a full re-login on every
+          // foreground caused spurious logouts on transient failures.
+          this.checkAndRefreshToken();
         }
       }
     );
