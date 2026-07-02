@@ -1,4 +1,5 @@
 import express, { NextFunction, Request, Response } from 'express';
+import cors from 'cors';
 import path from 'path';
 import rateLimit from 'express-rate-limit';
 import { GetChatRouter } from './Web/ChatController';
@@ -25,6 +26,26 @@ const port = process.env.PORT || 3000;
 
 // Trust the first proxy to allow the app to get the client's IP address
 app.set('trust proxy', 1);
+
+// Allow cross-origin requests from the production and beta frontends
+const allowedOrigins = [
+  'https://togoder.click',
+  'https://www.togoder.click',
+  'https://beta.togoder.click',
+];
+app.use(
+  cors({
+    origin: (origin, callback) => {
+      // Allow non-browser requests (no Origin header) and same-origin requests
+      if (!origin || allowedOrigins.includes(origin)) {
+        callback(null, true);
+      } else {
+        callback(null, false);
+      }
+    },
+    credentials: true,
+  })
+);
 
 // Rate limiter to prevent abuse
 const messageLimiter = rateLimit({
