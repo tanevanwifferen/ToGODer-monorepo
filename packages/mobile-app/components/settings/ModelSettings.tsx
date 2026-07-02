@@ -24,11 +24,6 @@ const ModelSettings = () => {
   const assistant_name = useSelector(selectAssistantName);
   const isAuthenticated = useSelector(selectIsAuthenticated);
 
-  // When logged out, only allow the default (first) model
-  const displayModels = isAuthenticated
-    ? availableModels
-    : availableModels.slice(0, 1);
-
   const communicationStyles = [
     { value: ChatRequestCommunicationStyle.Default, label: 'Default' },
     { value: ChatRequestCommunicationStyle.LessBloat, label: 'Less Bloat' },
@@ -40,33 +35,36 @@ const ModelSettings = () => {
 
   return (
     <View style={[styles.container, { backgroundColor: theme.background }]}>
-      <View style={styles.section}>
-        <Text style={[styles.label, { color: theme.text }]}>Model</Text>
-        <Picker
-          selectedValue={isAuthenticated ? model : (availableModels[0]?.model ?? model)}
-          onValueChange={(value: string) => dispatch(setModel(value))}
-          enabled={isAuthenticated}
-          style={[styles.picker, {
-            backgroundColor: theme.background,
-            color: theme.text,
-            borderColor: theme.icon
-          }]}
-        >
-          {displayModels.map((modelItem: { model: string; title: string }) => (
-            <Picker.Item
-              key={modelItem.model}
-              label={modelItem.title}
-              value={modelItem.model}
-              color={theme.text}
-            />
-          ))}
-        </Picker>
-        {!isAuthenticated && (
+      {isAuthenticated ? (
+        <View style={styles.section}>
+          <Text style={[styles.label, { color: theme.text }]}>Model</Text>
+          <Picker
+            selectedValue={model}
+            onValueChange={(value: string) => dispatch(setModel(value))}
+            style={[styles.picker, {
+              backgroundColor: theme.background,
+              color: theme.text,
+              borderColor: theme.icon
+            }]}
+          >
+            {availableModels.map((modelItem: { model: string; title: string }) => (
+              <Picker.Item
+                key={modelItem.model}
+                label={modelItem.title}
+                value={modelItem.model}
+                color={theme.text}
+              />
+            ))}
+          </Picker>
+        </View>
+      ) : (
+        <View style={styles.section}>
+          <Text style={[styles.label, { color: theme.text }]}>Model</Text>
           <Text style={[styles.warningText, { color: theme.icon }]}>
-            The free model is selected. Create an account to use other models.
+            You're using the free model. Create an account to choose between models.
           </Text>
-        )}
-      </View>
+        </View>
+      )}
 
       <View style={styles.section}>
         <Text style={[styles.label, { color: theme.text }]}>Communication Style</Text>

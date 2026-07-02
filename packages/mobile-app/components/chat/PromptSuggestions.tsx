@@ -1,6 +1,8 @@
 import React from 'react';
 import { StyleSheet, ScrollView, TouchableOpacity, Text, View, useColorScheme } from 'react-native';
+import { useSelector } from 'react-redux';
 import { Colors } from '../../constants/Colors';
+import { selectIsAuthenticated } from '../../redux/slices/authSlice';
 import CustomCheckbox from '../ui/CustomCheckbox';
 
 interface PromptSuggestionsProps {
@@ -20,6 +22,14 @@ export function PromptSuggestions({
 }: PromptSuggestionsProps) {
   const colorScheme = useColorScheme();
   const theme = Colors[colorScheme ?? 'light'];
+  const isAuthenticated = useSelector(selectIsAuthenticated);
+
+  const showLibraryToggle = isAuthenticated;
+  const showPromptsList = showPrompts && prompts.length > 0;
+
+  if (!showLibraryToggle && !showPromptsList) {
+    return null;
+  }
 
   return (
     <View
@@ -31,20 +41,22 @@ export function PromptSuggestions({
         }
       ]}
     >
-      <View style={styles.toggleRow}>
-        <CustomCheckbox
-          value={libraryIntegrationEnabled}
-          onValueChange={onToggleLibraryIntegration}
-          color={theme.tint}
-          colorScheme={colorScheme}
-        />
-        <Text style={[styles.toggleLabel, { color: theme.text }]}>
-          Library Integration
-        </Text>
-      </View>
+      {showLibraryToggle && (
+        <View style={styles.toggleRow}>
+          <CustomCheckbox
+            value={libraryIntegrationEnabled}
+            onValueChange={onToggleLibraryIntegration}
+            color={theme.tint}
+            colorScheme={colorScheme}
+          />
+          <Text style={[styles.toggleLabel, { color: theme.text }]}>
+            Library Integration
+          </Text>
+        </View>
+      )}
 
-      {showPrompts && prompts.length > 0 && (
-        <ScrollView style={styles.promptsList}>
+      {showPromptsList && (
+        <ScrollView style={[styles.promptsList, !showLibraryToggle && styles.promptsListNoToggle]}>
           {prompts.map(([key, prompt], index) => (
             <TouchableOpacity
               key={key}
@@ -96,6 +108,9 @@ const styles = StyleSheet.create({
   promptsList: {
     maxHeight: 200,
     marginTop: 12,
+  },
+  promptsListNoToggle: {
+    marginTop: 0,
   },
   promptItem: {
     flexDirection: 'row',
