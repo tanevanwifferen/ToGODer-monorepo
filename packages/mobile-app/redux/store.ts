@@ -95,6 +95,9 @@ const migrateSettings = (state: any) => {
 const persistConfig: PersistConfig<RootState> = {
   key: "root",
   storage: AsyncStorage,
+  // Batch writes: the chats slice can be large, and serializing it on every
+  // action (e.g. streaming message updates) stalls the JS thread.
+  throttle: 1000,
   whitelist: [
     "globalConfig",
     "chats",

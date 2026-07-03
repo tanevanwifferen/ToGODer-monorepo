@@ -72,6 +72,7 @@ export function Chat({ chatId, onBack }: ChatProps) {
   // Get message input state and handlers using the consolidated hook
   const {
     inputText,
+    inputTextRef,
     setInputText,
     showPrompts,
     filteredPrompts,
@@ -79,6 +80,21 @@ export function Chat({ chatId, onBack }: ChatProps) {
     handleSelectPrompt,
     clearInput
   } = useMessageInput(chatId, giftedMessages);
+
+  // Send from the ref: it is updated synchronously on every keystroke, while
+  // the rendered inputText prop can be a render behind when Send is tapped
+  // right after typing — which used to cut off the last characters.
+  const handleSendText = useCallback(
+    (fallbackText?: string) => {
+      const text = inputTextRef.current || fallbackText;
+      if (text) {
+        sendApiMessage(text);
+        clearInput();
+      }
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [sendApiMessage]
+  );
 
   // Get library integration state and handler
   const { libraryIntegrationEnabled, handleLibraryIntegrationToggle } = useLibraryIntegration();
@@ -144,10 +160,7 @@ export function Chat({ chatId, onBack }: ChatProps) {
     <CustomInputToolbar
       {...toolbarProps}
       onSend={(messages: IMessage[]) => {
-        if (messages[0]) {
-          sendApiMessage(messages[0].text);
-          clearInput();
-        }
+        handleSendText(messages[0]?.text);
       }}
       showPrompts={showPrompts}
       inputText={inputText}
@@ -191,10 +204,7 @@ export function Chat({ chatId, onBack }: ChatProps) {
         <GiftedChat
           messages={giftedMessages}
           onSend={(messages) => {
-            if (messages[0]) {
-              sendApiMessage(messages[0].text);
-              clearInput();
-            }
+            handleSendText(messages[0]?.text);
           }}
           user={{
             _id: 1,

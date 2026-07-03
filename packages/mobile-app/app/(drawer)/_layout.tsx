@@ -16,15 +16,12 @@ import { EditPasscodeModal } from "../../components/passcode/PasscodeModal";
 import { LockScreen } from "../../components/passcode/LockScreen";
 import { ExternalDrawerLink } from "../../components/drawer/ExternalDrawerLink";
 import { ProjectSelector } from "../../components/drawer/ProjectSelector";
-import { useMemoryCheck } from "../../hooks/useMemoryCheck";
-import { DreamingView } from "../../components/DreamingView";
 
 export default function DrawerLayout() {
   const colorScheme = useColorScheme();
   const donateOptions = useSelector(selectDonateOptions);
   const showLogin = useSelector(selectShowLogin);
   const { showPasscodeModal, setShowPasscodeModal, isLocked } = usePasscode();
-  const { isDreaming } = useMemoryCheck();
 
   // Skip passcode check on web platform
   if (Platform.OS !== 'web' && isLocked) {
@@ -131,7 +128,6 @@ export default function DrawerLayout() {
         visible={showPasscodeModal}
         onClose={() => setShowPasscodeModal(false)}
       />
-      {isDreaming && !isLocked && <DreamingView isDreaming={isDreaming} />}
     </>
   );
 }
