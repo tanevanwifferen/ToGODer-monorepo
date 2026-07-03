@@ -97,6 +97,32 @@ function sanitizeToolMessages(
 }
 
 /**
+ * Drop assistant messages from the tail of the prompt list before sending to
+ * the LLM. A conversation ending with an assistant message is treated as
+ * prefill by Anthropic-backed providers, and newer models reject it with
+ * "This model does not support assistant message prefill". Clients append
+ * assistant-role notes (e.g. artifact operation summaries) after tool results,
+ * so the history can legitimately end with assistant messages — they belong in
+ * the visible history but must not terminate the LLM request.
+ *
+ * Returns a new array; the original (used for signature generation) is left
+ * untouched so signatures keep matching the client's stored history.
+ */
+function trimTrailingAssistantMessages(
+  prompts: ChatCompletionMessageParam[]
+): ChatCompletionMessageParam[] {
+  let end = prompts.length;
+  while (
+    end > 0 &&
+    prompts[end - 1].role === 'assistant' &&
+    !Array.isArray((prompts[end - 1] as any).tool_calls)
+  ) {
+    end--;
+  }
+  return prompts.slice(0, end);
+}
+
+/**
  * Tool call event data for artifact operations
  */
 export interface ToolCallData {
@@ -253,8 +279,12 @@ export class StreamingChatService {
     signal?: AbortSignal
   ): AsyncGenerator<StreamEvent, void, void> {
     let full = '';
+    const requestBody: ChatRequest = {
+      ...body,
+      prompts: trimTrailingAssistantMessages(body.prompts),
+    };
     for await (const delta of this.conversationApi.streamResponse(
-      body,
+      requestBody,
       user,
       signal
     )) {
@@ -293,8 +323,11 @@ export class StreamingChatService {
     // Merge backend tool definitions with frontend-provided tools
     const mergedTools = this.mergeTools(body.tools ?? [], registry, body);
 
-    // Work with a mutable copy of prompts that we extend with tool results
-    const prompts: ChatCompletionMessageParam[] = [...body.prompts];
+    // Work with a mutable copy of prompts that we extend with tool results.
+    // Trailing assistant messages are trimmed so the request never ends with
+    // an assistant message (rejected as prefill by Anthropic models).
+    const prompts: ChatCompletionMessageParam[] =
+      trimTrailingAssistantMessages(body.prompts);
     let full = '';
 
     for (let iteration = 0; iteration < maxIterations; iteration++) {
