@@ -35,9 +35,13 @@ export const useGiftedMessages = (apiMessages: ApiChatMessage[] | null): Extende
     if (apiMessages == null) {
       return [];
     }
-    return [...apiMessages]
-      .filter((msg) => !msg.hidden)
-      .map(convertToGiftedMessage)
+    // Keep the message's index in apiMessages as its _id so long-press
+    // actions can map back to the right message even when hidden
+    // messages (tool results, artifact notes) are filtered out.
+    return apiMessages
+      .map((msg, index) => ({ msg, index }))
+      .filter(({ msg }) => !msg.hidden)
+      .map(({ msg, index }) => convertToGiftedMessage(msg, index))
       .reverse();
   }, [apiMessages]);
 

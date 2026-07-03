@@ -83,21 +83,18 @@ export function Chat({ chatId, onBack }: ChatProps) {
   // Get library integration state and handler
   const { libraryIntegrationEnabled, handleLibraryIntegrationToggle } = useLibraryIntegration();
 
-  // Handle edit message action from long press menu
+  // Handle edit message action from long press menu.
+  // Gifted message _id is the message's index in apiMessages.
   const handleEditMessage = useCallback(
     (messageId: string, content: string) => {
-      const messageIndex = giftedMessages.findIndex(
-        (msg) => msg._id === messageId
-      );
-      if (messageIndex !== -1 && apiMessages != null) {
-        // Convert from reversed index to original index
-        const originalIndex = apiMessages.length - 1 - messageIndex;
-        setEditingMessageIndex(originalIndex);
+      const messageIndex = Number(messageId);
+      if (Number.isInteger(messageIndex) && messageIndex >= 0) {
+        setEditingMessageIndex(messageIndex);
         setEditingMessageContent(content);
         setEditModalVisible(true);
       }
     },
-    [giftedMessages, apiMessages]
+    []
   );
 
   // Handle save from edit modal
@@ -134,12 +131,10 @@ export function Chat({ chatId, onBack }: ChatProps) {
   const { onLongPress } = useChatActions(
     giftedMessages,
     (messageId: string) => {
-      const messageIndex = giftedMessages.findIndex(
-        (msg) => msg._id === messageId
-      );
-      if (messageIndex !== -1 && apiMessages != null) {
-        // Convert from reversed index to original index
-        onDeleteMessage(apiMessages.length - 1 - messageIndex);
+      // Gifted message _id is the message's index in apiMessages.
+      const messageIndex = Number(messageId);
+      if (Number.isInteger(messageIndex) && messageIndex >= 0) {
+        onDeleteMessage(messageIndex);
       }
     },
     handleEditMessage

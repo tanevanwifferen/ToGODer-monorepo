@@ -30,6 +30,24 @@ const initialState: ChatsState = {
   auto_generate_answer: true,
 };
 
+// Selectors expose only active (non-deleted) messages, so indices coming
+// from the UI are in that space. Translate to an index into the raw
+// messages array, which still holds deletion tombstones. Returns -1 when
+// the active index is out of range.
+const toRawMessageIndex = (
+  messages: ApiChatMessage[],
+  activeIndex: number
+): number => {
+  if (activeIndex < 0) return -1;
+  let remaining = activeIndex;
+  for (let i = 0; i < messages.length; i++) {
+    if (messages[i].deleted) continue;
+    if (remaining === 0) return i;
+    remaining--;
+  }
+  return -1;
+};
+
 const chatsSlice = createSlice({
   name: "chats",
   initialState,
@@ -122,13 +140,16 @@ const chatsSlice = createSlice({
         console.warn(`Chat ${chatId} not found when deleting message`);
         return;
       }
-      if (messageIndex >= 0 && messageIndex < chat.messages.length) {
+      // messageIndex is an index into the active (non-deleted) messages,
+      // as shown by selectors; translate to the raw array which still
+      // holds tombstones.
+      const rawIndex = toRawMessageIndex(chat.messages, messageIndex);
+      if (rawIndex !== -1) {
         const now = new Date().getTime();
-        const message = chat.messages[messageIndex];
 
         // Mark message as deleted (tombstone) for sync instead of removing
         chat.messages = chat.messages.map((m, i) =>
-          i === messageIndex ? { ...m, deleted: true, deletedAt: now } : m
+          i === rawIndex ? { ...m, deleted: true, deletedAt: now } : m
         );
 
         chat.last_update = now;
@@ -229,7 +250,11 @@ const chatsSlice = createSlice({
         console.warn(`Chat ${chatId} not found when editing message`);
         return;
       }
-      if (messageIndex < 0 || messageIndex >= chat.messages.length) {
+      // messageIndex is an index into the active (non-deleted) messages,
+      // as shown by selectors; translate to the raw array which still
+      // holds tombstones.
+      const rawIndex = toRawMessageIndex(chat.messages, messageIndex);
+      if (rawIndex === -1) {
         console.warn(
           `Invalid message index ${messageIndex} for chat ${chatId}`
         );
@@ -237,8 +262,8 @@ const chatsSlice = createSlice({
       }
 
       // Create a new array with messages up to and including the edited message
-      const newMessages = chat.messages.slice(0, messageIndex + 1).map((m, i) =>
-        i === messageIndex
+      const newMessages = chat.messages.slice(0, rawIndex + 1).map((m, i) =>
+        i === rawIndex
           ? {
               ...m,
               content,

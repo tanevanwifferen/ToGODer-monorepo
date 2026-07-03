@@ -394,6 +394,34 @@ describe("chatsSlice", () => {
 
       consoleSpy.mockRestore();
     });
+
+    it("should interpret the index in active-message space, skipping tombstones", () => {
+      const stateWithMessages: ChatsState = {
+        ...initialState,
+        chats: {
+          "chat-1": createMockChat({
+            id: "chat-1",
+            messages: [
+              createMockMessage({ content: "First" }),
+              createMockMessage({ content: "Deleted", deleted: true }),
+              createMockMessage({ content: "Second" }),
+              createMockMessage({ content: "Third" }),
+            ],
+          }),
+        },
+      };
+
+      // Active messages are [First, Second, Third]; index 1 is "Second",
+      // which sits at raw index 2 behind the tombstone.
+      const state = chatsReducer(
+        stateWithMessages,
+        deleteMessage({ chatId: "chat-1", messageIndex: 1 })
+      );
+
+      expect(state.chats["chat-1"].messages[2].content).toBe("Second");
+      expect(state.chats["chat-1"].messages[2].deleted).toBe(true);
+      expect(state.chats["chat-1"].messages[3].deleted).toBeUndefined();
+    });
   });
 
   describe("deleteMessageByContent", () => {
@@ -673,6 +701,37 @@ describe("chatsSlice", () => {
   });
 
   describe("editMessageAndTruncate", () => {
+    it("should interpret the index in active-message space, skipping tombstones", () => {
+      const stateWithMessages: ChatsState = {
+        ...initialState,
+        chats: {
+          "chat-1": createMockChat({
+            id: "chat-1",
+            messages: [
+              createMockMessage({ content: "First", role: "user" }),
+              createMockMessage({ content: "Deleted", deleted: true }),
+              createMockMessage({ content: "Second", role: "assistant" }),
+              createMockMessage({ content: "Third", role: "user" }),
+            ],
+          }),
+        },
+      };
+
+      // Active messages are [First, Second, Third]; index 1 is "Second",
+      // which sits at raw index 2 behind the tombstone.
+      const state = chatsReducer(
+        stateWithMessages,
+        editMessageAndTruncate({
+          chatId: "chat-1",
+          messageIndex: 1,
+          content: "Edited",
+        })
+      );
+
+      expect(state.chats["chat-1"].messages).toHaveLength(3);
+      expect(state.chats["chat-1"].messages[2].content).toBe("Edited");
+    });
+
     it("should edit message content at the specified index", () => {
       const stateWithMessages: ChatsState = {
         ...initialState,
