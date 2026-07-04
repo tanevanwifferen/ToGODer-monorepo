@@ -366,12 +366,24 @@ export class StreamingChatService {
         break;
       }
 
-      // Separate backend vs frontend tool calls
+      // Separate backend, frontend, and unknown tool calls. A frontend tool
+      // is one the client actually declared in body.tools — anything else
+      // that isn't backend-registered is a hallucinated tool name, which we
+      // must answer server-side with an error tool_result (forwarding it to
+      // the client would leave a dangling tool_use nobody responds to).
+      const frontendToolNames = new Set(
+        (body.tools ?? [])
+          .filter((t) => t.type === 'function')
+          .map((t) => t.function.name)
+      );
       const backendCalls = iterationResult.toolCalls.filter((tc) =>
         registry.has(tc.name)
       );
       const frontendCalls = iterationResult.toolCalls.filter(
-        (tc) => !registry.has(tc.name)
+        (tc) => !registry.has(tc.name) && frontendToolNames.has(tc.name)
+      );
+      const unknownCalls = iterationResult.toolCalls.filter(
+        (tc) => !registry.has(tc.name) && !frontendToolNames.has(tc.name)
       );
 
       // Yield frontend tool calls to the client
@@ -379,13 +391,15 @@ export class StreamingChatService {
         yield { type: 'tool_call', data: tc };
       }
 
-      // If no backend calls, stop looping (remaining are frontend-only)
-      if (backendCalls.length === 0) {
+      // If nothing to handle server-side, stop looping (remaining are
+      // frontend-only and the client will continue the conversation)
+      const serverHandledCalls = [...backendCalls, ...unknownCalls];
+      if (serverHandledCalls.length === 0) {
         break;
       }
 
       // Build assistant message with tool_calls for the conversation history
-      const assistantToolCalls = backendCalls.map((tc, index) => ({
+      const assistantToolCalls = serverHandledCalls.map((tc) => ({
         id: tc.id,
         type: 'function' as const,
         function: {
@@ -433,6 +447,32 @@ export class StreamingChatService {
           tool_call_id: tc.id,
           content: result,
         });
+      }
+
+      // Answer hallucinated tool calls with an error result so the model can
+      // recover and respond in text instead of the stream dying silently.
+      if (unknownCalls.length > 0) {
+        const availableNames = mergedTools
+          .filter((t) => t.type === 'function')
+          .map((t) => t.function.name)
+          .join(', ');
+        for (const tc of unknownCalls) {
+          console.warn(`LLM called unknown tool "${tc.name}"`);
+          yield {
+            type: 'tool_status',
+            data: { id: tc.id, name: tc.name, status: 'done', isError: true },
+          };
+          prompts.push({
+            role: 'tool',
+            tool_call_id: tc.id,
+            content:
+              `Error: tool "${tc.name}" does not exist. ` +
+              (availableNames
+                ? `Available tools: ${availableNames}. `
+                : 'No tools are available. ') +
+              'Answer the user directly instead.',
+          });
+        }
       }
 
       // Loop continues - LLM will process the tool results

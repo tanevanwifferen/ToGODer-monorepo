@@ -985,62 +985,76 @@ export class MessageService {
               "list_directory",
             ];
 
-            if (!FRONTEND_TOOL_NAMES.includes(toolCall.name)) {
-              // Not a frontend tool - backend handles execution.
-              // Don't collect results; the backend will send tool_result events
-              // or continue streaming text after execution.
-              console.log(`Tool "${toolCall.name}" is backend-executed, skipping frontend handling`);
-              break;
+            // Notify callback for known frontend tools
+            if (FRONTEND_TOOL_NAMES.includes(toolCall.name)) {
+              onToolCall?.(toolCall);
             }
 
-            // Notify callback if provided
-            onToolCall?.(toolCall);
+            // Every tool_call event that reaches the client is ours to
+            // answer — the backend executes its own tools server-side and
+            // never forwards them. Leaving one unanswered strands the chat
+            // with a dangling tool_use, so always produce a tool result.
 
-            // Handle the tool call if chat is associated with a project
-            if (chat?.projectId) {
-              // Ensure the assistant placeholder exists even when the LLM
-              // emits a tool_call without any preceding text chunks.
-              ensurePlaceholder();
+            // Ensure the assistant placeholder exists even when the LLM
+            // emits a tool_call without any preceding text chunks.
+            ensurePlaceholder();
 
-              // Record the tool_use on the assistant message so the next
-              // request to Anthropic has a valid tool_use/tool_result pairing.
-              assistantToolCalls.push({
-                id: toolCall.id,
-                type: "function",
-                function: {
-                  name: toolCall.name,
-                  arguments: JSON.stringify(toolCall.arguments ?? {}),
-                },
-              });
-
-              const result = this.handleArtifactToolCall(toolCall, chat.projectId);
-
-              // Log the tool call result
-              console.log(`Artifact tool call "${toolCall.name}":`, result);
-
-              // Collect result for chaining
-              toolCallResults.push({
-                toolCallId: toolCall.id,
+            // Record the tool_use on the assistant message so the next
+            // request to Anthropic has a valid tool_use/tool_result pairing.
+            assistantToolCalls.push({
+              id: toolCall.id,
+              type: "function",
+              function: {
                 name: toolCall.name,
-                result: result.message,
-                isError: result.isError,
-              });
+                arguments: JSON.stringify(toolCall.arguments ?? {}),
+              },
+            });
 
-              // Queue artifact operation note (for write/delete, not read) to
-              // be appended AFTER the tool_result messages — placing it
-              // between the assistant tool_use and the tool_result would
-              // violate Anthropic's pairing rule.
-              if (result.operation !== "read") {
-                deferredArtifactNotes.push({
-                  role: "assistant",
-                  content: result.isError
-                    ? `Error: ${result.message}`
-                    : result.message,
-                  timestamp: Date.now(),
-                  hidden: result.isError,
-                  artifactId: result.isError ? undefined : result.artifactId,
-                });
-              }
+            let result: {
+              message: string;
+              artifactId?: string;
+              isError: boolean;
+              operation?: "read" | "write" | "delete" | "move";
+            };
+            if (!FRONTEND_TOOL_NAMES.includes(toolCall.name)) {
+              result = {
+                message: `Error: tool "${toolCall.name}" does not exist. Answer the user directly instead.`,
+                isError: true,
+              };
+            } else if (!chat?.projectId) {
+              result = {
+                message: `Error: tool "${toolCall.name}" is only available in project chats. Answer the user directly instead.`,
+                isError: true,
+              };
+            } else {
+              result = this.handleArtifactToolCall(toolCall, chat.projectId);
+            }
+
+            // Log the tool call result
+            console.log(`Tool call "${toolCall.name}":`, result);
+
+            // Collect result for chaining
+            toolCallResults.push({
+              toolCallId: toolCall.id,
+              name: toolCall.name,
+              result: result.message,
+              isError: result.isError,
+            });
+
+            // Queue artifact operation note (for write/delete, not read) to
+            // be appended AFTER the tool_result messages — placing it
+            // between the assistant tool_use and the tool_result would
+            // violate Anthropic's pairing rule.
+            if (result.operation && result.operation !== "read") {
+              deferredArtifactNotes.push({
+                role: "assistant",
+                content: result.isError
+                  ? `Error: ${result.message}`
+                  : result.message,
+                timestamp: Date.now(),
+                hidden: result.isError,
+                artifactId: result.isError ? undefined : result.artifactId,
+              });
             }
             break;
           }
