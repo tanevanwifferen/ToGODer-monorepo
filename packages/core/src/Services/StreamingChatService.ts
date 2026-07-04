@@ -361,6 +361,21 @@ export class StreamingChatService {
 
       full += iterationResult.text;
 
+      // Content-free diagnostics: which tools were offered and what the
+      // model called, so tool-loop stalls are visible in the logs.
+      console.log(
+        '[tool-loop]',
+        JSON.stringify({
+          iteration,
+          model: body.model,
+          tools_offered: mergedTools
+            .filter((t) => t.type === 'function')
+            .map((t) => t.function.name),
+          tool_calls: iterationResult.toolCalls.map((tc) => tc.name),
+          text_length: iterationResult.text.length,
+        })
+      );
+
       // If no tool calls at all, we're done
       if (iterationResult.toolCalls.length === 0) {
         break;

@@ -29,6 +29,7 @@ import {
   getDefaultModel,
 } from '../LLM/Model/AIProvider';
 import { StreamChunk } from '../LLM/AIWrapper';
+import { logLlmContentEnabled } from '../LLM/OutputLogger';
 import { TranslationPrompt } from '../LLM/prompts/experienceprompts';
 import { User } from '@prisma/client';
 import { BillingDecorator } from '../Decorators/BillingDecorator';
@@ -148,7 +149,9 @@ export class ConversationApi {
       return { keys: [] };
     }
 
-    console.log('memory response', json_response);
+    if (logLlmContentEnabled()) {
+      console.log('memory response', json_response);
+    }
     var keys = JSON.parse(content) as { keys: string[] };
     var existing_keys = Object.keys(body.memories ?? {});
     keys.keys = (keys.keys ?? []).filter((x) => !existing_keys.includes(x));
@@ -199,7 +202,9 @@ export class ConversationApi {
       return { keys: [] };
     }
 
-    console.log('memory response', content);
+    if (logLlmContentEnabled()) {
+      console.log('memory response', content);
+    }
     var keys = JSON.parse(content) as { keys: string[] };
     var existing_keys = Object.keys(existingMemories ?? {});
     keys.keys = (keys.keys ?? []).filter((x) => !existing_keys.includes(x));

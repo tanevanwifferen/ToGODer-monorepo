@@ -282,6 +282,15 @@ export class OpenRouterWrapper implements AIWrapper {
             ch?.finish_reason === 'stop'
           ) {
             for (const [, accumulator] of toolCallAccumulators) {
+              if (!accumulator.id || !accumulator.name) {
+                console.warn(
+                  `[tool-loop] dropping incomplete tool call (id=${JSON.stringify(
+                    accumulator.id
+                  )}, name=${JSON.stringify(accumulator.name)}, args_length=${
+                    accumulator.arguments.length
+                  })`
+                );
+              }
               if (accumulator.id && accumulator.name) {
                 emittedToolCalls.push({
                   id: accumulator.id,
