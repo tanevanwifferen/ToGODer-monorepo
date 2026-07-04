@@ -11,6 +11,7 @@ import {
   keepConversationGoingPrompt,
   lessBloatPrompt,
   outsideBoxPrompt,
+  ToolCallDisciplinePrompt,
 } from '../LLM/prompts/chatprompts';
 import { PromptList, resolvePromptListItem } from '../LLM/prompts/promptlist';
 import {
@@ -268,6 +269,10 @@ export class ConversationApi {
 
     if (input.holisticTherapist) {
       systemPrompt += '\n\n' + holisticTherapistPrompt;
+    }
+
+    if (input.tools && input.tools.length > 0) {
+      systemPrompt += '\n\n' + ToolCallDisciplinePrompt;
     }
 
     systemPrompt = systemPrompt.replace(

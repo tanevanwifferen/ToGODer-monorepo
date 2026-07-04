@@ -195,6 +195,7 @@ export class OpenAIWrapper implements AIWrapper {
     signal?: AbortSignal
   ): AsyncGenerator<StreamChunk, void, void> {
     let accumulated = '';
+    let lastFinishReason: string | undefined;
     const emittedToolCalls: { id: string; name: string; arguments: string }[] = [];
     try {
       this.lastUsage = null;
@@ -294,11 +295,11 @@ export class OpenAIWrapper implements AIWrapper {
             }
           }
 
-          // Check if this choice is finished and emit any complete tool calls
-          if (
-            ch?.finish_reason === 'tool_calls' ||
-            ch?.finish_reason === 'stop'
-          ) {
+          // Emit complete tool calls on ANY finish reason (e.g. also
+          // 'content_filter') — discarding an already-streamed tool call
+          // would strand the turn.
+          if (ch?.finish_reason) {
+            lastFinishReason = ch.finish_reason;
             for (const [, accumulator] of toolCallAccumulators) {
               if (accumulator.id && accumulator.name) {
                 emittedToolCalls.push({
@@ -312,6 +313,12 @@ export class OpenAIWrapper implements AIWrapper {
                   name: accumulator.name,
                   arguments: accumulator.arguments,
                 };
+              } else {
+                console.warn(
+                  `[tool-loop] dropping incomplete tool call (id=${JSON.stringify(
+                    accumulator.id
+                  )}, name=${JSON.stringify(accumulator.name)}, finish_reason=${ch.finish_reason})`
+                );
               }
             }
             toolCallAccumulators.clear();
@@ -319,12 +326,31 @@ export class OpenAIWrapper implements AIWrapper {
           }
         }
       }
+      // Flush tool calls left over if the stream ended without a
+      // finish_reason chunk.
+      for (const [, accumulator] of toolCallAccumulators) {
+        if (accumulator.id && accumulator.name) {
+          emittedToolCalls.push({
+            id: accumulator.id,
+            name: accumulator.name,
+            arguments: accumulator.arguments,
+          });
+          yield {
+            type: 'tool_call',
+            id: accumulator.id,
+            name: accumulator.name,
+            arguments: accumulator.arguments,
+          };
+        }
+      }
+      toolCallAccumulators.clear();
       logLlmOutput({
         model: this.model,
         method: 'streamResponseWithTools',
         output: accumulated,
         toolCalls: emittedToolCalls,
         usage: this.lastUsage,
+        finishReason: lastFinishReason,
       });
     } catch (error) {
       logLlmOutput({

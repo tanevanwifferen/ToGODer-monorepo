@@ -6,6 +6,7 @@ interface LogLlmOutputArgs {
   output?: string;
   toolCalls?: { id: string; name: string; arguments: string }[];
   usage?: { prompt_tokens: number; completion_tokens: number; total_tokens: number } | null;
+  finishReason?: string;
   error?: unknown;
 }
 
@@ -38,6 +39,7 @@ export function logLlmOutput(args: LogLlmOutputArgs): void {
         : { tool_call_names: args.toolCalls.map((tc) => tc.name) }
       : {}),
     ...(args.usage ? { usage: args.usage } : {}),
+    ...(args.finishReason ? { finish_reason: args.finishReason } : {}),
     ...(args.error ? { error: String(args.error) } : {}),
   };
   console.log('[llm-output]', JSON.stringify(entry));

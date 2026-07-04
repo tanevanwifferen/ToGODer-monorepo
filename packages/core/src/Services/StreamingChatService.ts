@@ -378,6 +378,16 @@ export class StreamingChatService {
 
       // If no tool calls at all, we're done
       if (iterationResult.toolCalls.length === 0) {
+        // An iteration that produced neither text nor tool calls means the
+        // provider cut the response (e.g. a safety/content filter). Tell the
+        // user instead of ending the stream in silence.
+        if (iterationResult.text.length === 0) {
+          const notice =
+            '\n\n*The model stopped its reply unexpectedly (likely a ' +
+            'provider safety filter). Please try again or rephrase.*';
+          full += notice;
+          yield { type: 'chunk', data: { delta: notice } };
+        }
         break;
       }
 
