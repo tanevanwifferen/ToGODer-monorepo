@@ -11,6 +11,9 @@ import { ParsedChatCompletion } from 'openai/resources/chat/completions/index';
  */
 export type StreamChunk =
   | { type: 'text'; content: string }
+  // Emitted as soon as the model starts generating a tool call: the name is
+  // known but the arguments are still streaming.
+  | { type: 'tool_call_start'; id: string; name: string }
   | { type: 'tool_call'; id: string; name: string; arguments: string };
 
 export interface AIWrapper {

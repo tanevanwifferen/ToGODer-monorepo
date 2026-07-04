@@ -20,6 +20,7 @@ import {
   ArtifactIndexItem,
   ArtifactToolCall,
   ToolResultEvent,
+  ToolStatusEvent,
   ARTIFACT_TOOL_SCHEMAS,
   LIBRARY_TOOL_SCHEMA,
   ToolSchema,
@@ -47,6 +48,7 @@ export interface SendMessageOptions {
   onChunk?: (content: string) => void;
   onComplete?: (message: ApiChatMessage) => void;
   onError?: (error: string) => void;
+  onToolStatus?: (status: ToolStatusEvent) => void;
 }
 
 export interface SendMessageStreamOptions {
@@ -63,6 +65,7 @@ export interface SendMessageStreamOptions {
   onComplete?: (message: ApiChatMessage) => void;
   onError?: (error: string) => void;
   onToolCall?: (toolCall: ArtifactToolCall) => void;
+  onToolStatus?: (status: ToolStatusEvent) => void;
 }
 
 const MAX_TOOL_CALL_LOOPS = 10;
@@ -605,6 +608,7 @@ export class MessageService {
       onChunk,
       onComplete,
       onError,
+      onToolStatus,
     } = options;
 
     // Cancel any existing request before starting a new one
@@ -676,6 +680,7 @@ export class MessageService {
           onChunk,
           onComplete,
           onError,
+          onToolStatus,
         });
       } else {
         await this.sendMessageWithoutStreaming({
@@ -742,6 +747,7 @@ export class MessageService {
       onComplete,
       onError,
       onToolCall,
+      onToolStatus,
     } = options;
 
     const state = store.getState();
@@ -962,6 +968,7 @@ export class MessageService {
               onComplete,
               onError,
               onToolCall,
+              onToolStatus,
             });
             return;
           }
@@ -1035,6 +1042,13 @@ export class MessageService {
                 });
               }
             }
+            break;
+          }
+
+          case "tool_status": {
+            // Backend reports what the AI is doing (generating a tool call,
+            // running a backend tool) - surface it to the UI
+            onToolStatus?.(evt.data);
             break;
           }
 
@@ -1143,6 +1157,7 @@ export class MessageService {
           onComplete,
           onError,
           onToolCall,
+          onToolStatus,
         });
         return;
       }
@@ -1368,6 +1383,7 @@ export class MessageService {
     onChunk?: (content: string) => void;
     onComplete?: (message: ApiChatMessage) => void;
     onError?: (error: string) => void;
+    onToolStatus?: (status: ToolStatusEvent) => void;
   }): Promise<void> {
     const {
       chatId,
@@ -1375,6 +1391,7 @@ export class MessageService {
       onChunk,
       onComplete,
       onError,
+      onToolStatus,
     } = options;
 
     // Cancel any existing request before starting a new one
@@ -1433,6 +1450,7 @@ export class MessageService {
           onChunk,
           onComplete,
           onError,
+          onToolStatus,
         });
       } else {
         await this.sendMessageWithoutStreaming({

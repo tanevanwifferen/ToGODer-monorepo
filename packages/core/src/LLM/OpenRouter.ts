@@ -205,6 +205,8 @@ export class OpenRouterWrapper implements AIWrapper {
         number,
         { id: string; name: string; arguments: string }
       > = new Map();
+      // Indices whose tool_call_start has already been yielded
+      const announcedToolCalls = new Set<number>();
 
       for await (const chunk of stream as any) {
         // Capture usage if provided
@@ -260,6 +262,17 @@ export class OpenRouterWrapper implements AIWrapper {
               if (tc.function?.arguments) {
                 accumulator.arguments += tc.function.arguments;
               }
+
+              // Announce the tool call as soon as its name is known so the
+              // client can show activity while arguments are still streaming
+              if (!announcedToolCalls.has(index) && accumulator.name) {
+                announcedToolCalls.add(index);
+                yield {
+                  type: 'tool_call_start',
+                  id: accumulator.id,
+                  name: accumulator.name,
+                };
+              }
             }
           }
 
@@ -284,6 +297,7 @@ export class OpenRouterWrapper implements AIWrapper {
               }
             }
             toolCallAccumulators.clear();
+            announcedToolCalls.clear();
           }
         }
       }

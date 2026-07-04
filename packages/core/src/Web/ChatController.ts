@@ -210,6 +210,10 @@ export function GetChatRouter(messageLimiter: RateLimitRequestHandler): Router {
             case 'tool_call':
               sse.event('tool_call', evt.data);
               break;
+            case 'tool_status':
+              sse.event('tool_status', evt.data);
+              sse.comment('keep-alive');
+              break;
             case 'error':
               sse.event('error', evt.data);
               break;

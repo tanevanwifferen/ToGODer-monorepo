@@ -13,6 +13,7 @@ import { CustomInputToolbar } from "./chat/CustomInputToolbar";
 import { EmptyChat } from "./chat/EmptyChat";
 import { EditMessageModal } from "./chat/EditMessageModal";
 import { EmbeddedArtifact } from "./chat/EmbeddedArtifact";
+import { ToolActivityIndicator } from "./chat/ToolActivityIndicator";
 import { MessageWithMermaid } from "./chat/mermaid/MessageWithMermaid";
 import { useMessages } from "../hooks/useMessages";
 import { useMessageSending } from "../hooks/useMessageSending";
@@ -47,6 +48,7 @@ export function Chat({ chatId, onBack }: ChatProps) {
     regenerate: regenerateResponse,
     cancel: cancelRequest,
     typing,
+    activity,
     error: errorMessage,
   } = useMessageSending(chatId);
 
@@ -220,6 +222,7 @@ export function Chat({ chatId, onBack }: ChatProps) {
           minComposerHeight={60}
           inverted={true}
           isTyping={typing}
+          renderFooter={() => <ToolActivityIndicator activity={activity} />}
           minInputToolbarHeight={0}
           onLongPress={onLongPress}
           renderSystemMessage={renderSystemMessage}

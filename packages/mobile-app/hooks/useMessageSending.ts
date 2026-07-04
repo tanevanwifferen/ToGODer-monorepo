@@ -1,8 +1,27 @@
 import { useState, useCallback, useRef } from "react";
 import { ApiChatMessage } from "../model/ChatRequest";
 import { ChatResponse, MessageResponse } from "../model/ChatResponse";
-import type { StreamEvent } from "../apiClients/ChatApiClient";
+import type { StreamEvent, ToolStatusEvent } from "../apiClients/ChatApiClient";
 import { MessageService } from "../services/MessageService";
+
+/**
+ * Human-readable labels for tool activity, shown while the AI is using a tool.
+ */
+const TOOL_ACTIVITY_LABELS: Record<string, string> = {
+  query_library: "Searching the library",
+  arxiv_search: "Searching arXiv",
+  arxiv_read_paper: "Reading a paper",
+  read_artifact: "Reading a file",
+  write_artifact: "Writing an artifact",
+  delete_artifact: "Deleting an artifact",
+  move_artifact: "Moving an artifact",
+  list_directory: "Browsing files",
+};
+
+function toolActivityLabel(status: ToolStatusEvent): string | null {
+  if (status.status === "done") return null;
+  return TOOL_ACTIVITY_LABELS[status.name] ?? `Using ${status.name}`;
+}
 
 export interface SendMessageOptions {
   memoryLoopCount?: number;
@@ -230,6 +249,8 @@ export interface UseChatMessageSendingResult {
   cancel: () => void;
   isLoading: boolean;
   typing: boolean;
+  /** Human-readable description of the tool the AI is currently using, or null */
+  activity: string | null;
   error: string | null;
 }
 
@@ -280,6 +301,7 @@ export function useMessageSending(
 function useChatMessageSending(chatId: string): UseChatMessageSendingResult {
   const [isLoading, setIsLoading] = useState(false);
   const [typing, setTyping] = useState(false);
+  const [activity, setActivity] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const lastContentRef = useRef<string | null>(null);
 
@@ -288,6 +310,7 @@ function useChatMessageSending(chatId: string): UseChatMessageSendingResult {
       lastContentRef.current = content;
       setIsLoading(true);
       setTyping(true);  // Show typing indicator while waiting for response
+      setActivity(null);
       setError(null);
 
       const messageService = MessageService.getInstance();
@@ -299,15 +322,22 @@ function useChatMessageSending(chatId: string): UseChatMessageSendingResult {
         onChunk: () => {
           // Once we receive chunks, content is showing - hide typing indicator
           setTyping(false);
+          // New text means the previous tool activity is over
+          setActivity(null);
+        },
+        onToolStatus: (status) => {
+          setActivity(toolActivityLabel(status));
         },
         onComplete: () => {
           setIsLoading(false);
           setTyping(false);
+          setActivity(null);
         },
         onError: (errorMsg) => {
           setError(errorMsg);
           setIsLoading(false);
           setTyping(false);
+          setActivity(null);
         },
       });
     },
@@ -323,6 +353,7 @@ function useChatMessageSending(chatId: string): UseChatMessageSendingResult {
   const regenerate = useCallback(async (): Promise<void> => {
     setIsLoading(true);
     setTyping(true);  // Show typing indicator while waiting for response
+    setActivity(null);
     setError(null);
 
     const messageService = MessageService.getInstance();
@@ -333,15 +364,22 @@ function useChatMessageSending(chatId: string): UseChatMessageSendingResult {
       onChunk: () => {
         // Once we receive chunks, content is showing - hide typing indicator
         setTyping(false);
+        // New text means the previous tool activity is over
+        setActivity(null);
+      },
+      onToolStatus: (status) => {
+        setActivity(toolActivityLabel(status));
       },
       onComplete: () => {
         setIsLoading(false);
         setTyping(false);
+        setActivity(null);
       },
       onError: (errorMsg) => {
         setError(errorMsg);
         setIsLoading(false);
         setTyping(false);
+        setActivity(null);
       },
     });
   }, [chatId]);
@@ -351,6 +389,7 @@ function useChatMessageSending(chatId: string): UseChatMessageSendingResult {
     messageService.cancelCurrentRequest();
     setIsLoading(false);
     setTyping(false);
+    setActivity(null);
   }, []);
 
   return {
@@ -360,6 +399,7 @@ function useChatMessageSending(chatId: string): UseChatMessageSendingResult {
     cancel,
     isLoading,
     typing,
+    activity,
     error,
   };
 }

@@ -132,12 +132,26 @@ export interface ToolCallData {
 }
 
 /**
+ * Tool activity status event data, so clients can show what the AI is doing.
+ * - generating: the model is producing the tool call (arguments still streaming)
+ * - running: a backend tool is executing server-side
+ * - done: a backend tool finished executing
+ */
+export interface ToolStatusData {
+  id: string;
+  name: string;
+  status: 'generating' | 'running' | 'done';
+  isError?: boolean;
+}
+
+/**
  * Events emitted during streaming. Consumers can map these to SSE frames or other transports.
  */
 export type StreamEvent =
   | { type: 'memory_request'; data: { keys: string[] } }
   | { type: 'chunk'; data: { delta: string } }
   | { type: 'tool_call'; data: ToolCallData }
+  | { type: 'tool_status'; data: ToolStatusData }
   | { type: 'signature'; data: { signature: string } }
   | { type: 'error'; data: { message: string } }
   | { type: 'done'; data?: null };
@@ -391,7 +405,13 @@ export class StreamingChatService {
         const tool = registry.get(tc.name);
         if (!tool) continue;
 
+        yield {
+          type: 'tool_status',
+          data: { id: tc.id, name: tc.name, status: 'running' },
+        };
+
         let result: string;
+        let isError = false;
         try {
           result = await tool.handler({
             arguments: tc.arguments,
@@ -399,8 +419,14 @@ export class StreamingChatService {
           });
         } catch (err: any) {
           result = `Error executing tool ${tc.name}: ${err?.message ?? String(err)}`;
+          isError = true;
           console.error(`Backend tool execution error (${tc.name}):`, err);
         }
+
+        yield {
+          type: 'tool_status',
+          data: { id: tc.id, name: tc.name, status: 'done', isError },
+        };
 
         prompts.push({
           role: 'tool',
@@ -447,6 +473,12 @@ export class StreamingChatService {
           text += chunk.content;
           yield { type: 'chunk', data: { delta: chunk.content } };
         }
+      } else if (chunk.type === 'tool_call_start') {
+        // Let the client show activity while the arguments stream in
+        yield {
+          type: 'tool_status',
+          data: { id: chunk.id, name: chunk.name, status: 'generating' },
+        };
       } else if (chunk.type === 'tool_call') {
         let args: Record<string, any> = {};
         try {
