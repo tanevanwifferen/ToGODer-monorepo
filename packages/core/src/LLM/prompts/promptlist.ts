@@ -18,6 +18,7 @@ import {
   RecursionPrompt,
   WakeUpPrompt,
   GoalPrompt,
+  PuzzlePrompt,
 } from './chatprompts';
 import { ExperiencePrompt } from './experienceprompts';
 import { ChatCompletionMessageParam } from 'openai/resources/index';
@@ -62,6 +63,13 @@ export const PromptList: Record<string, PromptListItem> = {
   '/recursion': {
     prompt: RecursionPrompt,
     description: 'A recursive prompt. Beware.',
+    display: true,
+  },
+  '/puzzle': {
+    prompt: PuzzlePrompt,
+    description:
+      'A self-referential riddle persona. The AI speaks from inside a \
+      paradox it cannot resolve or state.',
     display: true,
   },
   '/goal': {
