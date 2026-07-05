@@ -50,6 +50,15 @@ struct SyncableChat: Codable {
     var deletedAt: Double? // epoch ms
     // Optional so payloads from older clients still decode.
     var instructionHistory: [SignedInstructionSnapshot]?
+    // Every publish of this chat; each entry is a distinct shared instance.
+    var shareHistory: [ShareRecord]?
+}
+
+/// Record of one publish of a chat. Wire-compatible with RN `ShareRecord`.
+struct ShareRecord: Codable, Equatable {
+    var sharedId: String
+    var title: String
+    var sharedAt: Double // epoch ms
 }
 
 struct SyncableMessage: Codable {
@@ -424,7 +433,8 @@ final class SyncService: ObservableObject {
                 updatedAt: chatUpdatedAt,
                 deleted: chat.deleted,
                 deletedAt: chat.deletedAt.map { $0.timeIntervalSince1970 * 1000 },
-                instructionHistory: chat.instructionHistory
+                instructionHistory: chat.instructionHistory,
+                shareHistory: chat.shareHistory
             )
         }
 
@@ -642,6 +652,17 @@ final class SyncService: ObservableObject {
         }
         merged.instructionHistory = deduped.isEmpty ? nil : deduped
 
+        // Union share histories, deduped by sharedId (each publish is a
+        // distinct immutable instance), in chronological order.
+        var shareUnion: [ShareRecord] = []
+        for entry in (local.shareHistory ?? []) + (remote.shareHistory ?? []) {
+            if !shareUnion.contains(where: { $0.sharedId == entry.sharedId }) {
+                shareUnion.append(entry)
+            }
+        }
+        shareUnion.sort { $0.sharedAt < $1.sharedAt }
+        merged.shareHistory = shareUnion.isEmpty ? nil : shareUnion
+
         print("[SyncService] Chat \(chatId): merged local(\(local.messages.count) msgs, effective=\(localEffective)) + remote(\(remote.messages.count) msgs, effective=\(remoteEffective)) = \(merged.messages.count) msgs")
         return merged
     }
@@ -841,6 +862,7 @@ final class SyncService: ObservableObject {
         chat.deleted = syncChat.deleted
         chat.deletedAt = syncChat.deletedAt.map { Date(timeIntervalSince1970: $0 / 1000) }
         chat.instructionHistory = syncChat.instructionHistory
+        chat.shareHistory = syncChat.shareHistory
         return chat
     }
 

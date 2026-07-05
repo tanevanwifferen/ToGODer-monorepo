@@ -15,6 +15,14 @@ export interface SignedMessage {
   signature: string;
 }
 
+// Record of one publish of a chat, kept on the chat so re-publishing creates
+// a new versioned instance instead of being forgotten.
+export interface ShareRecord {
+  sharedId: string;
+  title: string;
+  sharedAt: number;
+}
+
 // Server-signed snapshot of the custom instructions active at a point in time.
 // Signature covers content + timestamp, so instruction changes are verifiable.
 export interface SignedInstructionSnapshot {

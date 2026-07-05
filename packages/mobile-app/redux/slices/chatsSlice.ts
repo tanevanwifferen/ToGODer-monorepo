@@ -1,6 +1,6 @@
 import { createSlice, PayloadAction } from "@reduxjs/toolkit";
 import { ApiChatMessage } from "../../model/ChatRequest";
-import { SignedInstructionSnapshot } from "../../model/ShareTypes";
+import { ShareRecord, SignedInstructionSnapshot } from "../../model/ShareTypes";
 import { v4 as uuidv4 } from "uuid";
 
 export interface Chat {
@@ -17,6 +17,9 @@ export interface Chat {
   // Server-signed history of the custom instructions used in this chat.
   // A new entry is appended only when the instructions actually change.
   instructionHistory?: SignedInstructionSnapshot[];
+  // Every publish of this chat, oldest first. Re-publishing appends a new
+  // record (a fresh shared instance); older instances are never deleted.
+  shareHistory?: ShareRecord[];
 }
 
 export interface ChatsState {
@@ -174,6 +177,25 @@ const chatsSlice = createSlice({
       }
       chat.last_update = new Date().getTime();
     },
+    // Record a successful publish of this chat. Appends (deduped by sharedId)
+    // so each re-publish is remembered and the next one gets the next suffix.
+    recordShare: (
+      state,
+      action: PayloadAction<{ chatId: string; record: ShareRecord }>
+    ) => {
+      const { chatId, record } = action.payload;
+      const chat = state.chats[chatId];
+      if (!chat) {
+        console.warn(`Chat ${chatId} not found when recording share`);
+        return;
+      }
+      const history = chat.shareHistory ?? [];
+      if (history.some((r) => r.sharedId === record.sharedId)) {
+        return;
+      }
+      chat.shareHistory = [...history, record];
+      chat.last_update = new Date().getTime();
+    },
     // Record a server-signed custom-instructions snapshot on a chat. Only
     // appends when the instruction content differs from the latest entry, so
     // the history reflects actual changes (with verifiable timestamps).
@@ -321,6 +343,7 @@ export const {
   addMessage,
   updateMessageAtIndex,
   appendInstructionSnapshot,
+  recordShare,
   deleteMessage,
   deleteMessageByContent,
   setTitle,

@@ -14,6 +14,8 @@ struct Chat: Identifiable, Codable {
     // Server-signed custom-instruction snapshots synced from other clients.
     // Optional so chats stored by older app versions still decode.
     var instructionHistory: [SignedInstructionSnapshot]?
+    // Every publish of this chat, synced across clients.
+    var shareHistory: [ShareRecord]?
 
     init(
         id: String = UUID().uuidString,
