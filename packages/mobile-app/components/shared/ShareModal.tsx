@@ -14,6 +14,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   Pressable,
+  ScrollView,
 } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
 import { router } from 'expo-router';
@@ -21,7 +22,7 @@ import { useColorScheme } from '../../hooks/useColorScheme';
 import { Colors } from '../../constants/Colors';
 import { ThemedText } from '../ThemedText';
 import { ThemedView } from '../ThemedView';
-import { ShareRequest, ShareVisibility } from '../../model/ShareTypes';
+import { ShareRecord, ShareRequest, ShareVisibility } from '../../model/ShareTypes';
 import { useAuth } from '../../hooks/useAuth';
 import { getShareUrl } from '@/constants/Env';
 
@@ -37,6 +38,9 @@ interface ShareModalProps {
   entityLabel?: string;
   // Route segment appended after /shared for viewing, e.g. "artifact".
   pathPrefix?: string;
+  // Earlier publishes of this item, oldest first. Shown so users can revisit
+  // or copy links of previous versions (each publish is its own instance).
+  shareHistory?: ShareRecord[];
 }
 
 export function ShareModal({
@@ -49,6 +53,7 @@ export function ShareModal({
   sharedId,
   entityLabel = 'Conversation',
   pathPrefix,
+  shareHistory = [],
 }: ShareModalProps) {
   const colorScheme = useColorScheme();
   const theme = Colors[colorScheme ?? 'light'];
@@ -57,6 +62,7 @@ export function ShareModal({
   const [description, setDescription] = useState('');
   const [visibility, setVisibility] = useState<ShareVisibility>('PRIVATE');
   const [showCopiedMessage, setShowCopiedMessage] = useState(false);
+  const [copiedHistoryId, setCopiedHistoryId] = useState<string | null>(null);
 
   useEffect(() => {
     if (visible) {
@@ -64,11 +70,13 @@ export function ShareModal({
       setDescription('');
       setVisibility('PRIVATE');
       setShowCopiedMessage(false);
+      setCopiedHistoryId(null);
     }
   }, [visible, initialTitle]);
 
   const shareUrlBase = getShareUrl();
-  const sharePath = pathPrefix ? `${pathPrefix}/${sharedId}` : `${sharedId}`;
+  const pathFor = (id: string) => (pathPrefix ? `${pathPrefix}/${id}` : id);
+  const sharePath = pathFor(sharedId ?? '');
   const shareUrl = sharedId && shareUrlBase ? `${shareUrlBase}/${sharePath}` : '';
 
   const handleCopyUrl = async () => {
@@ -77,6 +85,18 @@ export function ShareModal({
       setShowCopiedMessage(true);
       setTimeout(() => setShowCopiedMessage(false), 2000);
     }
+  };
+
+  const handleCopyHistoryUrl = async (record: ShareRecord) => {
+    if (!shareUrlBase) return;
+    await Clipboard.setStringAsync(`${shareUrlBase}/${pathFor(record.sharedId)}`);
+    setCopiedHistoryId(record.sharedId);
+    setTimeout(() => setCopiedHistoryId(null), 2000);
+  };
+
+  const handleOpenHistory = (record: ShareRecord) => {
+    onClose();
+    router.push(`/shared/${pathFor(record.sharedId)}`);
   };
 
   const { isAuthenticated } = useAuth();
@@ -199,6 +219,42 @@ export function ShareModal({
               numberOfLines={3}
             />
           </View>
+
+          {!sharedId && shareHistory.length > 0 && (
+            <View style={styles.inputContainer}>
+              <ThemedText style={styles.label}>
+                Previous shares ({shareHistory.length})
+              </ThemedText>
+              <ScrollView style={[styles.historyList, { borderColor: theme.text + '20' }]}>
+                {[...shareHistory].reverse().map((record) => (
+                  <View
+                    key={record.sharedId}
+                    style={styles.historyRow}
+                  >
+                    <TouchableOpacity
+                      style={styles.historyInfo}
+                      onPress={() => handleOpenHistory(record)}
+                    >
+                      <ThemedText style={styles.historyTitle} numberOfLines={1}>
+                        {record.title}
+                      </ThemedText>
+                      <ThemedText style={styles.historyDate}>
+                        {new Date(record.sharedAt).toLocaleString()}
+                      </ThemedText>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      onPress={() => handleCopyHistoryUrl(record)}
+                      style={styles.historyCopyButton}
+                    >
+                      <ThemedText style={[styles.historyCopyText, { color: theme.tint }]}>
+                        {copiedHistoryId === record.sharedId ? 'Copied!' : 'Copy link'}
+                      </ThemedText>
+                    </TouchableOpacity>
+                  </View>
+                ))}
+              </ScrollView>
+            </View>
+          )}
 
           {sharedId && (
             <View style={styles.urlContainer}>
@@ -323,6 +379,38 @@ const styles = StyleSheet.create({
   },
   urlContainer: {
     marginBottom: 16,
+  },
+  historyList: {
+    borderWidth: 1,
+    borderRadius: 8,
+    maxHeight: 160,
+    overflow: 'hidden',
+  },
+  historyRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    gap: 8,
+  },
+  historyInfo: {
+    flex: 1,
+  },
+  historyTitle: {
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  historyDate: {
+    fontSize: 12,
+    opacity: 0.6,
+  },
+  historyCopyButton: {
+    paddingVertical: 4,
+    paddingLeft: 8,
+  },
+  historyCopyText: {
+    fontSize: 13,
+    fontWeight: '500',
   },
   urlBox: {
     borderWidth: 1,

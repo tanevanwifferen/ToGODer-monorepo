@@ -142,6 +142,7 @@ export function ChatHeader({ title = 'Chat', onBack, messages }: ChatHeaderProps
         messages={signedMessages}
         isLoading={isLoading}
         sharedId={sharedConversation?.id}
+        shareHistory={currentChat?.shareHistory}
       />
     </>
   );
