@@ -208,9 +208,20 @@ export interface ToolStatusEvent {
   isError?: boolean;
 }
 
+/**
+ * Server-signed snapshot of the custom instructions active for the request.
+ * Signature covers content + timestamp so instruction changes are verifiable.
+ */
+export interface InstructionsSnapshotEvent {
+  content: string;
+  timestamp: number;
+  signature: string;
+}
+
 export type StreamEvent =
   | { type: "chunk"; data: string }
   | { type: "signature"; data: string }
+  | { type: "instructions"; data: InstructionsSnapshotEvent }
   | { type: "memory_request"; data: { keys: string[] } }
   | { type: "tool_call"; data: ArtifactToolCall }
   | { type: "tool_status"; data: ToolStatusEvent }
@@ -491,6 +502,12 @@ export class ChatApiClient {
                 yield { type: "signature", data: sig };
                 break;
               }
+              case "instructions":
+                yield {
+                  type: "instructions",
+                  data: data as InstructionsSnapshotEvent,
+                };
+                break;
               case "memory_request":
                 yield {
                   type: "memory_request",
@@ -702,6 +719,12 @@ export class ChatApiClient {
               yield { type: "signature", data: sig };
               break;
             }
+            case "instructions":
+              yield {
+                type: "instructions",
+                data: data as InstructionsSnapshotEvent,
+              };
+              break;
             case "memory_request":
               yield {
                 type: "memory_request",

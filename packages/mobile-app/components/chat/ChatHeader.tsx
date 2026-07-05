@@ -5,11 +5,13 @@
 
 import React from 'react';
 import { StyleSheet, View, TouchableOpacity, Text, useColorScheme } from 'react-native';
+import { useSelector } from 'react-redux';
 import { Colors } from '../../constants/Colors';
 import { useShareConversation } from '../../query-hooks/useSharedConversations';
 import { ShareModal } from '../shared/ShareModal';
 import { ApiChatMessage } from '../../model/ChatRequest';
 import { ShareRequest, SignedMessage } from '../../model/ShareTypes';
+import { selectCurrentChat } from '../../redux/slices/chatSelectors';
 import Toast from 'react-native-toast-message';
 import { useAuth } from '../../hooks/useAuth';
 
@@ -42,9 +44,16 @@ export function ChatHeader({ title = 'Chat', onBack, messages }: ChatHeaderProps
     sharedConversation,
   } = useShareConversation();
 
+  const currentChat = useSelector(selectCurrentChat);
+
   const handleShare = async (request: ShareRequest) => {
     try {
-      await shareConversation(request);
+      // Attach the signed custom-instructions history so viewers can see
+      // (and the server can verify) which instructions shaped this chat.
+      await shareConversation({
+        ...request,
+        instructionHistory: currentChat?.instructionHistory,
+      });
       Toast.show({
         type: 'success',
         text1: 'Conversation shared successfully',

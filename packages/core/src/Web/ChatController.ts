@@ -124,9 +124,25 @@ const chatHandler = async (req: Request, res: Response, next: NextFunction) => {
       { content: response, role: 'assistant' },
     ]);
 
+    // Signed snapshot of the custom instructions used for this response, so
+    // clients can keep a verifiable history of instruction changes.
+    let instructionsSnapshot = undefined;
+    if (body.customSystemPrompt) {
+      const timestamp = Date.now();
+      instructionsSnapshot = {
+        content: body.customSystemPrompt,
+        timestamp,
+        signature: chatService.generateInstructionsSignature(
+          body.customSystemPrompt,
+          timestamp
+        ),
+      };
+    }
+
     res.json({
       content: response,
       signature: signature,
+      instructionsSnapshot,
       updateData: null,
     });
   } catch (error) {
@@ -206,6 +222,9 @@ export function GetChatRouter(messageLimiter: RateLimitRequestHandler): Router {
               break;
             case 'signature':
               sse.event('signature', evt.data);
+              break;
+            case 'instructions':
+              sse.event('instructions', evt.data);
               break;
             case 'tool_call':
               sse.event('tool_call', evt.data);

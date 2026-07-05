@@ -6,6 +6,8 @@
 import { ApiClient } from './ApiClient';
 import {
   ShareRequest,
+  ShareArtifactRequest,
+  SharedArtifact,
   SharedConversation,
   ListSharedConversationsResponse,
 } from '../model/ShareTypes';
@@ -54,5 +56,31 @@ export class ShareApiClient {
    */
   static async deleteSharedConversation(id: string): Promise<void> {
     return ApiClient.delete(`/share/${id}`);
+  }
+
+  /**
+   * Creates a new shared artifact.
+   * Requires authentication; instruction snapshots are verified server-side.
+   */
+  static async shareArtifact(
+    request: ShareArtifactRequest
+  ): Promise<SharedArtifact> {
+    return ApiClient.post<SharedArtifact>('/share/artifact', request);
+  }
+
+  /**
+   * Retrieves a specific shared artifact by ID.
+   * Public endpoint that doesn't require authentication.
+   */
+  static async getSharedArtifact(id: string): Promise<SharedArtifact> {
+    return ApiClient.get<SharedArtifact>(`/share/artifact/${id}`);
+  }
+
+  /**
+   * Deletes a shared artifact.
+   * Requires authentication and ownership of the shared artifact.
+   */
+  static async deleteSharedArtifact(id: string): Promise<void> {
+    return ApiClient.delete(`/share/artifact/${id}`);
   }
 }

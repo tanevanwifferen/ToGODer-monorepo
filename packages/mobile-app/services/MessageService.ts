@@ -3,6 +3,7 @@ import {
   addChat,
   addMessage,
   updateMessageAtIndex,
+  appendInstructionSnapshot,
   addMemories,
   setAutoGenerateAnswer,
 } from "../redux/slices/chatsSlice";
@@ -921,6 +922,15 @@ export class MessageService {
             break;
           }
 
+          case "instructions": {
+            // Server-signed snapshot of the custom instructions used for this
+            // response; the slice only appends it when the content changed.
+            store.dispatch(
+              appendInstructionSnapshot({ chatId, snapshot: evt.data })
+            );
+            break;
+          }
+
           case "memory_request": {
             const rawKeys = evt.data?.keys ?? [];
             const keys = rawKeys.filter((x: string) =>
@@ -1357,6 +1367,16 @@ export class MessageService {
       };
 
       store.dispatch(addMessage({ id: chatId, message: assistantMessage }));
+
+      // Record the signed custom-instructions snapshot, if the server sent one
+      if (response.instructionsSnapshot) {
+        store.dispatch(
+          appendInstructionSnapshot({
+            chatId,
+            snapshot: response.instructionsSnapshot,
+          })
+        );
+      }
 
       onComplete?.(assistantMessage);
     } catch (error) {

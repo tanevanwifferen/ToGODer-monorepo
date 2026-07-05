@@ -263,10 +263,28 @@ export function mergeSingleChat(
   const metadataWinner = localEffective >= remoteEffective ? local : remote;
   const effectiveMax = Math.max(localEffective, remoteEffective);
 
+  // Union instruction histories from both sides: dedupe by signed timestamp +
+  // content, keep chronological order, and drop consecutive duplicates so the
+  // history still reads as a list of actual changes.
+  const instructionUnion = [
+    ...(local.instructionHistory ?? []),
+    ...(remote.instructionHistory ?? []),
+  ]
+    .filter(
+      (entry, i, arr) =>
+        arr.findIndex(
+          (e) => e.timestamp === entry.timestamp && e.content === entry.content
+        ) === i
+    )
+    .sort((a, b) => a.timestamp - b.timestamp)
+    .filter((entry, i, arr) => i === 0 || entry.content !== arr[i - 1].content);
+
   const merged: SyncableChat = {
     ...metadataWinner,
     messages: mergedMessages,
     updatedAt: effectiveMax,
+    instructionHistory:
+      instructionUnion.length > 0 ? instructionUnion : undefined,
   };
 
   console.log(

@@ -18,6 +18,13 @@ export default function SharedLayout() {
             headerShown: true
           }}
         />
+        <Stack.Screen
+          name="artifact/[id]"
+          options={{
+            title: undefined, // Will be set dynamically in the screen component
+            headerShown: true
+          }}
+        />
       </Stack>
     </View>
   );

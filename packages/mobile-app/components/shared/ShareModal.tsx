@@ -30,9 +30,13 @@ interface ShareModalProps {
   onClose: () => void;
   onShare: (request: ShareRequest) => Promise<void>;
   initialTitle: string;
-  messages: ShareRequest['messages'];
+  messages?: ShareRequest['messages'];
   isLoading?: boolean;
   sharedId?: string;
+  // What is being shared, e.g. "Conversation" (default) or "Artifact".
+  entityLabel?: string;
+  // Route segment appended after /shared for viewing, e.g. "artifact".
+  pathPrefix?: string;
 }
 
 export function ShareModal({
@@ -40,9 +44,11 @@ export function ShareModal({
   onClose,
   onShare,
   initialTitle,
-  messages,
+  messages = [],
   isLoading = false,
   sharedId,
+  entityLabel = 'Conversation',
+  pathPrefix,
 }: ShareModalProps) {
   const colorScheme = useColorScheme();
   const theme = Colors[colorScheme ?? 'light'];
@@ -62,7 +68,8 @@ export function ShareModal({
   }, [visible, initialTitle]);
 
   const shareUrlBase = getShareUrl();
-  const shareUrl = sharedId && shareUrlBase ? `${shareUrlBase}/${sharedId}` : '';
+  const sharePath = pathPrefix ? `${pathPrefix}/${sharedId}` : `${sharedId}`;
+  const shareUrl = sharedId && shareUrlBase ? `${shareUrlBase}/${sharePath}` : '';
 
   const handleCopyUrl = async () => {
     if (shareUrl) {
@@ -97,11 +104,11 @@ export function ShareModal({
         style={styles.modalContainer}
       >
         <View style={[styles.modalContent, { backgroundColor: theme.background }]}>
-          <ThemedText style={styles.modalTitle}>Share Conversation</ThemedText>
+          <ThemedText style={styles.modalTitle}>Share {entityLabel}</ThemedText>
           {!isAuthenticated && (
             <View style={styles.warningContainer}>
               <ThemedText style={[styles.warningText, { color: theme.tint }]}>
-                ⚠️ You must be logged in to share conversations
+                ⚠️ You must be logged in to share
               </ThemedText>
             </View>
           )}
@@ -231,11 +238,11 @@ export function ShareModal({
                 ]}
                 onPress={() => {
                   onClose();
-                  router.push(`/shared/${sharedId}`);
+                  router.push(`/shared/${sharePath}`);
                 }}
               >
                 <ThemedText style={[styles.shareButtonText, { color: colorScheme === 'light' ? 'white' : theme.text }]}>
-                  Go to conversation
+                  Go to {entityLabel.toLowerCase()}
                 </ThemedText>
               </TouchableOpacity>
             ) : (
@@ -248,7 +255,7 @@ export function ShareModal({
                 ]}
                 onPress={handleShare}
                 disabled={!isAuthenticated || isLoading || !title.trim()}
-                accessibilityHint={!isAuthenticated ? "You must be logged in to share conversations" : ""}
+                accessibilityHint={!isAuthenticated ? "You must be logged in to share" : ""}
               >
                 {isLoading ? (
                   <ActivityIndicator color="white" />

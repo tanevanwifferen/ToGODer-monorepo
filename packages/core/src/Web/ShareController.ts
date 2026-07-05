@@ -7,6 +7,16 @@ import { z } from 'zod';
 import { ChatCompletionMessageParam } from 'openai/resources/index';
 
 // Validation schemas
+const instructionHistorySchema = z
+  .array(
+    z.object({
+      content: z.string(),
+      timestamp: z.number(),
+      signature: z.string(),
+    })
+  )
+  .optional();
+
 const shareRequestSchema = z.object({
   messages: z.array(
     z.object({
@@ -20,6 +30,15 @@ const shareRequestSchema = z.object({
   title: z.string(),
   description: z.string().optional(),
   visibility: z.enum(['PUBLIC', 'PRIVATE']).default('PUBLIC'),
+  instructionHistory: instructionHistorySchema,
+});
+
+const shareArtifactRequestSchema = z.object({
+  title: z.string(),
+  description: z.string().optional(),
+  content: z.string(),
+  visibility: z.enum(['PUBLIC', 'PRIVATE']).default('PUBLIC'),
+  instructionHistory: instructionHistorySchema,
 });
 
 const paginationSchema = z.object({
@@ -56,7 +75,8 @@ export function GetShareRouter(
           body.title,
           body.description,
           user,
-          body.visibility
+          body.visibility,
+          body.instructionHistory
         );
 
         res.json(sharedChat);
@@ -67,6 +87,101 @@ export function GetShareRouter(
             .json({ error: 'Invalid request data', details: error.errors });
           return;
         }
+        next(error);
+      }
+    }
+  );
+
+  // Share an artifact
+  shareRouter.post(
+    '/api/share/artifact',
+    messageLimiter,
+    setAuthUser,
+    async (req: Request, res: Response, next: NextFunction) => {
+      try {
+        const user = (req as ToGODerRequest).togoder_auth?.user;
+        if (!user) {
+          res.status(401).json({ error: 'Authentication required' });
+          return;
+        }
+
+        const body = shareArtifactRequestSchema.parse(req.body);
+        const sharedArtifact = await shareService.createSharedArtifact(
+          body.title,
+          body.description,
+          body.content,
+          user,
+          body.visibility,
+          body.instructionHistory
+        );
+
+        res.json(sharedArtifact);
+      } catch (error) {
+        if (error instanceof z.ZodError) {
+          res
+            .status(400)
+            .json({ error: 'Invalid request data', details: error.errors });
+          return;
+        }
+        next(error);
+      }
+    }
+  );
+
+  // Get a specific shared artifact
+  shareRouter.get(
+    '/api/share/artifact/:id',
+    messageLimiter,
+    async (req: Request, res: Response, next: NextFunction) => {
+      try {
+        const artifact = await shareService.getSharedArtifact(req.params.id);
+        if (!artifact) {
+          res.status(404).json({ error: 'Shared artifact not found' });
+          return;
+        }
+        res.json(artifact);
+      } catch (error) {
+        next(error);
+      }
+    }
+  );
+
+  // Delete a shared artifact (only by owner)
+  shareRouter.delete(
+    '/api/share/artifact/:id',
+    messageLimiter,
+    setAuthUser,
+    async (req: Request, res: Response, next: NextFunction) => {
+      try {
+        const user = (req as ToGODerRequest).togoder_auth?.user;
+        if (!user) {
+          res.status(401).json({ error: 'Authentication required' });
+          return;
+        }
+
+        try {
+          const success = await shareService.deleteSharedArtifact(
+            req.params.id,
+            user
+          );
+          if (!success) {
+            res.status(404).json({ error: 'Shared artifact not found' });
+            return;
+          }
+          res
+            .status(200)
+            .json({ message: 'Shared artifact deleted successfully' });
+        } catch (error) {
+          if (
+            error instanceof Error &&
+            error.message === 'Only the original sharer can delete this artifact'
+          ) {
+            res.status(403).json({ error: error.message });
+            return;
+          }
+          throw error;
+        }
+      } catch (error) {
         next(error);
       }
     }

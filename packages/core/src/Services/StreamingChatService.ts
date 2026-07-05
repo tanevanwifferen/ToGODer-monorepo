@@ -145,6 +145,17 @@ export interface ToolStatusData {
 }
 
 /**
+ * Signed snapshot of the custom instructions active for this request.
+ * The server signs content + timestamp so clients can keep a verifiable
+ * history of when their custom instructions changed.
+ */
+export interface InstructionsSnapshotData {
+  content: string;
+  timestamp: number;
+  signature: string;
+}
+
+/**
  * Events emitted during streaming. Consumers can map these to SSE frames or other transports.
  */
 export type StreamEvent =
@@ -153,6 +164,7 @@ export type StreamEvent =
   | { type: 'tool_call'; data: ToolCallData }
   | { type: 'tool_status'; data: ToolStatusData }
   | { type: 'signature'; data: { signature: string } }
+  | { type: 'instructions'; data: InstructionsSnapshotData }
   | { type: 'error'; data: { message: string } }
   | { type: 'done'; data?: null };
 
@@ -192,6 +204,24 @@ export class StreamingChatService {
   ): AsyncGenerator<StreamEvent, void, void> {
     if (Array.isArray(body.prompts)) {
       body.prompts = sanitizeToolMessages(body.prompts);
+    }
+
+    // When custom instructions are in play, emit a signed snapshot of them so
+    // the client can keep a verifiable, timestamped history of instruction
+    // changes alongside the chat (used when sharing conversations/artifacts).
+    if (body.customSystemPrompt) {
+      const timestamp = Date.now();
+      yield {
+        type: 'instructions',
+        data: {
+          content: body.customSystemPrompt,
+          timestamp,
+          signature: this.chatService.generateInstructionsSignature(
+            body.customSystemPrompt,
+            timestamp
+          ),
+        },
+      };
     }
 
     // Agentic commands (e.g. /goal) run the model as an autonomous, multi-step

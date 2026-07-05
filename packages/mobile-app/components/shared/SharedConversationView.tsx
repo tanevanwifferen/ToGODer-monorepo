@@ -19,7 +19,8 @@ import { Colors } from '../../constants/Colors';
 import { ThemedText } from '../ThemedText';
 import { ThemedView } from '../ThemedView';
 import { MermaidMessageContent } from '../chat/mermaid/MermaidMessageContent';
-import { SharedConversation } from '../../model/ShareTypes';
+import { SharedConversation, parseInstructionHistory } from '../../model/ShareTypes';
+import { InstructionHistorySection } from './InstructionHistorySection';
 import { ShareApiClient } from '../../apiClients/ShareApiClient';
 import { addChat, setCurrentChat } from '../../redux/slices/chatsSlice';
 import Toast from 'react-native-toast-message';
@@ -108,6 +109,9 @@ export function SharedConversationView({ conversation, onBack }: SharedConversat
 
   // Parse messages from JSON string
   const messages = JSON.parse(conversation.messages);
+  const instructionHistory = parseInstructionHistory(
+    conversation.instructionHistory
+  );
 
   return (
     <ThemedView style={styles.container}>
@@ -148,6 +152,8 @@ export function SharedConversationView({ conversation, onBack }: SharedConversat
             {conversation.views} views
           </ThemedText>
         </View>
+
+        <InstructionHistorySection history={instructionHistory} />
 
         <View style={styles.messagesContainer}>
           {messages.map((msg: any, index: number) => (

@@ -24,6 +24,7 @@ interface ArtifactActionsModalProps {
   artifact: Artifact | null;
   onRename: () => void;
   onMove: () => void;
+  onShare: () => void;
   onDelete: () => void;
   onClose: () => void;
 }
@@ -31,6 +32,7 @@ interface ArtifactActionsModalProps {
 const ACTIONS: ActionItem[] = [
   { id: "rename", label: "Rename", icon: "pencil" },
   { id: "move", label: "Move to...", icon: "folder" },
+  { id: "share", label: "Share", icon: "square.and.arrow.up" },
   { id: "delete", label: "Delete", icon: "trash", destructive: true },
 ];
 
@@ -39,6 +41,7 @@ export function ArtifactActionsModal({
   artifact,
   onRename,
   onMove,
+  onShare,
   onDelete,
   onClose,
 }: ArtifactActionsModalProps) {
@@ -46,6 +49,11 @@ export function ArtifactActionsModal({
   const theme = Colors[colorScheme ?? "light"];
 
   if (!artifact) return null;
+
+  // Only files have shareable content
+  const actions = ACTIONS.filter(
+    (action) => action.id !== "share" || artifact.type === "file"
+  );
 
   const handleAction = (actionId: string) => {
     onClose();
@@ -57,6 +65,9 @@ export function ArtifactActionsModal({
           break;
         case "move":
           onMove();
+          break;
+        case "share":
+          onShare();
           break;
         case "delete":
           onDelete();
@@ -103,12 +114,12 @@ export function ArtifactActionsModal({
 
           {/* Actions */}
           <View style={styles.actionList}>
-            {ACTIONS.map((action, index) => (
+            {actions.map((action, index) => (
               <TouchableOpacity
                 key={action.id}
                 style={[
                   styles.actionItem,
-                  index < ACTIONS.length - 1 && {
+                  index < actions.length - 1 && {
                     borderBottomColor: colorScheme === "dark" ? "#333" : "#eee",
                     borderBottomWidth: StyleSheet.hairlineWidth,
                   },

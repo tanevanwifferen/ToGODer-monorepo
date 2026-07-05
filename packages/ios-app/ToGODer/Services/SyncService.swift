@@ -28,6 +28,14 @@ struct SyncableMemory: Codable {
     var deletedAt: Double? // epoch ms
 }
 
+/// Server-signed snapshot of the custom instructions active at a point in
+/// time. Wire-compatible with RN `SignedInstructionSnapshot`.
+struct SignedInstructionSnapshot: Codable, Equatable {
+    var content: String
+    var timestamp: Double // epoch ms
+    var signature: String
+}
+
 struct SyncableChat: Codable {
     var id: String
     var title: String?
@@ -40,6 +48,8 @@ struct SyncableChat: Codable {
     var updatedAt: Double // epoch ms
     var deleted: Bool?
     var deletedAt: Double? // epoch ms
+    // Optional so payloads from older clients still decode.
+    var instructionHistory: [SignedInstructionSnapshot]?
 }
 
 struct SyncableMessage: Codable {
@@ -413,7 +423,8 @@ final class SyncService: ObservableObject {
                 projectId: chat.projectId,
                 updatedAt: chatUpdatedAt,
                 deleted: chat.deleted,
-                deletedAt: chat.deletedAt.map { $0.timeIntervalSince1970 * 1000 }
+                deletedAt: chat.deletedAt.map { $0.timeIntervalSince1970 * 1000 },
+                instructionHistory: chat.instructionHistory
             )
         }
 
@@ -615,6 +626,22 @@ final class SyncService: ObservableObject {
         merged.updatedAt = effectiveMax
         merged.last_update = effectiveMax
 
+        // Union instruction histories from both sides (matches RN mergeUtils):
+        // dedupe by signed timestamp + content, sort chronologically, and drop
+        // consecutive duplicates so the history reads as actual changes.
+        var instructionUnion: [SignedInstructionSnapshot] = []
+        for entry in (local.instructionHistory ?? []) + (remote.instructionHistory ?? []) {
+            if !instructionUnion.contains(where: { $0.timestamp == entry.timestamp && $0.content == entry.content }) {
+                instructionUnion.append(entry)
+            }
+        }
+        instructionUnion.sort { $0.timestamp < $1.timestamp }
+        var deduped: [SignedInstructionSnapshot] = []
+        for entry in instructionUnion where deduped.last?.content != entry.content {
+            deduped.append(entry)
+        }
+        merged.instructionHistory = deduped.isEmpty ? nil : deduped
+
         print("[SyncService] Chat \(chatId): merged local(\(local.messages.count) msgs, effective=\(localEffective)) + remote(\(remote.messages.count) msgs, effective=\(remoteEffective)) = \(merged.messages.count) msgs")
         return merged
     }
@@ -813,6 +840,7 @@ final class SyncService: ObservableObject {
         )
         chat.deleted = syncChat.deleted
         chat.deletedAt = syncChat.deletedAt.map { Date(timeIntervalSince1970: $0 / 1000) }
+        chat.instructionHistory = syncChat.instructionHistory
         return chat
     }
 

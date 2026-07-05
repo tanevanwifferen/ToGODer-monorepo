@@ -26,6 +26,13 @@ export interface SyncableChat {
   updatedAt: number;
   deleted?: boolean; // Tombstone: chat was deleted
   deletedAt?: number; // When the chat was deleted
+  // Server-signed custom-instruction snapshots ({content, timestamp, signature}),
+  // ordered by timestamp. Merged as a union across devices.
+  instructionHistory?: Array<{
+    content: string;
+    timestamp: number;
+    signature: string;
+  }>;
 }
 
 export interface SyncablePersonal {

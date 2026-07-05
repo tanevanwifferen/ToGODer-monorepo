@@ -1,5 +1,6 @@
 import { createSlice, PayloadAction } from "@reduxjs/toolkit";
 import { ApiChatMessage } from "../../model/ChatRequest";
+import { SignedInstructionSnapshot } from "../../model/ShareTypes";
 import { v4 as uuidv4 } from "uuid";
 
 export interface Chat {
@@ -13,6 +14,9 @@ export interface Chat {
   projectId?: string;
   deleted?: boolean; // Tombstone marker for sync
   deletedAt?: number; // When the chat was deleted
+  // Server-signed history of the custom instructions used in this chat.
+  // A new entry is appended only when the instructions actually change.
+  instructionHistory?: SignedInstructionSnapshot[];
 }
 
 export interface ChatsState {
@@ -170,6 +174,30 @@ const chatsSlice = createSlice({
       }
       chat.last_update = new Date().getTime();
     },
+    // Record a server-signed custom-instructions snapshot on a chat. Only
+    // appends when the instruction content differs from the latest entry, so
+    // the history reflects actual changes (with verifiable timestamps).
+    appendInstructionSnapshot: (
+      state,
+      action: PayloadAction<{
+        chatId: string;
+        snapshot: SignedInstructionSnapshot;
+      }>
+    ) => {
+      const { chatId, snapshot } = action.payload;
+      const chat = state.chats[chatId];
+      if (!chat) {
+        console.warn(`Chat ${chatId} not found when adding instructions`);
+        return;
+      }
+      const history = chat.instructionHistory ?? [];
+      const last = history[history.length - 1];
+      if (last && last.content === snapshot.content) {
+        return;
+      }
+      chat.instructionHistory = [...history, snapshot];
+      chat.last_update = new Date().getTime();
+    },
     setTitle: (state, action: PayloadAction<{ id: string; title: string }>) => {
       const chat = state.chats[action.payload.id];
       if (chat) {
@@ -292,6 +320,7 @@ export const {
   addChat,
   addMessage,
   updateMessageAtIndex,
+  appendInstructionSnapshot,
   deleteMessage,
   deleteMessageByContent,
   setTitle,
