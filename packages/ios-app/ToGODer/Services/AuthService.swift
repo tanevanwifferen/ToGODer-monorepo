@@ -100,6 +100,28 @@ final class AuthService: ObservableObject {
         }
     }
 
+    /// Completes a password reset using the code from the reset email.
+    /// Mirrors RN AuthApiClient.setNewPassword.
+    func resetPassword(code: String, email: String, newPassword: String) async -> Bool {
+        isLoading = true
+        error = nil
+        defer { isLoading = false }
+
+        do {
+            try await apiClient.post(
+                "/auth/resetPassword/\(code)",
+                body: ResetPasswordRequest(email: email, password: newPassword)
+            )
+            return true
+        } catch let apiError as APIError {
+            error = apiError.errorDescription
+            return false
+        } catch {
+            self.error = error.localizedDescription
+            return false
+        }
+    }
+
     func changePassword(oldPassword: String, newPassword: String) async -> Bool {
         isLoading = true
         error = nil

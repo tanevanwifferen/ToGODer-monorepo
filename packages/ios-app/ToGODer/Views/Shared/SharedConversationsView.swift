@@ -25,7 +25,9 @@ struct SharedConversationsView: View {
                 List {
                     ForEach(sharedChats) { chat in
                         NavigationLink {
-                            SharedChatDetailView(sharedChat: chat)
+                            SharedChatDetailView(sharedChat: chat, onDeleted: {
+                                Task { await refresh() }
+                            })
                         } label: {
                             VStack(alignment: .leading, spacing: 4) {
                                 Text(chat.title)
@@ -112,7 +114,20 @@ struct SharedConversationsView: View {
 
 struct SharedChatDetailView: View {
     let sharedChat: SharedChat
+    /// Called after the owner deletes this share so the list can refresh.
+    var onDeleted: (() -> Void)?
+
+    @EnvironmentObject var appState: AppState
+    @Environment(\.dismiss) private var dismiss
     @State private var messages: [SignedMessage] = []
+    @State private var isDeleting = false
+    @State private var showDeleteConfirm = false
+    @State private var actionError: String?
+    @State private var showCopiedConfirmation = false
+
+    private var isOwner: Bool {
+        appState.currentUserId == sharedChat.ownerId
+    }
 
     var body: some View {
         ScrollView {
@@ -131,11 +146,80 @@ struct SharedChatDetailView: View {
         }
         .navigationTitle(sharedChat.title)
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Menu {
+                    Button {
+                        copyToMyChats()
+                    } label: {
+                        Label("Copy to My Chats", systemImage: "doc.on.doc")
+                    }
+
+                    if isOwner {
+                        Button(role: .destructive) {
+                            showDeleteConfirm = true
+                        } label: {
+                            Label("Delete Share", systemImage: "trash")
+                        }
+                        .disabled(isDeleting)
+                    }
+                } label: {
+                    if isDeleting {
+                        ProgressView()
+                    } else {
+                        Image(systemName: "ellipsis.circle")
+                    }
+                }
+            }
+        }
+        .confirmationDialog(
+            "Are you sure you want to delete this shared conversation? This action cannot be undone.",
+            isPresented: $showDeleteConfirm,
+            titleVisibility: .visible
+        ) {
+            Button("Delete", role: .destructive) {
+                Task { await deleteShare() }
+            }
+        }
+        .alert("Error", isPresented: .constant(actionError != nil)) {
+            Button("OK") { actionError = nil }
+        } message: {
+            Text(actionError ?? "")
+        }
+        .alert("Conversation copied to your chats", isPresented: $showCopiedConfirmation) {
+            Button("OK") { }
+        }
         .onAppear {
             if let data = sharedChat.messages.data(using: .utf8),
                let decoded = try? JSONDecoder().decode([SignedMessage].self, from: data) {
                 messages = decoded
             }
+        }
+    }
+
+    /// Creates a local chat from the shared messages, mirroring RN's
+    /// handleCopy in SharedConversationView (local copy, not the backend
+    /// copy endpoint).
+    private func copyToMyChats() {
+        let chatMessages = messages.map { msg in
+            ChatMessage(
+                content: msg.content,
+                role: msg.role == "user" ? .user : .assistant
+            )
+        }
+        appState.chatService.importChat(title: sharedChat.title, messages: chatMessages)
+        showCopiedConfirmation = true
+    }
+
+    private func deleteShare() async {
+        isDeleting = true
+        defer { isDeleting = false }
+        do {
+            try await appState.chatService.apiClient.delete("/share/\(sharedChat.id)")
+            onDeleted?()
+            dismiss()
+        } catch {
+            actionError = error.localizedDescription
         }
     }
 }

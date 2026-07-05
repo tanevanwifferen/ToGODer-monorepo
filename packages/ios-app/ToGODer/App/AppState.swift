@@ -61,9 +61,16 @@ final class AppState: ObservableObject {
         self.chatService.artifactService = artifactService
         self.chatService.memoryService = memoryService
         self.chatService.personalDataService = personalDataService
+        self.chatService.authService = authService
+        self.chatService.balanceService = balanceService
+        self.artifactService.syncService = syncService
         self.projectService = ProjectService(storage: storage, chatService: chatService)
 
         setupBindings()
+    }
+
+    var currentUserId: String? {
+        storage.userId
     }
 
     func loadGlobalConfig() async {

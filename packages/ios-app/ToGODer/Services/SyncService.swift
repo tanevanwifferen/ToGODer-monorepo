@@ -52,6 +52,7 @@ struct SyncableMessage: Codable {
     var hidden: Bool?
     var artifactId: String? // matches RN ApiChatMessage
     var tool_call_id: String? // matches RN ApiChatMessage
+    var tool_calls: [APIToolCall]? // matches RN ApiChatMessage
     var deleted: Bool?
     var deletedAt: Double? // epoch ms
 }
@@ -395,6 +396,7 @@ final class SyncService: ObservableObject {
                     hidden: msg.hidden,
                     artifactId: msg.artifactId,
                     tool_call_id: msg.toolCallId,
+                    tool_calls: msg.toolCalls,
                     deleted: msg.deleted,
                     deletedAt: msg.deletedAt.map { $0.timeIntervalSince1970 * 1000 }
                 )
@@ -794,6 +796,7 @@ final class SyncService: ObservableObject {
             chatMsg.updateData = msg.updateData
             chatMsg.artifactId = msg.artifactId
             chatMsg.toolCallId = msg.tool_call_id
+            chatMsg.toolCalls = msg.tool_calls
             chatMsg.deleted = msg.deleted
             chatMsg.deletedAt = msg.deletedAt.map { Date(timeIntervalSince1970: $0 / 1000) }
             return chatMsg

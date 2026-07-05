@@ -177,6 +177,8 @@ enum SSEEvent {
     case signature(String)
     case memoryRequest([String])
     case toolCall(ToolCallData)
+    case toolStatus(ToolStatusData)
+    case toolResult(ToolResultData)
     case error(String)
     case done
 
@@ -232,6 +234,14 @@ enum SSEEvent {
                 return .toolCall(parsed)
             }
             return nil
+        case "tool_status":
+            guard let d = data,
+                  let parsed = try? JSONDecoder().decode(ToolStatusData.self, from: Data(d.utf8)) else { return nil }
+            return .toolStatus(parsed)
+        case "tool_result":
+            guard let d = data,
+                  let parsed = try? JSONDecoder().decode(ToolResultData.self, from: Data(d.utf8)) else { return nil }
+            return .toolResult(parsed)
         case "error":
             if let d = data,
                let parsed = try? JSONDecoder().decode(SSEErrorData.self, from: Data(d.utf8)) {
@@ -274,7 +284,111 @@ private struct SSEMemoryRequestData: Codable {
 struct ToolCallData: Codable {
     let id: String?
     let name: String
-    let arguments: [String: String]?
+    let arguments: [String: ToolArgumentValue]?
+
+    /// Convenience accessor: string value for an argument key.
+    func string(_ key: String) -> String? {
+        arguments?[key]?.stringValue
+    }
+
+    /// Convenience accessor: integer value for an argument key.
+    func int(_ key: String) -> Int? {
+        arguments?[key]?.intValue
+    }
+
+    /// JSON-encodes the raw arguments, matching RN's
+    /// `JSON.stringify(toolCall.arguments ?? {})` for the tool_calls record.
+    func argumentsJSON() -> String {
+        guard let arguments,
+              let data = try? JSONEncoder().encode(arguments),
+              let json = String(data: data, encoding: .utf8) else {
+            return "{}"
+        }
+        return json
+    }
+}
+
+/// Tool arguments arrive as arbitrary JSON values (e.g. `depth` is a number,
+/// `path` is a string). Decodes any scalar/array/object without loss.
+enum ToolArgumentValue: Codable {
+    case string(String)
+    case number(Double)
+    case bool(Bool)
+    case null
+    case array([ToolArgumentValue])
+    case object([String: ToolArgumentValue])
+
+    var stringValue: String? {
+        if case .string(let s) = self { return s }
+        return nil
+    }
+
+    var intValue: Int? {
+        switch self {
+        case .number(let n): return Int(n)
+        case .string(let s): return Int(s)
+        default: return nil
+        }
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        if container.decodeNil() {
+            self = .null
+        } else if let b = try? container.decode(Bool.self) {
+            self = .bool(b)
+        } else if let n = try? container.decode(Double.self) {
+            self = .number(n)
+        } else if let s = try? container.decode(String.self) {
+            self = .string(s)
+        } else if let a = try? container.decode([ToolArgumentValue].self) {
+            self = .array(a)
+        } else if let o = try? container.decode([String: ToolArgumentValue].self) {
+            self = .object(o)
+        } else {
+            throw DecodingError.dataCorruptedError(in: container, debugDescription: "Unsupported tool argument value")
+        }
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+        switch self {
+        case .string(let s): try container.encode(s)
+        case .number(let n):
+            if n == n.rounded(), abs(n) < 1e15 {
+                try container.encode(Int64(n))
+            } else {
+                try container.encode(n)
+            }
+        case .bool(let b): try container.encode(b)
+        case .null: try container.encodeNil()
+        case .array(let a): try container.encode(a)
+        case .object(let o): try container.encode(o)
+        }
+    }
+}
+
+/// Tool activity status emitted by the backend so the UI can show what the
+/// AI is currently doing. Wire-compatible with RN `ToolStatusEvent`.
+struct ToolStatusData: Codable {
+    let id: String
+    let name: String
+    let status: String // "generating" | "running" | "done"
+    let isError: Bool?
+}
+
+/// Backend-executed tool result. Wire-compatible with RN `ToolResultEvent`.
+struct ToolResultData: Codable {
+    let toolCallId: String
+    let name: String
+    let result: String
+    let isError: Bool
+
+    enum CodingKeys: String, CodingKey {
+        case toolCallId = "tool_call_id"
+        case name, result
+        case isError = "is_error"
+    }
 }
 
 // MARK: - Streaming Delegate

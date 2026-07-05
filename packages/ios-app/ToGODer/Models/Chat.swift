@@ -51,6 +51,7 @@ struct ChatMessage: Identifiable, Codable {
     var hidden: Bool?
     var artifactId: String?
     var toolCallId: String?
+    var toolCalls: [APIToolCall]?
     var deleted: Bool?
     var deletedAt: Date?
 
@@ -60,7 +61,10 @@ struct ChatMessage: Identifiable, Codable {
         role: MessageRole,
         signature: String? = nil,
         timestamp: Date? = Date(),
-        hidden: Bool? = nil
+        hidden: Bool? = nil,
+        artifactId: String? = nil,
+        toolCallId: String? = nil,
+        toolCalls: [APIToolCall]? = nil
     ) {
         self.id = id
         self.content = content
@@ -68,6 +72,9 @@ struct ChatMessage: Identifiable, Codable {
         self.signature = signature
         self.timestamp = timestamp
         self.hidden = hidden
+        self.artifactId = artifactId
+        self.toolCallId = toolCallId
+        self.toolCalls = toolCalls
     }
 
     var isUser: Bool { role == .user }

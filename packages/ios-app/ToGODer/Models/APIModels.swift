@@ -30,9 +30,11 @@ struct ChangePasswordRequest: Codable {
     let newPassword: String
 }
 
+/// Body for POST /auth/resetPassword/{code}.
+/// Wire-compatible with RN `ResetPasswordRequest` in model/AuthRequest.ts.
 struct ResetPasswordRequest: Codable {
-    let code: String
-    let newPassword: String
+    let email: String
+    let password: String
 }
 
 // MARK: - Chat
@@ -56,6 +58,7 @@ struct ChatRequest: Codable {
     var memoryLoopCount: Int?
     var memoryLoopLimitReached: Bool?
     var artifactIndex: [ArtifactIndexItem]?
+    var tools: [ToolSchema]?
 
     enum CodingKeys: String, CodingKey {
         case model, humanPrompt, keepGoing, outsideBox, holisticTherapist
@@ -63,8 +66,101 @@ struct ChatRequest: Codable {
         case assistantName = "assistant_name"
         case memoryIndex, memories, customSystemPrompt, persona
         case libraryIntegrationEnabled, memoryLoopCount, memoryLoopLimitReached
-        case artifactIndex
+        case artifactIndex, tools
     }
+}
+
+// MARK: - Tool Schemas (OpenAI function-calling format)
+
+/// Wire-compatible with RN `ToolSchema` in apiClients/ChatApiClient.ts.
+struct ToolSchema: Codable {
+    struct Function: Codable {
+        let name: String
+        let description: String
+        let parameters: Parameters
+    }
+    struct Parameters: Codable {
+        let type: String // "object"
+        let properties: [String: Property]
+        let required: [String]
+    }
+    struct Property: Codable {
+        let type: String
+        let description: String
+    }
+    let type: String // "function"
+    let function: Function
+
+    init(name: String, description: String, properties: [String: Property], required: [String]) {
+        self.type = "function"
+        self.function = Function(
+            name: name,
+            description: description,
+            parameters: Parameters(type: "object", properties: properties, required: required)
+        )
+    }
+}
+
+enum ToolSchemas {
+    /// Mirrors RN LIBRARY_TOOL_SCHEMA. The backend executes query_library
+    /// server-side; the client only advertises it and shows activity status.
+    static let library = ToolSchema(
+        name: "query_library",
+        description: "Search the user's personal library for relevant information. Use this to find notes, saved content, or knowledge the user has stored.",
+        properties: [
+            "query": .init(type: "string", description: "The search query to find relevant content in the library")
+        ],
+        required: ["query"]
+    )
+
+    /// Mirrors RN ARTIFACT_TOOL_SCHEMAS. These tools execute on the client.
+    static let artifactTools: [ToolSchema] = [
+        ToolSchema(
+            name: "read_artifact",
+            description: "Read the content of an artifact file or list contents of a folder. Use this to view existing artifacts.",
+            properties: [
+                "path": .init(type: "string", description: "The path to the artifact to read (e.g., '/src/main.ts' or '/docs')")
+            ],
+            required: ["path"]
+        ),
+        ToolSchema(
+            name: "write_artifact",
+            description: "Create a new artifact or update an existing artifact's content. Use this to save code, documents, or other files.",
+            properties: [
+                "path": .init(type: "string", description: "The path where the artifact should be saved (e.g., '/src/utils.ts')"),
+                "content": .init(type: "string", description: "The content to write to the artifact"),
+                "name": .init(type: "string", description: "Optional display name for the artifact. If not provided, the filename from the path will be used."),
+                "mimeType": .init(type: "string", description: "Optional MIME type for the artifact (e.g., 'text/typescript', 'application/json')"),
+            ],
+            required: ["path", "content"]
+        ),
+        ToolSchema(
+            name: "delete_artifact",
+            description: "Delete an existing artifact. Use this to remove files or folders that are no longer needed.",
+            properties: [
+                "path": .init(type: "string", description: "The path to the artifact to delete (e.g., '/old-file.txt')")
+            ],
+            required: ["path"]
+        ),
+        ToolSchema(
+            name: "move_artifact",
+            description: "Move an artifact to a different folder. Use this to reorganize files and folders.",
+            properties: [
+                "path": .init(type: "string", description: "The path to the artifact to move (e.g., '/src/old-location.ts')"),
+                "destination": .init(type: "string", description: "The destination folder path (e.g., '/lib' or '/' for root)"),
+            ],
+            required: ["path", "destination"]
+        ),
+        ToolSchema(
+            name: "list_directory",
+            description: "List the contents of a directory incrementally. Use this for navigating the artifact tree without loading everything at once. Returns immediate children of the specified path.",
+            properties: [
+                "path": .init(type: "string", description: "The directory path to list (e.g., '/' for root, '/src' for a subfolder)"),
+                "depth": .init(type: "number", description: "How many levels deep to list (default: 1 for immediate children only, use higher values for nested listing)"),
+            ],
+            required: ["path"]
+        ),
+    ]
 }
 
 struct APIChatMessage: Codable {
@@ -73,16 +169,42 @@ struct APIChatMessage: Codable {
     var signature: String?
     var timestamp: Double?
     var hidden: Bool?
+    var toolCallId: String?
+    var toolCalls: [APIToolCall]?
+
+    enum CodingKeys: String, CodingKey {
+        case content, role, signature, timestamp, hidden
+        case toolCallId = "tool_call_id"
+        case toolCalls = "tool_calls"
+    }
 }
 
+/// OpenAI-format tool call recorded on an assistant message so the next
+/// request pairs each tool_use with its tool_result (required by Anthropic).
+/// Wire-compatible with RN `ApiChatMessageToolCall` in model/ChatRequest.ts.
+struct APIToolCall: Codable {
+    struct FunctionCall: Codable {
+        let name: String
+        let arguments: String
+    }
+    let id: String
+    let type: String // always "function"
+    let function: FunctionCall
+}
+
+/// Wire-compatible with the RN app's staticData in services/MessageService.ts.
 struct StaticData: Codable {
+    var preferredLanguage: String?
     var date: String?
-    var calendarEvents: String?
+    var upcomingEventsInCalendar: String?
+    var pastEventsInCalendar: String?
     var health: String?
 }
 
 struct ArtifactIndexItem: Codable {
     let path: String
+    let name: String
+    let type: String // "file" or "folder"
     let mimeType: String?
 }
 
@@ -102,8 +224,10 @@ struct TitleResponse: Codable {
     let content: String
 }
 
+/// Wire-compatible with RN ExperienceApiClient.getExperience payload.
 struct ExperienceRequest: Codable {
     let language: String
+    var data: String?
 }
 
 struct ExperienceResponse: Codable {

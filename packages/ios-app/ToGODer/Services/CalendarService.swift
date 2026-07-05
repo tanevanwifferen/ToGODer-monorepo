@@ -5,6 +5,10 @@ import EventKit
 final class CalendarService: ObservableObject {
     @Published var isAuthorized = false
     @Published var calendarSummary: String?
+    // Separate past/upcoming summaries so staticData can use the same keys
+    // as the RN app (pastEventsInCalendar / upcomingEventsInCalendar).
+    @Published var pastWeekSummary: String?
+    @Published var upcomingSummary: String?
 
     private let eventStore = EKEventStore()
     private var lastFetch: Date?
@@ -53,28 +57,26 @@ final class CalendarService: ObservableObject {
         let futureEvents = eventStore.events(matching: futurePredicate)
 
         calendarSummary = formatSummary(past: pastEvents, upcoming: futureEvents)
+        pastWeekSummary = formatEventList(pastEvents)
+        upcomingSummary = formatEventList(futureEvents)
         lastFetch = Date()
     }
 
     // MARK: - Formatting
 
-    private func formatSummary(past: [EKEvent], upcoming: [EKEvent]) -> String? {
+    private func formatEventList(_ events: [EKEvent]) -> String {
+        if events.isEmpty { return "none" }
         let formatter = DateFormatter()
         formatter.dateStyle = .short
         formatter.timeStyle = .short
+        return events.map { event in
+            let date = formatter.string(from: event.startDate)
+            return "\(event.title ?? "Untitled") (\(date))"
+        }.joined(separator: ", ")
+    }
 
-        func formatEvents(_ events: [EKEvent]) -> String {
-            if events.isEmpty { return "none" }
-            return events.map { event in
-                let date = formatter.string(from: event.startDate)
-                return "\(event.title ?? "Untitled") (\(date))"
-            }.joined(separator: ", ")
-        }
-
-        let pastStr = formatEvents(past)
-        let upcomingStr = formatEvents(upcoming)
-
-        return "Past week: \(pastStr). Upcoming: \(upcomingStr)."
+    private func formatSummary(past: [EKEvent], upcoming: [EKEvent]) -> String? {
+        "Past week: \(formatEventList(past)). Upcoming: \(formatEventList(upcoming))."
     }
 
     /// Invalidate cache so next fetchEvents() will re-query
