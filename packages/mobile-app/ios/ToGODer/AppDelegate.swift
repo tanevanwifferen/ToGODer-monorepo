@@ -52,6 +52,52 @@ public class AppDelegate: ExpoAppDelegate {
   }
 }
 
+// iOS 27+ refuses to launch apps that don't adopt the UIScene lifecycle (TN3187).
+// The window is still created in AppDelegate.didFinishLaunching because
+// expo-dev-launcher requires delegate.window to exist at that point; this scene
+// delegate only attaches that window to the scene and forwards scene-level events
+// back to the AppDelegate handlers that Expo modules subscribe to.
+class SceneDelegate: UIResponder, UIWindowSceneDelegate {
+  var window: UIWindow?
+
+  func scene(
+    _ scene: UIScene,
+    willConnectTo session: UISceneSession,
+    options connectionOptions: UIScene.ConnectionOptions
+  ) {
+    guard let windowScene = scene as? UIWindowScene,
+          let appDelegate = UIApplication.shared.delegate as? AppDelegate,
+          let window = appDelegate.window else {
+      return
+    }
+
+    window.windowScene = windowScene
+    window.frame = windowScene.coordinateSpace.bounds
+    window.makeKeyAndVisible()
+    self.window = window
+
+    // Cold-start deep links arrive here instead of in launchOptions under UIScene.
+    for context in connectionOptions.urlContexts {
+      _ = appDelegate.application(UIApplication.shared, open: context.url, options: [:])
+    }
+    for userActivity in connectionOptions.userActivities {
+      _ = appDelegate.application(UIApplication.shared, continue: userActivity, restorationHandler: { _ in })
+    }
+  }
+
+  func scene(_ scene: UIScene, openURLContexts URLContexts: Set<UIOpenURLContext>) {
+    guard let appDelegate = UIApplication.shared.delegate as? AppDelegate else { return }
+    for context in URLContexts {
+      _ = appDelegate.application(UIApplication.shared, open: context.url, options: [:])
+    }
+  }
+
+  func scene(_ scene: UIScene, continue userActivity: NSUserActivity) {
+    guard let appDelegate = UIApplication.shared.delegate as? AppDelegate else { return }
+    _ = appDelegate.application(UIApplication.shared, continue: userActivity, restorationHandler: { _ in })
+  }
+}
+
 class ReactNativeDelegate: ExpoReactNativeFactoryDelegate {
   // Extension point for config-plugins
 
