@@ -12,6 +12,12 @@ export interface MessageResponse{
   content: string;
   signature?: string;
   updateData?: string;
+  // Server-signed snapshot of the custom instructions used for this response
+  instructionsSnapshot?: {
+    content: string;
+    timestamp: number;
+    signature: string;
+  };
 }
 
 export interface TitleResponse {

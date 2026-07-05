@@ -1,5 +1,6 @@
 import { createSlice, PayloadAction } from "@reduxjs/toolkit";
 import { ApiChatMessage } from "../../model/ChatRequest";
+import { SignedInstructionSnapshot } from "../../model/ShareTypes";
 import { v4 as uuidv4 } from "uuid";
 
 export interface Chat {
@@ -13,6 +14,9 @@ export interface Chat {
   projectId?: string;
   deleted?: boolean; // Tombstone marker for sync
   deletedAt?: number; // When the chat was deleted
+  // Server-signed history of the custom instructions used in this chat.
+  // A new entry is appended only when the instructions actually change.
+  instructionHistory?: SignedInstructionSnapshot[];
 }
 
 export interface ChatsState {
@@ -28,6 +32,24 @@ const initialState: ChatsState = {
   chats: {},
   currentChatId: null,
   auto_generate_answer: true,
+};
+
+// Selectors expose only active (non-deleted) messages, so indices coming
+// from the UI are in that space. Translate to an index into the raw
+// messages array, which still holds deletion tombstones. Returns -1 when
+// the active index is out of range.
+const toRawMessageIndex = (
+  messages: ApiChatMessage[],
+  activeIndex: number
+): number => {
+  if (activeIndex < 0) return -1;
+  let remaining = activeIndex;
+  for (let i = 0; i < messages.length; i++) {
+    if (messages[i].deleted) continue;
+    if (remaining === 0) return i;
+    remaining--;
+  }
+  return -1;
 };
 
 const chatsSlice = createSlice({
@@ -75,9 +97,11 @@ const chatsSlice = createSlice({
         messageIndex: number;
         content?: string;
         signature?: string;
+        tool_calls?: ApiChatMessage["tool_calls"];
       }>
     ) => {
-      const { chatId, messageIndex, content, signature } = action.payload;
+      const { chatId, messageIndex, content, signature, tool_calls } =
+        action.payload;
       const chat = state.chats[chatId];
       if (!chat) {
         console.warn(`Chat ${chatId} not found when updating message`);
@@ -99,6 +123,8 @@ const chatsSlice = createSlice({
               content: content !== undefined ? content : m.content,
               signature:
                 signature !== undefined ? signature : (m as any).signature,
+              tool_calls:
+                tool_calls !== undefined ? tool_calls : m.tool_calls,
               timestamp: m.timestamp || new Date().getTime(),
             }
           : m
@@ -118,13 +144,16 @@ const chatsSlice = createSlice({
         console.warn(`Chat ${chatId} not found when deleting message`);
         return;
       }
-      if (messageIndex >= 0 && messageIndex < chat.messages.length) {
+      // messageIndex is an index into the active (non-deleted) messages,
+      // as shown by selectors; translate to the raw array which still
+      // holds tombstones.
+      const rawIndex = toRawMessageIndex(chat.messages, messageIndex);
+      if (rawIndex !== -1) {
         const now = new Date().getTime();
-        const message = chat.messages[messageIndex];
 
         // Mark message as deleted (tombstone) for sync instead of removing
         chat.messages = chat.messages.map((m, i) =>
-          i === messageIndex ? { ...m, deleted: true, deletedAt: now } : m
+          i === rawIndex ? { ...m, deleted: true, deletedAt: now } : m
         );
 
         chat.last_update = now;
@@ -143,6 +172,30 @@ const chatsSlice = createSlice({
       if (chat && messageIndex >= 0) {
         chat.messages.splice(messageIndex, 1);
       }
+      chat.last_update = new Date().getTime();
+    },
+    // Record a server-signed custom-instructions snapshot on a chat. Only
+    // appends when the instruction content differs from the latest entry, so
+    // the history reflects actual changes (with verifiable timestamps).
+    appendInstructionSnapshot: (
+      state,
+      action: PayloadAction<{
+        chatId: string;
+        snapshot: SignedInstructionSnapshot;
+      }>
+    ) => {
+      const { chatId, snapshot } = action.payload;
+      const chat = state.chats[chatId];
+      if (!chat) {
+        console.warn(`Chat ${chatId} not found when adding instructions`);
+        return;
+      }
+      const history = chat.instructionHistory ?? [];
+      const last = history[history.length - 1];
+      if (last && last.content === snapshot.content) {
+        return;
+      }
+      chat.instructionHistory = [...history, snapshot];
       chat.last_update = new Date().getTime();
     },
     setTitle: (state, action: PayloadAction<{ id: string; title: string }>) => {
@@ -225,7 +278,11 @@ const chatsSlice = createSlice({
         console.warn(`Chat ${chatId} not found when editing message`);
         return;
       }
-      if (messageIndex < 0 || messageIndex >= chat.messages.length) {
+      // messageIndex is an index into the active (non-deleted) messages,
+      // as shown by selectors; translate to the raw array which still
+      // holds tombstones.
+      const rawIndex = toRawMessageIndex(chat.messages, messageIndex);
+      if (rawIndex === -1) {
         console.warn(
           `Invalid message index ${messageIndex} for chat ${chatId}`
         );
@@ -233,8 +290,8 @@ const chatsSlice = createSlice({
       }
 
       // Create a new array with messages up to and including the edited message
-      const newMessages = chat.messages.slice(0, messageIndex + 1).map((m, i) =>
-        i === messageIndex
+      const newMessages = chat.messages.slice(0, rawIndex + 1).map((m, i) =>
+        i === rawIndex
           ? {
               ...m,
               content,
@@ -263,6 +320,7 @@ export const {
   addChat,
   addMessage,
   updateMessageAtIndex,
+  appendInstructionSnapshot,
   deleteMessage,
   deleteMessageByContent,
   setTitle,

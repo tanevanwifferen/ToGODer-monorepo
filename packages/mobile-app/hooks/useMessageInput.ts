@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useSelector, useDispatch } from 'react-redux';
 import { IMessage } from 'react-native-gifted-chat';
 import { selectDraftInputText } from '../redux/slices/chatSelectors';
@@ -6,9 +6,15 @@ import { updateDraftInputText } from '../redux/slices/chatsSlice';
 import { selectPrompts } from '../redux/slices/globalConfigSlice';
 import { selectCustomSystemPrompt } from '../redux/slices/systemPromptSlice';
 
+// Delay before persisting the draft to Redux. Keystrokes must stay out of
+// Redux: every dispatch makes redux-persist re-serialize the whole chats
+// slice, which lags the controlled input and drops trailing characters.
+const DRAFT_PERSIST_DELAY_MS = 400;
+
 /**
  * Hook for managing message input state and prompt suggestions.
- * Consolidates input text persistence (Redux) and prompt filtering behavior.
+ * Input text lives in local state for responsiveness; the draft is persisted
+ * to Redux on a debounce so it survives chat switches and app restarts.
  *
  * @param chatId - The ID of the current chat
  * @param messages - The current messages in the chat (used for prompt visibility logic)
@@ -18,16 +24,50 @@ export const useMessageInput = (chatId: string, messages: IMessage[]) => {
   const dispatch = useDispatch();
   const [showPrompts, setShowPrompts] = useState(false);
 
-  // Get draft input text from Redux state for this specific chat
-  const inputText = useSelector((state) => selectDraftInputText(state, chatId));
+  // Draft persisted in Redux, used to seed local state per chat
+  const persistedDraft = useSelector((state) => selectDraftInputText(state, chatId));
+
+  const [inputText, setInputTextState] = useState(persistedDraft);
+  // Always holds the latest typed text, even before React re-renders.
+  // Send handlers read from this so a tap on Send never uses a stale value.
+  const inputTextRef = useRef(inputText);
+  const persistTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   const prompts = useSelector(selectPrompts);
   const customSystemPrompt = useSelector(selectCustomSystemPrompt);
 
+  // Re-seed local state from the persisted draft when switching chats
+  useEffect(() => {
+    inputTextRef.current = persistedDraft;
+    setInputTextState(persistedDraft);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [chatId]);
+
+  // Flush any pending draft persist on unmount
+  useEffect(() => {
+    return () => {
+      if (persistTimeoutRef.current) {
+        clearTimeout(persistTimeoutRef.current);
+        dispatch(updateDraftInputText({ chatId, text: inputTextRef.current }));
+      }
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [chatId]);
+
   /**
-   * Updates the input text in Redux state
+   * Updates local input state immediately and persists the draft to Redux
+   * on a debounce.
    */
   const setInputText = (text: string) => {
-    dispatch(updateDraftInputText({ chatId, text }));
+    inputTextRef.current = text;
+    setInputTextState(text);
+    if (persistTimeoutRef.current) {
+      clearTimeout(persistTimeoutRef.current);
+    }
+    persistTimeoutRef.current = setTimeout(() => {
+      persistTimeoutRef.current = null;
+      dispatch(updateDraftInputText({ chatId, text }));
+    }, DRAFT_PERSIST_DELAY_MS);
   };
 
   /**
@@ -56,10 +96,17 @@ export const useMessageInput = (chatId: string, messages: IMessage[]) => {
   };
 
   /**
-   * Clears the input text
+   * Clears the input text immediately, cancelling any pending draft persist
+   * so a stale draft can't resurface after send.
    */
   const clearInput = () => {
-    setInputText('');
+    if (persistTimeoutRef.current) {
+      clearTimeout(persistTimeoutRef.current);
+      persistTimeoutRef.current = null;
+    }
+    inputTextRef.current = '';
+    setInputTextState('');
+    dispatch(updateDraftInputText({ chatId, text: '' }));
   };
 
   /**
@@ -88,6 +135,7 @@ export const useMessageInput = (chatId: string, messages: IMessage[]) => {
 
   return {
     inputText,
+    inputTextRef,
     setInputText,
     showPrompts,
     filteredPrompts,

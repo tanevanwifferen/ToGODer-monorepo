@@ -35,7 +35,15 @@ export function useInitialize() {
           })
         );
       }
-      if (typeof globalConfig.libraryIntegrationEnabled === "boolean") {
+      // Only dispatch when the value actually changed: updateSettings bumps
+      // the settings-wide updatedAt, and an unconditional dispatch here made
+      // every app launch win the sync merge and drag the whole settings
+      // object (including the selected model) along with it.
+      if (
+        typeof globalConfig.libraryIntegrationEnabled === "boolean" &&
+        globalConfig.libraryIntegrationEnabled !==
+          store.getState().userSettings.libraryIntegrationEnabled
+      ) {
         store.dispatch(
           updateSettings({
             libraryIntegrationEnabled: globalConfig.libraryIntegrationEnabled,

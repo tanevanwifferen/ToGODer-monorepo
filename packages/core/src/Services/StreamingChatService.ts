@@ -7,6 +7,7 @@ import { ConversationApi } from '../Api/ConversationApi';
 import { AIProvider, getDefaultModel } from '../LLM/Model/AIProvider';
 import { StreamChunk } from '../LLM/AIWrapper';
 import { ToolRegistry } from '../Tools/ToolRegistry';
+import { resolvePromptListItem } from '../LLM/prompts/promptlist';
 import {
   ChatCompletionMessageParam,
   ChatCompletionTool,
@@ -14,6 +15,112 @@ import {
 
 /** Maximum number of backend tool execution iterations before stopping */
 const MAX_TOOL_LOOP_ITERATIONS = 10;
+
+/**
+ * Higher iteration cap for agentic commands (e.g. /goal): the model is allowed
+ * many self-directed tool/distill steps before producing a final answer.
+ */
+const MAX_AGENTIC_LOOP_ITERATIONS = 50;
+
+/**
+ * Strip tool_result messages whose tool_call_id has no matching tool_use on
+ * the immediately preceding assistant message, and drop tool_calls on the
+ * preceding assistant message that have no matching tool_result right after.
+ *
+ * Anthropic requires that each tool_result block have a corresponding tool_use
+ * block in the previous message. Historical chats created before the
+ * tool_calls field was stored on assistant messages would otherwise keep
+ * failing with "unexpected tool_use_id found in tool_result blocks".
+ */
+function sanitizeToolMessages(
+  prompts: ChatCompletionMessageParam[]
+): ChatCompletionMessageParam[] {
+  const out: ChatCompletionMessageParam[] = [];
+
+  for (let i = 0; i < prompts.length; i++) {
+    const msg = prompts[i];
+
+    if (msg.role === 'tool') {
+      const toolCallId = (msg as any).tool_call_id as string | undefined;
+      const prev = out.length > 0 ? out[out.length - 1] : null;
+      const prevToolCalls =
+        prev && prev.role === 'assistant' && Array.isArray((prev as any).tool_calls)
+          ? ((prev as any).tool_calls as Array<{ id: string }>)
+          : null;
+      const hasMatch =
+        !!toolCallId &&
+        !!prevToolCalls &&
+        prevToolCalls.some((tc) => tc.id === toolCallId);
+      if (!hasMatch) {
+        // Orphan tool_result — drop it to keep the request valid.
+        continue;
+      }
+      out.push(msg);
+      continue;
+    }
+
+    if (msg.role === 'assistant' && Array.isArray((msg as any).tool_calls)) {
+      // Collect the tool_call_ids that actually have results immediately
+      // following this assistant message.
+      const toolCalls = (msg as any).tool_calls as Array<{ id: string }>;
+      const followingIds = new Set<string>();
+      for (let j = i + 1; j < prompts.length; j++) {
+        const next = prompts[j];
+        if (next.role !== 'tool') break;
+        const id = (next as any).tool_call_id as string | undefined;
+        if (id) followingIds.add(id);
+      }
+      const filteredCalls = toolCalls.filter((tc) => followingIds.has(tc.id));
+      if (filteredCalls.length === 0) {
+        // All tool_calls are orphans; strip the tool_calls field. Keep the
+        // message if it has text content, otherwise drop it entirely.
+        const content = (msg as any).content;
+        if (typeof content === 'string' && content.length > 0) {
+          const { tool_calls: _ignored, ...rest } = msg as any;
+          out.push(rest as ChatCompletionMessageParam);
+        }
+        continue;
+      }
+      if (filteredCalls.length !== toolCalls.length) {
+        const cloned: any = { ...msg, tool_calls: filteredCalls };
+        out.push(cloned as ChatCompletionMessageParam);
+        continue;
+      }
+      out.push(msg);
+      continue;
+    }
+
+    out.push(msg);
+  }
+
+  return out;
+}
+
+/**
+ * Drop assistant messages from the tail of the prompt list before sending to
+ * the LLM. A conversation ending with an assistant message is treated as
+ * prefill by Anthropic-backed providers, and newer models reject it with
+ * "This model does not support assistant message prefill". Clients append
+ * assistant-role notes (e.g. artifact operation summaries) after tool results,
+ * so the history can legitimately end with assistant messages — they belong in
+ * the visible history but must not terminate the LLM request.
+ *
+ * Returns a new array; the original (used for signature generation) is left
+ * untouched so signatures keep matching the client's stored history.
+ */
+function trimTrailingAssistantMessages(
+  prompts: ChatCompletionMessageParam[]
+): ChatCompletionMessageParam[] {
+  let end = prompts.length;
+  while (
+    end > 0 &&
+    prompts[end - 1].role === 'assistant' &&
+    !Array.isArray((prompts[end - 1] as any).tool_calls)
+  ) {
+    end--;
+  }
+  return prompts.slice(0, end);
+}
 
 /**
  * Tool call event data for artifact operations
@@ -25,13 +132,39 @@ export interface ToolCallData {
 }
 
 /**
+ * Tool activity status event data, so clients can show what the AI is doing.
+ * - generating: the model is producing the tool call (arguments still streaming)
+ * - running: a backend tool is executing server-side
+ * - done: a backend tool finished executing
+ */
+export interface ToolStatusData {
+  id: string;
+  name: string;
+  status: 'generating' | 'running' | 'done';
+  isError?: boolean;
+}
+
+/**
+ * Signed snapshot of the custom instructions active for this request.
+ * The server signs content + timestamp so clients can keep a verifiable
+ * history of when their custom instructions changed.
+ */
+export interface InstructionsSnapshotData {
+  content: string;
+  timestamp: number;
+  signature: string;
+}
+
+/**
  * Events emitted during streaming. Consumers can map these to SSE frames or other transports.
  */
 export type StreamEvent =
   | { type: 'memory_request'; data: { keys: string[] } }
   | { type: 'chunk'; data: { delta: string } }
   | { type: 'tool_call'; data: ToolCallData }
+  | { type: 'tool_status'; data: ToolStatusData }
   | { type: 'signature'; data: { signature: string } }
+  | { type: 'instructions'; data: InstructionsSnapshotData }
   | { type: 'error'; data: { message: string } }
   | { type: 'done'; data?: null };
 
@@ -69,6 +202,37 @@ export class StreamingChatService {
     user: User | null,
     signal?: AbortSignal
   ): AsyncGenerator<StreamEvent, void, void> {
+    if (Array.isArray(body.prompts)) {
+      body.prompts = sanitizeToolMessages(body.prompts);
+    }
+
+    // When custom instructions are in play, emit a signed snapshot of them so
+    // the client can keep a verifiable, timestamped history of instruction
+    // changes alongside the chat (used when sharing conversations/artifacts).
+    if (body.customSystemPrompt) {
+      const timestamp = Date.now();
+      yield {
+        type: 'instructions',
+        data: {
+          content: body.customSystemPrompt,
+          timestamp,
+          signature: this.chatService.generateInstructionsSignature(
+            body.customSystemPrompt,
+            timestamp
+          ),
+        },
+      };
+    }
+
+    // Agentic commands (e.g. /goal) run the model as an autonomous, multi-step
+    // research agent. They get a much larger tool-loop budget and the full set
+    // of tools a normal chat has — including the library, which we force on so
+    // the agent can always reach for it.
+    const isAgentic = !!resolvePromptListItem(body.prompts)?.agentic;
+    if (isAgentic) {
+      body.libraryIntegrationEnabled = true;
+    }
+
     const totalMessages = Array.isArray(body.prompts) ? body.prompts.length : 0;
     const paywallMessage =
       'Insufficient balance. Please donate through KoFi with this email address to continue using the service.';
@@ -141,7 +305,10 @@ export class StreamingChatService {
       registry.getDefinitionsForRequest(body).length > 0;
 
     if (hasTools) {
-      yield* this.streamWithToolLoop(body, user, signal);
+      const maxIterations = isAgentic
+        ? MAX_AGENTIC_LOOP_ITERATIONS
+        : MAX_TOOL_LOOP_ITERATIONS;
+      yield* this.streamWithToolLoop(body, user, signal, maxIterations);
     } else {
       yield* this.streamSimple(body, user, signal);
     }
@@ -156,8 +323,12 @@ export class StreamingChatService {
     signal?: AbortSignal
   ): AsyncGenerator<StreamEvent, void, void> {
     let full = '';
+    const requestBody: ChatRequest = {
+      ...body,
+      prompts: trimTrailingAssistantMessages(body.prompts),
+    };
     for await (const delta of this.conversationApi.streamResponse(
-      body,
+      requestBody,
       user,
       signal
     )) {
@@ -188,18 +359,22 @@ export class StreamingChatService {
   private async *streamWithToolLoop(
     body: ChatRequest,
     user: User | null,
-    signal?: AbortSignal
+    signal?: AbortSignal,
+    maxIterations: number = MAX_TOOL_LOOP_ITERATIONS
   ): AsyncGenerator<StreamEvent, void, void> {
     const registry = ToolRegistry.getInstance();
 
     // Merge backend tool definitions with frontend-provided tools
     const mergedTools = this.mergeTools(body.tools ?? [], registry, body);
 
-    // Work with a mutable copy of prompts that we extend with tool results
-    const prompts: ChatCompletionMessageParam[] = [...body.prompts];
+    // Work with a mutable copy of prompts that we extend with tool results.
+    // Trailing assistant messages are trimmed so the request never ends with
+    // an assistant message (rejected as prefill by Anthropic models).
+    const prompts: ChatCompletionMessageParam[] =
+      trimTrailingAssistantMessages(body.prompts);
     let full = '';
 
-    for (let iteration = 0; iteration < MAX_TOOL_LOOP_ITERATIONS; iteration++) {
+    for (let iteration = 0; iteration < maxIterations; iteration++) {
       // Create a request copy with current prompts and merged tools
       const iterationBody: ChatRequest = {
         ...body,
@@ -216,17 +391,54 @@ export class StreamingChatService {
 
       full += iterationResult.text;
 
+      // Content-free diagnostics: which tools were offered and what the
+      // model called, so tool-loop stalls are visible in the logs.
+      console.log(
+        '[tool-loop]',
+        JSON.stringify({
+          iteration,
+          model: body.model,
+          tools_offered: mergedTools
+            .filter((t) => t.type === 'function')
+            .map((t) => t.function.name),
+          tool_calls: iterationResult.toolCalls.map((tc) => tc.name),
+          text_length: iterationResult.text.length,
+        })
+      );
+
       // If no tool calls at all, we're done
       if (iterationResult.toolCalls.length === 0) {
+        // An iteration that produced neither text nor tool calls means the
+        // provider cut the response (e.g. a safety/content filter). Tell the
+        // user instead of ending the stream in silence.
+        if (iterationResult.text.length === 0) {
+          const notice =
+            '\n\n*The model stopped its reply unexpectedly (likely a ' +
+            'provider safety filter). Please try again or rephrase.*';
+          full += notice;
+          yield { type: 'chunk', data: { delta: notice } };
+        }
         break;
       }
 
-      // Separate backend vs frontend tool calls
+      // Separate backend, frontend, and unknown tool calls. A frontend tool
+      // is one the client actually declared in body.tools — anything else
+      // that isn't backend-registered is a hallucinated tool name, which we
+      // must answer server-side with an error tool_result (forwarding it to
+      // the client would leave a dangling tool_use nobody responds to).
+      const frontendToolNames = new Set(
+        (body.tools ?? [])
+          .filter((t) => t.type === 'function')
+          .map((t) => t.function.name)
+      );
       const backendCalls = iterationResult.toolCalls.filter((tc) =>
         registry.has(tc.name)
       );
       const frontendCalls = iterationResult.toolCalls.filter(
-        (tc) => !registry.has(tc.name)
+        (tc) => !registry.has(tc.name) && frontendToolNames.has(tc.name)
+      );
+      const unknownCalls = iterationResult.toolCalls.filter(
+        (tc) => !registry.has(tc.name) && !frontendToolNames.has(tc.name)
       );
 
       // Yield frontend tool calls to the client
@@ -234,13 +446,15 @@ export class StreamingChatService {
         yield { type: 'tool_call', data: tc };
       }
 
-      // If no backend calls, stop looping (remaining are frontend-only)
-      if (backendCalls.length === 0) {
+      // If nothing to handle server-side, stop looping (remaining are
+      // frontend-only and the client will continue the conversation)
+      const serverHandledCalls = [...backendCalls, ...unknownCalls];
+      if (serverHandledCalls.length === 0) {
         break;
       }
 
       // Build assistant message with tool_calls for the conversation history
-      const assistantToolCalls = backendCalls.map((tc, index) => ({
+      const assistantToolCalls = serverHandledCalls.map((tc) => ({
         id: tc.id,
         type: 'function' as const,
         function: {
@@ -260,7 +474,13 @@ export class StreamingChatService {
         const tool = registry.get(tc.name);
         if (!tool) continue;
 
+        yield {
+          type: 'tool_status',
+          data: { id: tc.id, name: tc.name, status: 'running' },
+        };
+
         let result: string;
+        let isError = false;
         try {
           result = await tool.handler({
             arguments: tc.arguments,
@@ -268,14 +488,46 @@ export class StreamingChatService {
           });
         } catch (err: any) {
           result = `Error executing tool ${tc.name}: ${err?.message ?? String(err)}`;
+          isError = true;
           console.error(`Backend tool execution error (${tc.name}):`, err);
         }
+
+        yield {
+          type: 'tool_status',
+          data: { id: tc.id, name: tc.name, status: 'done', isError },
+        };
 
         prompts.push({
           role: 'tool',
           tool_call_id: tc.id,
           content: result,
         });
+      }
+
+      // Answer hallucinated tool calls with an error result so the model can
+      // recover and respond in text instead of the stream dying silently.
+      if (unknownCalls.length > 0) {
+        const availableNames = mergedTools
+          .filter((t) => t.type === 'function')
+          .map((t) => t.function.name)
+          .join(', ');
+        for (const tc of unknownCalls) {
+          console.warn(`LLM called unknown tool "${tc.name}"`);
+          yield {
+            type: 'tool_status',
+            data: { id: tc.id, name: tc.name, status: 'done', isError: true },
+          };
+          prompts.push({
+            role: 'tool',
+            tool_call_id: tc.id,
+            content:
+              `Error: tool "${tc.name}" does not exist. ` +
+              (availableNames
+                ? `Available tools: ${availableNames}. `
+                : 'No tools are available. ') +
+              'Answer the user directly instead.',
+          });
+        }
       }
 
       // Loop continues - LLM will process the tool results
@@ -316,6 +568,12 @@ export class StreamingChatService {
           text += chunk.content;
           yield { type: 'chunk', data: { delta: chunk.content } };
         }
+      } else if (chunk.type === 'tool_call_start') {
+        // Let the client show activity while the arguments stream in
+        yield {
+          type: 'tool_status',
+          data: { id: chunk.id, name: chunk.name, status: 'generating' },
+        };
       } else if (chunk.type === 'tool_call') {
         let args: Record<string, any> = {};
         try {

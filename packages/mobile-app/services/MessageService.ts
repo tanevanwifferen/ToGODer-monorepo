@@ -3,6 +3,7 @@ import {
   addChat,
   addMessage,
   updateMessageAtIndex,
+  appendInstructionSnapshot,
   addMemories,
   setAutoGenerateAnswer,
 } from "../redux/slices/chatsSlice";
@@ -20,6 +21,7 @@ import {
   ArtifactIndexItem,
   ArtifactToolCall,
   ToolResultEvent,
+  ToolStatusEvent,
   ARTIFACT_TOOL_SCHEMAS,
   LIBRARY_TOOL_SCHEMA,
   ToolSchema,
@@ -47,6 +49,7 @@ export interface SendMessageOptions {
   onChunk?: (content: string) => void;
   onComplete?: (message: ApiChatMessage) => void;
   onError?: (error: string) => void;
+  onToolStatus?: (status: ToolStatusEvent) => void;
 }
 
 export interface SendMessageStreamOptions {
@@ -63,6 +66,7 @@ export interface SendMessageStreamOptions {
   onComplete?: (message: ApiChatMessage) => void;
   onError?: (error: string) => void;
   onToolCall?: (toolCall: ArtifactToolCall) => void;
+  onToolStatus?: (status: ToolStatusEvent) => void;
 }
 
 const MAX_TOOL_CALL_LOOPS = 10;
@@ -605,6 +609,7 @@ export class MessageService {
       onChunk,
       onComplete,
       onError,
+      onToolStatus,
     } = options;
 
     // Cancel any existing request before starting a new one
@@ -676,6 +681,7 @@ export class MessageService {
           onChunk,
           onComplete,
           onError,
+          onToolStatus,
         });
       } else {
         await this.sendMessageWithoutStreaming({
@@ -742,6 +748,7 @@ export class MessageService {
       onComplete,
       onError,
       onToolCall,
+      onToolStatus,
     } = options;
 
     const state = store.getState();
@@ -824,6 +831,41 @@ export class MessageService {
       isError: boolean;
     }> = [];
 
+    // Accumulate assistant tool_calls emitted during this iteration so we can
+    // attach them to the assistant placeholder message before the tool results.
+    // Anthropic requires that each tool_result message have a corresponding
+    // tool_use block in the immediately previous assistant message.
+    const assistantToolCalls: Array<{
+      id: string;
+      type: "function";
+      function: { name: string; arguments: string };
+    }> = [];
+
+    // Artifact operation notes (write/delete) are user-facing summaries. They
+    // must NOT be inserted between the assistant's tool_use and the tool_result
+    // (that breaks Anthropic's pairing rule), so we defer them until after the
+    // tool_result messages are pushed.
+    const deferredArtifactNotes: ApiChatMessage[] = [];
+
+    const ensurePlaceholder = () => {
+      if (placeholderCreated) return;
+      const currentState = store.getState();
+      const currentChat = currentState.chats.chats[chatId];
+      const preLength = currentChat.messages.length;
+      store.dispatch(
+        addMessage({
+          id: chatId,
+          message: {
+            role: "assistant",
+            content: "",
+            signature: undefined,
+          } as ApiChatMessage,
+        })
+      );
+      assistantIndex = preLength;
+      placeholderCreated = true;
+    };
+
     try {
       // Check if already aborted before starting
       if (signal?.aborted) {
@@ -855,24 +897,7 @@ export class MessageService {
         switch (evt.type) {
           case "chunk": {
             // Create placeholder on first chunk
-            if (!placeholderCreated) {
-              const currentState = store.getState();
-              const currentChat = currentState.chats.chats[chatId];
-              const preLength = currentChat.messages.length;
-
-              store.dispatch(
-                addMessage({
-                  id: chatId,
-                  message: {
-                    role: "assistant",
-                    content: "",
-                    signature: undefined,
-                  } as ApiChatMessage,
-                })
-              );
-              assistantIndex = preLength;
-              placeholderCreated = true;
-            }
+            ensurePlaceholder();
 
             const part = typeof evt.data === "string" ? evt.data : "";
             accumulated += part;
@@ -894,6 +919,15 @@ export class MessageService {
                 })
               );
             }
+            break;
+          }
+
+          case "instructions": {
+            // Server-signed snapshot of the custom instructions used for this
+            // response; the slice only appends it when the content changed.
+            store.dispatch(
+              appendInstructionSnapshot({ chatId, snapshot: evt.data })
+            );
             break;
           }
 
@@ -944,6 +978,7 @@ export class MessageService {
               onComplete,
               onError,
               onToolCall,
+              onToolStatus,
             });
             return;
           }
@@ -960,46 +995,84 @@ export class MessageService {
               "list_directory",
             ];
 
-            if (!FRONTEND_TOOL_NAMES.includes(toolCall.name)) {
-              // Not a frontend tool - backend handles execution.
-              // Don't collect results; the backend will send tool_result events
-              // or continue streaming text after execution.
-              console.log(`Tool "${toolCall.name}" is backend-executed, skipping frontend handling`);
-              break;
+            // Notify callback for known frontend tools
+            if (FRONTEND_TOOL_NAMES.includes(toolCall.name)) {
+              onToolCall?.(toolCall);
             }
 
-            // Notify callback if provided
-            onToolCall?.(toolCall);
+            // Every tool_call event that reaches the client is ours to
+            // answer — the backend executes its own tools server-side and
+            // never forwards them. Leaving one unanswered strands the chat
+            // with a dangling tool_use, so always produce a tool result.
 
-            // Handle the tool call if chat is associated with a project
-            if (chat?.projectId) {
-              const result = this.handleArtifactToolCall(toolCall, chat.projectId);
+            // Ensure the assistant placeholder exists even when the LLM
+            // emits a tool_call without any preceding text chunks.
+            ensurePlaceholder();
 
-              // Log the tool call result
-              console.log(`Artifact tool call "${toolCall.name}":`, result);
-
-              // Collect result for chaining
-              toolCallResults.push({
-                toolCallId: toolCall.id,
+            // Record the tool_use on the assistant message so the next
+            // request to Anthropic has a valid tool_use/tool_result pairing.
+            assistantToolCalls.push({
+              id: toolCall.id,
+              type: "function",
+              function: {
                 name: toolCall.name,
-                result: result.message,
-                isError: result.isError,
-              });
+                arguments: JSON.stringify(toolCall.arguments ?? {}),
+              },
+            });
 
-              // Add artifact operation message to chat (for write/delete, not read)
-              if (result.operation !== "read") {
-                const artifactMessage: ApiChatMessage = {
-                  role: "assistant",
-                  content: result.isError
-                    ? `Error: ${result.message}`
-                    : result.message,
-                  timestamp: Date.now(),
-                  hidden: result.isError,
-                  artifactId: result.isError ? undefined : result.artifactId,
-                };
-                store.dispatch(addMessage({ id: chatId, message: artifactMessage }));
-              }
+            let result: {
+              message: string;
+              artifactId?: string;
+              isError: boolean;
+              operation?: "read" | "write" | "delete" | "move";
+            };
+            if (!FRONTEND_TOOL_NAMES.includes(toolCall.name)) {
+              result = {
+                message: `Error: tool "${toolCall.name}" does not exist. Answer the user directly instead.`,
+                isError: true,
+              };
+            } else if (!chat?.projectId) {
+              result = {
+                message: `Error: tool "${toolCall.name}" is only available in project chats. Answer the user directly instead.`,
+                isError: true,
+              };
+            } else {
+              result = this.handleArtifactToolCall(toolCall, chat.projectId);
             }
+
+            // Log the tool call result
+            console.log(`Tool call "${toolCall.name}":`, result);
+
+            // Collect result for chaining
+            toolCallResults.push({
+              toolCallId: toolCall.id,
+              name: toolCall.name,
+              result: result.message,
+              isError: result.isError,
+            });
+
+            // Queue artifact operation note (for write/delete, not read) to
+            // be appended AFTER the tool_result messages — placing it
+            // between the assistant tool_use and the tool_result would
+            // violate Anthropic's pairing rule.
+            if (result.operation && result.operation !== "read") {
+              deferredArtifactNotes.push({
+                role: "assistant",
+                content: result.isError
+                  ? `Error: ${result.message}`
+                  : result.message,
+                timestamp: Date.now(),
+                hidden: result.isError,
+                artifactId: result.isError ? undefined : result.artifactId,
+              });
+            }
+            break;
+          }
+
+          case "tool_status": {
+            // Backend reports what the AI is doing (generating a tool call,
+            // running a backend tool) - surface it to the UI
+            onToolStatus?.(evt.data);
             break;
           }
 
@@ -1040,9 +1113,26 @@ export class MessageService {
       cancelFlush();
       if (pendingFlush) flushAccumulated();
 
+      // Attach accumulated tool_calls to the assistant placeholder so the
+      // history sent to the LLM pairs each tool_use with its tool_result.
+      if (
+        assistantToolCalls.length > 0 &&
+        placeholderCreated &&
+        assistantIndex >= 0
+      ) {
+        store.dispatch(
+          updateMessageAtIndex({
+            chatId,
+            messageIndex: assistantIndex,
+            tool_calls: assistantToolCalls,
+          })
+        );
+      }
+
       // If there were tool calls, send results back to AI for chaining
       if (toolCallResults.length > 0 && toolCallLoopCount < MAX_TOOL_CALL_LOOPS) {
-        // Create proper tool messages for each result
+        // Create proper tool messages for each result. These must come
+        // immediately after the assistant message with tool_calls.
         for (const result of toolCallResults) {
           const toolResultMessage: ApiChatMessage = {
             role: "tool",
@@ -1054,6 +1144,12 @@ export class MessageService {
 
           // Add to chat history
           store.dispatch(addMessage({ id: chatId, message: toolResultMessage }));
+        }
+
+        // Append deferred artifact operation notes AFTER tool_result messages
+        // so the tool_use/tool_result pairing isn't broken.
+        for (const note of deferredArtifactNotes) {
+          store.dispatch(addMessage({ id: chatId, message: note }));
         }
 
         // Get updated state with new messages
@@ -1085,6 +1181,7 @@ export class MessageService {
           onComplete,
           onError,
           onToolCall,
+          onToolStatus,
         });
         return;
       }
@@ -1271,6 +1368,16 @@ export class MessageService {
 
       store.dispatch(addMessage({ id: chatId, message: assistantMessage }));
 
+      // Record the signed custom-instructions snapshot, if the server sent one
+      if (response.instructionsSnapshot) {
+        store.dispatch(
+          appendInstructionSnapshot({
+            chatId,
+            snapshot: response.instructionsSnapshot,
+          })
+        );
+      }
+
       onComplete?.(assistantMessage);
     } catch (error) {
       this.clearCurrentRequest();
@@ -1310,6 +1417,7 @@ export class MessageService {
     onChunk?: (content: string) => void;
     onComplete?: (message: ApiChatMessage) => void;
     onError?: (error: string) => void;
+    onToolStatus?: (status: ToolStatusEvent) => void;
   }): Promise<void> {
     const {
       chatId,
@@ -1317,6 +1425,7 @@ export class MessageService {
       onChunk,
       onComplete,
       onError,
+      onToolStatus,
     } = options;
 
     // Cancel any existing request before starting a new one
@@ -1375,6 +1484,7 @@ export class MessageService {
           onChunk,
           onComplete,
           onError,
+          onToolStatus,
         });
       } else {
         await this.sendMessageWithoutStreaming({

@@ -136,10 +136,14 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    padding: 20,
   },
   modalContent: {
     width: '90%',
     maxWidth: 500,
+    // Cap the modal to the space left above the keyboard so the buttons
+    // stay visible; the input shrinks and scrolls internally instead.
+    maxHeight: '100%',
     borderRadius: 10,
     padding: 20,
     shadowColor: '#000',
@@ -159,6 +163,7 @@ const styles = StyleSheet.create({
   },
   inputContainer: {
     marginBottom: 16,
+    flexShrink: 1,
   },
   input: {
     borderWidth: 1,
@@ -166,6 +171,7 @@ const styles = StyleSheet.create({
     padding: 12,
     fontSize: 16,
     minHeight: 120,
+    flexShrink: 1,
     textAlignVertical: 'top',
   },
   buttonContainer: {

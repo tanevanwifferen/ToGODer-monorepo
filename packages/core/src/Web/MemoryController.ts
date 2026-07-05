@@ -62,7 +62,7 @@ const fetchMemoryKeysHandler = async (
       );
       if (response.usage?.total_tokens == 0) {
         // break openai moderation unfortunately
-        aiWrapper = conversationApi.getAIWrapper(AIProvider.Grok3Mini, user);
+        aiWrapper = conversationApi.getAIWrapper(AIProvider.DeepSeekV4Flash, user);
       }
 
       result = JSON.parse(response.choices[0].message.content!);

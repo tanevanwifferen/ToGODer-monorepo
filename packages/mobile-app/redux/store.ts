@@ -18,6 +18,7 @@ import userSettingsReducer, {
 } from "./slices/userSettingsSlice";
 import projectsReducer, { ProjectsState } from "./slices/projectsSlice";
 import artifactsReducer, { ArtifactsState } from "./slices/artifactsSlice";
+import memoriesReducer, { MemoriesState } from "./slices/memoriesSlice";
 import { personalDataMiddleware } from "./middleware/personalDataMiddleware";
 import { syncMiddleware } from "./middleware/syncMiddleware";
 import { GlobalConfig } from "../model/GlobalConfig";
@@ -40,6 +41,7 @@ export interface RootState {
   userSettings: UserSettingsState;
   projects: ProjectsState;
   artifacts: ArtifactsState;
+  memories: MemoriesState;
 }
 
 const rootReducer = combineReducers({
@@ -55,6 +57,7 @@ const rootReducer = combineReducers({
   userSettings: userSettingsReducer,
   projects: projectsReducer,
   artifacts: artifactsReducer,
+  memories: memoriesReducer,
 });
 
 // Migration function to transfer settings from chats slice to userSettings slice
@@ -92,6 +95,9 @@ const migrateSettings = (state: any) => {
 const persistConfig: PersistConfig<RootState> = {
   key: "root",
   storage: AsyncStorage,
+  // Batch writes: the chats slice can be large, and serializing it on every
+  // action (e.g. streaming message updates) stalls the JS thread.
+  throttle: 1000,
   whitelist: [
     "globalConfig",
     "chats",
@@ -104,6 +110,7 @@ const persistConfig: PersistConfig<RootState> = {
     "userSettings",
     "projects",
     "artifacts",
+    "memories",
   ],
   migrate: (state: any) => {
     return Promise.resolve(migrateSettings(state));

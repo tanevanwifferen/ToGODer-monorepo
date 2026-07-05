@@ -7,6 +7,7 @@ import { AIWrapper, StreamChunk } from './AIWrapper';
 import { AIProvider } from './Model/AIProvider';
 import { zodResponseFormat } from 'openai/helpers/zod';
 import { ParsedChatCompletion } from 'openai/resources/chat/completions/index';
+import { logLlmOutput } from './OutputLogger';
 
 export class OpenRouterWrapper implements AIWrapper {
   private apiKey: string;
@@ -72,8 +73,24 @@ export class OpenRouterWrapper implements AIWrapper {
           }
         : null;
 
+      const msg = result.choices?.[0]?.message;
+      logLlmOutput({
+        model: this.model,
+        method: 'getResponse',
+        output: typeof msg?.content === 'string' ? msg.content : undefined,
+        toolCalls: Array.isArray(msg?.tool_calls)
+          ? msg!.tool_calls.map((tc: any) => ({
+              id: tc.id,
+              name: tc.function?.name,
+              arguments: tc.function?.arguments ?? '',
+            }))
+          : undefined,
+        usage: this.lastUsage,
+      });
+
       return result;
     } catch (error) {
+      logLlmOutput({ model: this.model, method: 'getResponse', error });
       console.error('Error:', error);
       throw new Error('Failed to get response from OpenRouter API');
     }
@@ -88,6 +105,7 @@ export class OpenRouterWrapper implements AIWrapper {
     multiplier: number = 1,
     signal?: AbortSignal
   ): AsyncGenerator<string, void, void> {
+    let accumulated = '';
     try {
       const stream = await this.openAI.chat.completions.create(
         {
@@ -126,11 +144,24 @@ export class OpenRouterWrapper implements AIWrapper {
         for (const ch of choices) {
           const delta = ch?.delta?.content;
           if (typeof delta === 'string' && delta.length > 0) {
+            accumulated += delta;
             yield delta;
           }
         }
       }
+      logLlmOutput({
+        model: this.model,
+        method: 'streamResponse',
+        output: accumulated,
+        usage: this.lastUsage,
+      });
     } catch (error) {
+      logLlmOutput({
+        model: this.model,
+        method: 'streamResponse',
+        output: accumulated,
+        error,
+      });
       console.error('OpenRouter stream error:', error);
       throw new Error('Failed to stream response from OpenRouter API');
     }
@@ -147,6 +178,9 @@ export class OpenRouterWrapper implements AIWrapper {
     multiplier: number = 1,
     signal?: AbortSignal
   ): AsyncGenerator<StreamChunk, void, void> {
+    let accumulated = '';
+    let lastFinishReason: string | undefined;
+    const emittedToolCalls: { id: string; name: string; arguments: string }[] = [];
     try {
       const requestParams: any = {
         messages: [
@@ -172,6 +206,8 @@ export class OpenRouterWrapper implements AIWrapper {
         number,
         { id: string; name: string; arguments: string }
       > = new Map();
+      // Indices whose tool_call_start has already been yielded
+      const announcedToolCalls = new Set<number>();
 
       for await (const chunk of stream as any) {
         // Capture usage if provided
@@ -198,6 +234,7 @@ export class OpenRouterWrapper implements AIWrapper {
 
           // Handle text content
           if (typeof delta?.content === 'string' && delta.content.length > 0) {
+            accumulated += delta.content;
             yield { type: 'text', content: delta.content };
           }
 
@@ -226,16 +263,43 @@ export class OpenRouterWrapper implements AIWrapper {
               if (tc.function?.arguments) {
                 accumulator.arguments += tc.function.arguments;
               }
+
+              // Announce the tool call as soon as its name is known so the
+              // client can show activity while arguments are still streaming
+              if (!announcedToolCalls.has(index) && accumulator.name) {
+                announcedToolCalls.add(index);
+                yield {
+                  type: 'tool_call_start',
+                  id: accumulator.id,
+                  name: accumulator.name,
+                };
+              }
             }
           }
 
-          // Check if this choice is finished and emit any complete tool calls
-          if (
-            ch?.finish_reason === 'tool_calls' ||
-            ch?.finish_reason === 'stop'
-          ) {
+          // Emit complete tool calls on ANY finish reason. Models can end a
+          // turn with reasons other than 'stop'/'tool_calls' (e.g.
+          // 'content_filter' from provider safety systems) after having
+          // streamed a complete tool call — discarding it would strand the
+          // turn with an announced-but-never-executed tool call.
+          if (ch?.finish_reason) {
+            lastFinishReason = ch.finish_reason;
             for (const [, accumulator] of toolCallAccumulators) {
+              if (!accumulator.id || !accumulator.name) {
+                console.warn(
+                  `[tool-loop] dropping incomplete tool call (id=${JSON.stringify(
+                    accumulator.id
+                  )}, name=${JSON.stringify(accumulator.name)}, args_length=${
+                    accumulator.arguments.length
+                  }, finish_reason=${ch.finish_reason})`
+                );
+              }
               if (accumulator.id && accumulator.name) {
+                emittedToolCalls.push({
+                  id: accumulator.id,
+                  name: accumulator.name,
+                  arguments: accumulator.arguments,
+                });
                 yield {
                   type: 'tool_call',
                   id: accumulator.id,
@@ -245,10 +309,52 @@ export class OpenRouterWrapper implements AIWrapper {
               }
             }
             toolCallAccumulators.clear();
+            announcedToolCalls.clear();
           }
         }
       }
+      // Flush tool calls left over if the stream ended without a
+      // finish_reason chunk.
+      for (const [, accumulator] of toolCallAccumulators) {
+        if (accumulator.id && accumulator.name) {
+          emittedToolCalls.push({
+            id: accumulator.id,
+            name: accumulator.name,
+            arguments: accumulator.arguments,
+          });
+          yield {
+            type: 'tool_call',
+            id: accumulator.id,
+            name: accumulator.name,
+            arguments: accumulator.arguments,
+          };
+        } else {
+          console.warn(
+            `[tool-loop] dropping incomplete tool call at stream end (id=${JSON.stringify(
+              accumulator.id
+            )}, name=${JSON.stringify(accumulator.name)}, args_length=${
+              accumulator.arguments.length
+            })`
+          );
+        }
+      }
+      toolCallAccumulators.clear();
+      logLlmOutput({
+        model: this.model,
+        method: 'streamResponseWithTools',
+        output: accumulated,
+        toolCalls: emittedToolCalls,
+        usage: this.lastUsage,
+        finishReason: lastFinishReason,
+      });
     } catch (error) {
+      logLlmOutput({
+        model: this.model,
+        method: 'streamResponseWithTools',
+        output: accumulated,
+        toolCalls: emittedToolCalls,
+        error,
+      });
       console.error('OpenRouter stream with tools error:', error);
       throw new Error(
         'Failed to stream response with tools from OpenRouter API'
@@ -273,27 +379,42 @@ export class OpenRouterWrapper implements AIWrapper {
     multiplier: number = 1,
     signal?: AbortSignal
   ): Promise<ParsedChatCompletion<any>> {
-    // Prepare the request
-    var request: any = {
+    const request: any = {
       messages: [
         { role: 'system', content: systemPrompt },
         ...userAndAgentPrompts,
       ],
       model: this.model,
       max_tokens: 16384,
-      response_format: { type: 'json_object' },
+      response_format: structure
+        ? zodResponseFormat(structure, 'json_object')
+        : { type: 'json_object' },
     };
-    if (structure) {
-      request.response_format = zodResponseFormat(structure, 'json_object');
-    }
 
-    // Implement retry logic for JSON parsing
     const maxRetries = 3;
     let lastError: any = null;
 
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      let rawContent: string | undefined;
       try {
-        return await this.openAI.chat.completions.parse(request, { signal });
+        const result = await this.openAI.chat.completions.create(request, {
+          signal,
+        });
+        rawContent = result.choices?.[0]?.message?.content ?? undefined;
+        logLlmOutput({
+          model: this.model,
+          method: 'getJSONResponse',
+          output: rawContent,
+        });
+
+        const cleaned = stripJsonFences(rawContent ?? '');
+        const parsed = JSON.parse(cleaned);
+        if (structure && typeof structure.parse === 'function') {
+          structure.parse(parsed);
+        }
+        (result.choices[0].message as any).parsed = parsed;
+        result.choices[0].message.content = cleaned;
+        return result as unknown as ParsedChatCompletion<any>;
       } catch (error) {
         lastError = error;
         console.error(
@@ -301,19 +422,29 @@ export class OpenRouterWrapper implements AIWrapper {
           error
         );
 
-        // If this is the last attempt, throw the error
         if (attempt === maxRetries) {
+          logLlmOutput({
+            model: this.model,
+            method: 'getJSONResponse',
+            output: rawContent,
+            error: lastError,
+          });
           throw new Error(
             `Failed to get valid JSON response from OpenRouter API after ${maxRetries} attempts: ${lastError.message}`
           );
         }
 
-        // Small delay before retrying
         await new Promise((resolve) => setTimeout(resolve, 500));
       }
     }
 
-    // This should never be reached due to the throw in the loop, but TypeScript requires a return
     throw new Error('Failed to get JSON response from OpenRouter API');
   }
+}
+
+function stripJsonFences(s: string): string {
+  const trimmed = s.trim();
+  const fence = /^```(?:json)?\s*([\s\S]*?)\s*```$/i;
+  const m = trimmed.match(fence);
+  return m ? m[1].trim() : trimmed;
 }

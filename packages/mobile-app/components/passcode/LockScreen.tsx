@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from 'react';
-import { StyleSheet, TextInput } from 'react-native';
+import React, { useEffect, useRef, useState } from 'react';
+import { AppState, StyleSheet, TextInput } from 'react-native';
 import { useDispatch, useSelector } from 'react-redux';
 import { selectPasscode, unlockApp } from '../../redux/slices/passcodeSlice';
 import { ThemedText } from '../ThemedText';
@@ -11,6 +11,22 @@ export function LockScreen() {
   const dispatch = useDispatch();
   const correctPasscode = useSelector(selectPasscode);
   const [passcode, setPasscode] = useState('');
+  const inputRef = useRef<TextInput>(null);
+
+  // The lock screen mounts while the app is backgrounded, so autoFocus
+  // fires before the app is active and the keyboard request is dropped.
+  // Re-focus when the app returns to the foreground.
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', (state) => {
+      if (state === 'active') {
+        // Blur first: the input may still be marked focused from before
+        // backgrounding, which would make focus() a no-op.
+        inputRef.current?.blur();
+        setTimeout(() => inputRef.current?.focus(), 100);
+      }
+    });
+    return () => subscription.remove();
+  }, []);
 
   const textColor = useThemeColor({}, 'text');
   const backgroundColor = useThemeColor({}, 'background');
@@ -39,6 +55,7 @@ export function LockScreen() {
       </ThemedText>
       
       <TextInput
+        ref={inputRef}
         style={[
           styles.input,
           {

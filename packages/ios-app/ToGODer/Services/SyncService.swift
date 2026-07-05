@@ -14,6 +14,26 @@ struct SyncPayload: Codable {
     var userSettings: SyncableUserSettings
     var projects: [String: SyncableProject]?
     var artifacts: [String: SyncableArtifact]?
+    // Optional so payloads from older clients (without this field) still decode.
+    // Wire-compatible with RN `SyncableMemory` in services/sync/types.ts.
+    var memories: [String: SyncableMemory]?
+}
+
+/// A single long-term memory entry, versioned per key so entries written on
+/// different clients (iOS / RN) merge cleanly via LWW on updatedAt.
+struct SyncableMemory: Codable {
+    var value: String
+    var updatedAt: Double // epoch ms
+    var deleted: Bool?
+    var deletedAt: Double? // epoch ms
+}
+
+/// Server-signed snapshot of the custom instructions active at a point in
+/// time. Wire-compatible with RN `SignedInstructionSnapshot`.
+struct SignedInstructionSnapshot: Codable, Equatable {
+    var content: String
+    var timestamp: Double // epoch ms
+    var signature: String
 }
 
 struct SyncableChat: Codable {
@@ -28,6 +48,8 @@ struct SyncableChat: Codable {
     var updatedAt: Double // epoch ms
     var deleted: Bool?
     var deletedAt: Double? // epoch ms
+    // Optional so payloads from older clients still decode.
+    var instructionHistory: [SignedInstructionSnapshot]?
 }
 
 struct SyncableMessage: Codable {
@@ -40,6 +62,7 @@ struct SyncableMessage: Codable {
     var hidden: Bool?
     var artifactId: String? // matches RN ApiChatMessage
     var tool_call_id: String? // matches RN ApiChatMessage
+    var tool_calls: [APIToolCall]? // matches RN ApiChatMessage
     var deleted: Bool?
     var deletedAt: Double? // epoch ms
 }
@@ -365,7 +388,7 @@ final class SyncService: ObservableObject {
     private func buildLocalPayload() -> SyncPayload {
         let localChats = storage.loadChats()
         let settings = storage.loadSettings()
-        let _ = storage.loadMemories() // loaded but not yet included in payload
+        let versionedMemories = storage.loadMemoriesVersioned()
         let projects = storage.loadProjects()
         let artifacts = storage.loadArtifacts()
 
@@ -383,6 +406,7 @@ final class SyncService: ObservableObject {
                     hidden: msg.hidden,
                     artifactId: msg.artifactId,
                     tool_call_id: msg.toolCallId,
+                    tool_calls: msg.toolCalls,
                     deleted: msg.deleted,
                     deletedAt: msg.deletedAt.map { $0.timeIntervalSince1970 * 1000 }
                 )
@@ -399,7 +423,8 @@ final class SyncService: ObservableObject {
                 projectId: chat.projectId,
                 updatedAt: chatUpdatedAt,
                 deleted: chat.deleted,
-                deletedAt: chat.deletedAt.map { $0.timeIntervalSince1970 * 1000 }
+                deletedAt: chat.deletedAt.map { $0.timeIntervalSince1970 * 1000 },
+                instructionHistory: chat.instructionHistory
             )
         }
 
@@ -466,8 +491,53 @@ final class SyncService: ObservableObject {
             ),
             userSettings: syncSettings,
             projects: syncProjects,
-            artifacts: syncArtifacts
+            artifacts: syncArtifacts,
+            memories: versionedMemories
         )
+    }
+
+    // MARK: - Memory merge (matches RN mergeMemories — per-key LWW with tombstones)
+
+    /// Per-key LWW merge with tombstone support. Missing side is treated as `[:]`
+    /// so older clients without the `memories` field merge cleanly.
+    func mergeMemories(
+        _ local: [String: SyncableMemory]?,
+        _ remote: [String: SyncableMemory]?
+    ) -> [String: SyncableMemory] {
+        let l = local ?? [:]
+        let r = remote ?? [:]
+        var merged: [String: SyncableMemory] = [:]
+
+        for key in Set(l.keys).union(r.keys) {
+            if let winner = mergeMemoryEntry(l[key], r[key]) {
+                merged[key] = winner
+            }
+        }
+        return merged
+    }
+
+    private func mergeMemoryEntry(
+        _ local: SyncableMemory?,
+        _ remote: SyncableMemory?
+    ) -> SyncableMemory? {
+        switch (local, remote) {
+        case (nil, nil): return nil
+        case (let l?, nil): return l
+        case (nil, let r?): return r
+        case (let l?, let r?):
+            let localDeleted = l.deleted == true
+            let remoteDeleted = r.deleted == true
+            if localDeleted && remoteDeleted {
+                return (l.deletedAt ?? 0) >= (r.deletedAt ?? 0) ? l : r
+            }
+            if localDeleted {
+                return (l.deletedAt ?? 0) > r.updatedAt ? l : r
+            }
+            if remoteDeleted {
+                return (r.deletedAt ?? 0) > l.updatedAt ? r : l
+            }
+            return l.updatedAt >= r.updatedAt ? l : r
+        }
     }
 
     // MARK: - Message-level LWW Merge (matches RN mergeUtils)
@@ -555,6 +625,22 @@ final class SyncService: ObservableObject {
         merged.messages = mergedMessages
         merged.updatedAt = effectiveMax
         merged.last_update = effectiveMax
+
+        // Union instruction histories from both sides (matches RN mergeUtils):
+        // dedupe by signed timestamp + content, sort chronologically, and drop
+        // consecutive duplicates so the history reads as actual changes.
+        var instructionUnion: [SignedInstructionSnapshot] = []
+        for entry in (local.instructionHistory ?? []) + (remote.instructionHistory ?? []) {
+            if !instructionUnion.contains(where: { $0.timestamp == entry.timestamp && $0.content == entry.content }) {
+                instructionUnion.append(entry)
+            }
+        }
+        instructionUnion.sort { $0.timestamp < $1.timestamp }
+        var deduped: [SignedInstructionSnapshot] = []
+        for entry in instructionUnion where deduped.last?.content != entry.content {
+            deduped.append(entry)
+        }
+        merged.instructionHistory = deduped.isEmpty ? nil : deduped
 
         print("[SyncService] Chat \(chatId): merged local(\(local.messages.count) msgs, effective=\(localEffective)) + remote(\(remote.messages.count) msgs, effective=\(remoteEffective)) = \(merged.messages.count) msgs")
         return merged
@@ -710,6 +796,15 @@ final class SyncService: ObservableObject {
             print("[SyncService] Merged artifacts: \(localArtifacts.count) total")
         }
 
+        // Merge memories per-key LWW with tombstones (matches RN mergeMemories)
+        let mergedMemories = mergeMemories(
+            storage.loadMemoriesVersioned(),
+            remote.memories
+        )
+        storage.saveMemoriesVersioned(mergedMemories)
+        let activeMemoryCount = mergedMemories.values.filter { $0.deleted != true }.count
+        print("[SyncService] Merged memories: \(mergedMemories.count) total, \(activeMemoryCount) active")
+
         print("[SyncService] Merge complete")
     }
 
@@ -728,6 +823,7 @@ final class SyncService: ObservableObject {
             chatMsg.updateData = msg.updateData
             chatMsg.artifactId = msg.artifactId
             chatMsg.toolCallId = msg.tool_call_id
+            chatMsg.toolCalls = msg.tool_calls
             chatMsg.deleted = msg.deleted
             chatMsg.deletedAt = msg.deletedAt.map { Date(timeIntervalSince1970: $0 / 1000) }
             return chatMsg
@@ -744,6 +840,7 @@ final class SyncService: ObservableObject {
         )
         chat.deleted = syncChat.deleted
         chat.deletedAt = syncChat.deletedAt.map { Date(timeIntervalSince1970: $0 / 1000) }
+        chat.instructionHistory = syncChat.instructionHistory
         return chat
     }
 

@@ -6,8 +6,9 @@
 
 // table for users, containing id, privateKeyHash, maxMessagesPerDay, messagesLeft, and chats
 model User {
-  id                String        @id @default(uuid())
+  id                String           @id @default(uuid())
   sharedChats       SharedChat[]
+  sharedArtifacts   SharedArtifact[]
   email             String        @unique
   password          String
   verified          Boolean       @default(false)
@@ -63,15 +64,30 @@ model Message {
 
 // table for shared chats, containing id, title, description, messages with their signatures, owner reference, and visibility
 model SharedChat {
-  id          String   @id @default(uuid())
-  ownerId     String
-  owner       User     @relation(fields: [ownerId], references: [id])
-  title       String
-  description String?
-  createdAt   DateTime @default(now())
-  messages    String // JSON blob containing messages with their signatures
-  views       Int      @default(0)
-  visibility  String   @default("PUBLIC") // Can be "PUBLIC" or "PRIVATE"
+  id                 String   @id @default(uuid())
+  ownerId            String
+  owner              User     @relation(fields: [ownerId], references: [id])
+  title              String
+  description        String?
+  createdAt          DateTime @default(now())
+  messages           String // JSON blob containing messages with their signatures
+  views              Int      @default(0)
+  visibility         String   @default("PUBLIC") // Can be "PUBLIC" or "PRIVATE"
+  instructionHistory String? // JSON blob of signed {content, timestamp, signature} custom-instruction snapshots
+}
+
+// table for shared artifacts (project files shared as standalone documents)
+model SharedArtifact {
+  id                 String   @id @default(uuid())
+  ownerId            String
+  owner              User     @relation(fields: [ownerId], references: [id])
+  title              String
+  description        String?
+  content            String
+  createdAt          DateTime @default(now())
+  views              Int      @default(0)
+  visibility         String   @default("PUBLIC") // Can be "PUBLIC" or "PRIVATE"
+  instructionHistory String? // JSON blob of signed {content, timestamp, signature} custom-instruction snapshots
 }
 
 generator client {

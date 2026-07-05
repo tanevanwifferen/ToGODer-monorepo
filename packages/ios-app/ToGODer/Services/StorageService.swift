@@ -13,7 +13,9 @@ final class StorageService {
         static let userEmail = "userEmail"
         static let chats = "chats"
         static let userSettings = "userSettings"
-        static let memories = "memories"
+        static let memories = "memories" // legacy [String: String]
+        static let memoriesVersioned = "memories_v2" // [String: SyncableMemory]
+        static let memoriesMigratedAt = "memoriesMigratedAt"
         static let personalData = "personalData"
         static let syncVersion = "syncVersion"
         static let language = "language"
@@ -130,19 +132,139 @@ final class StorageService {
     }
 
     // MARK: - Memories
+    //
+    // Memories are versioned per-key so entries sync cleanly between iOS and
+    // RN (per-key LWW with tombstones). The v2 layout is `[String: SyncableMemory]`.
+    // Legacy entries stored as `[String: String]` under Keys.memories are
+    // migrated once on first access.
 
-    func saveMemories(_ memories: [String: String]) {
-        if let data = try? encoder.encode(memories) {
-            defaults.set(data, forKey: Keys.memories)
+    private var memoriesMigratedAt: Double? {
+        let v = defaults.double(forKey: Keys.memoriesMigratedAt)
+        return v == 0 ? nil : v
+    }
+
+    /// Idempotent one-time migration from the legacy `[String: String]` layout
+    /// into the versioned `[String: SyncableMemory]` layout. Subsequent calls
+    /// are no-ops.
+    private func migrateLegacyMemoriesIfNeeded() {
+        guard memoriesMigratedAt == nil else { return }
+        let now = Date().timeIntervalSince1970 * 1000
+
+        var versioned = loadMemoriesVersionedRaw()
+
+        if let data = defaults.data(forKey: Keys.memories),
+           let legacy = try? decoder.decode([String: String].self, from: data) {
+            for (key, value) in legacy {
+                if versioned[key] == nil {
+                    versioned[key] = SyncableMemory(
+                        value: value, updatedAt: now,
+                        deleted: nil, deletedAt: nil
+                    )
+                }
+            }
+        }
+
+        saveMemoriesVersionedRaw(versioned)
+        defaults.removeObject(forKey: Keys.memories)
+        defaults.set(now, forKey: Keys.memoriesMigratedAt)
+    }
+
+    private func loadMemoriesVersionedRaw() -> [String: SyncableMemory] {
+        guard let data = defaults.data(forKey: Keys.memoriesVersioned),
+              let dict = try? decoder.decode([String: SyncableMemory].self, from: data) else {
+            return [:]
+        }
+        return dict
+    }
+
+    private func saveMemoriesVersionedRaw(_ dict: [String: SyncableMemory]) {
+        if let data = try? encoder.encode(dict) {
+            defaults.set(data, forKey: Keys.memoriesVersioned)
         }
     }
 
+    /// Full versioned memory dictionary including tombstones. Used by sync.
+    func loadMemoriesVersioned() -> [String: SyncableMemory] {
+        migrateLegacyMemoriesIfNeeded()
+        return loadMemoriesVersionedRaw()
+    }
+
+    /// Replace the full versioned memory dictionary. Used by sync-merge.
+    func saveMemoriesVersioned(_ dict: [String: SyncableMemory]) {
+        migrateLegacyMemoriesIfNeeded()
+        saveMemoriesVersionedRaw(dict)
+    }
+
+    /// Upsert a single memory entry with current timestamp.
+    func setMemoryEntry(key: String, value: String) {
+        migrateLegacyMemoriesIfNeeded()
+        var dict = loadMemoriesVersionedRaw()
+        dict[key] = SyncableMemory(
+            value: value,
+            updatedAt: Date().timeIntervalSince1970 * 1000,
+            deleted: nil, deletedAt: nil
+        )
+        saveMemoriesVersionedRaw(dict)
+    }
+
+    /// Tombstone a memory so the deletion propagates on next sync.
+    func deleteMemoryEntry(key: String) {
+        migrateLegacyMemoriesIfNeeded()
+        var dict = loadMemoriesVersionedRaw()
+        let ts = Date().timeIntervalSince1970 * 1000
+        let existing = dict[key]
+        dict[key] = SyncableMemory(
+            value: existing?.value ?? "",
+            updatedAt: existing?.updatedAt ?? ts,
+            deleted: true,
+            deletedAt: ts
+        )
+        saveMemoriesVersionedRaw(dict)
+    }
+
+    /// Active (non-deleted) memories as a plain key->value map. UI-facing.
     func loadMemories() -> [String: String] {
-        guard let data = defaults.data(forKey: Keys.memories),
-              let memories = try? decoder.decode([String: String].self, from: data) else {
-            return [:]
+        migrateLegacyMemoriesIfNeeded()
+        var out: [String: String] = [:]
+        for (key, entry) in loadMemoriesVersionedRaw() where entry.deleted != true {
+            out[key] = entry.value
         }
-        return memories
+        return out
+    }
+
+    /// Replace the entire active memory set. Values that differ from the
+    /// stored entry (or new keys) get a fresh `updatedAt`; unchanged values
+    /// keep their existing timestamp so they don't spuriously win LWW against
+    /// edits on other clients. Keys missing from `memories` that were active
+    /// before are tombstoned so deletions propagate via sync.
+    ///
+    /// Callers that want precise semantics should prefer
+    /// `setMemoryEntry`/`deleteMemoryEntry`.
+    func saveMemories(_ memories: [String: String]) {
+        migrateLegacyMemoriesIfNeeded()
+        var dict = loadMemoriesVersionedRaw()
+        let now = Date().timeIntervalSince1970 * 1000
+
+        for (key, value) in memories {
+            let existing = dict[key]
+            let changed = existing?.value != value || existing?.deleted == true
+            if changed {
+                dict[key] = SyncableMemory(
+                    value: value, updatedAt: now,
+                    deleted: nil, deletedAt: nil
+                )
+            }
+        }
+
+        // Tombstone active keys that are no longer present.
+        for (key, entry) in dict where entry.deleted != true && memories[key] == nil {
+            dict[key] = SyncableMemory(
+                value: entry.value, updatedAt: entry.updatedAt,
+                deleted: true, deletedAt: now
+            )
+        }
+
+        saveMemoriesVersionedRaw(dict)
     }
 
     func getMemoryValues(for keys: [String]) -> [String: String] {

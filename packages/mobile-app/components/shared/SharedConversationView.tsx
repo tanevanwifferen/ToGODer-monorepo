@@ -18,7 +18,9 @@ import { selectUserId } from '../../redux/slices/authSlice';
 import { Colors } from '../../constants/Colors';
 import { ThemedText } from '../ThemedText';
 import { ThemedView } from '../ThemedView';
-import { SharedConversation } from '../../model/ShareTypes';
+import { MermaidMessageContent } from '../chat/mermaid/MermaidMessageContent';
+import { SharedConversation, parseInstructionHistory } from '../../model/ShareTypes';
+import { InstructionHistorySection } from './InstructionHistorySection';
 import { ShareApiClient } from '../../apiClients/ShareApiClient';
 import { addChat, setCurrentChat } from '../../redux/slices/chatsSlice';
 import Toast from 'react-native-toast-message';
@@ -107,6 +109,9 @@ export function SharedConversationView({ conversation, onBack }: SharedConversat
 
   // Parse messages from JSON string
   const messages = JSON.parse(conversation.messages);
+  const instructionHistory = parseInstructionHistory(
+    conversation.instructionHistory
+  );
 
   return (
     <ThemedView style={styles.container}>
@@ -148,6 +153,8 @@ export function SharedConversationView({ conversation, onBack }: SharedConversat
           </ThemedText>
         </View>
 
+        <InstructionHistorySection history={instructionHistory} />
+
         <View style={styles.messagesContainer}>
           {messages.map((msg: any, index: number) => (
             <View
@@ -162,9 +169,10 @@ export function SharedConversationView({ conversation, onBack }: SharedConversat
               <ThemedText style={styles.messageRole}>
                 {msg.message.role === 'assistant' ? 'Assistant' : 'User'}
               </ThemedText>
-              <ThemedText style={styles.messageContent}>
-                {msg.message.content}
-              </ThemedText>
+              <MermaidMessageContent
+                content={msg.message.content}
+                textStyle={styles.messageContent}
+              />
             </View>
           ))}
         </View>

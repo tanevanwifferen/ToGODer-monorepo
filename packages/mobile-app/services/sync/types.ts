@@ -26,6 +26,13 @@ export interface SyncableChat {
   updatedAt: number;
   deleted?: boolean; // Tombstone: chat was deleted
   deletedAt?: number; // When the chat was deleted
+  // Server-signed custom-instruction snapshots ({content, timestamp, signature}),
+  // ordered by timestamp. Merged as a union across devices.
+  instructionHistory?: Array<{
+    content: string;
+    timestamp: number;
+    signature: string;
+  }>;
 }
 
 export interface SyncablePersonal {
@@ -62,6 +69,18 @@ export interface SyncableArtifact {
   deletedAt?: number; // When the artifact was deleted
 }
 
+/**
+ * A single long-term memory entry, versioned per key so entries written on
+ * different clients (RN / iOS) merge cleanly via Last-Writer-Wins on updatedAt.
+ * Must stay wire-compatible with the Swift `SyncableMemory` on iOS.
+ */
+export interface SyncableMemory {
+  value: string;
+  updatedAt: number;
+  deleted?: boolean;
+  deletedAt?: number;
+}
+
 export interface SyncPayload {
   version: number;
   syncedAt: number;
@@ -70,6 +89,8 @@ export interface SyncPayload {
   userSettings: SyncableUserSettings;
   projects: Record<string, SyncableProject>;
   artifacts: Record<string, SyncableArtifact>;
+  // Optional so blobs from older clients (without this field) still decode.
+  memories?: Record<string, SyncableMemory>;
 }
 
 /**

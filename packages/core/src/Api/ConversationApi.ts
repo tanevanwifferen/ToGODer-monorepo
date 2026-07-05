@@ -11,8 +11,9 @@ import {
   keepConversationGoingPrompt,
   lessBloatPrompt,
   outsideBoxPrompt,
+  ToolCallDisciplinePrompt,
 } from '../LLM/prompts/chatprompts';
-import { PromptList } from '../LLM/prompts/promptlist';
+import { PromptList, resolvePromptListItem } from '../LLM/prompts/promptlist';
 import {
   GetTitlePrompt,
   requestForMemoryPrompt,
@@ -29,6 +30,7 @@ import {
   getDefaultModel,
 } from '../LLM/Model/AIProvider';
 import { StreamChunk } from '../LLM/AIWrapper';
+import { logLlmContentEnabled } from '../LLM/OutputLogger';
 import { TranslationPrompt } from '../LLM/prompts/experienceprompts';
 import { User } from '@prisma/client';
 import { BillingDecorator } from '../Decorators/BillingDecorator';
@@ -135,10 +137,10 @@ export class ConversationApi {
       '\n\nThis is the list of all possible memories you can choose from: ' +
       JSON.stringify(body.memoryIndex);
 
-    const wrapper = this.getAIWrapper(AIProvider.DeepSeekV32, user);
+    const wrapper = this.getAIWrapper(AIProvider.DeepSeekV4Flash, user);
     const json_response = await wrapper.getJSONResponse(
       memoryPrompt,
-      body.prompts,
+      [body.prompts[body.prompts.length - 1]],
       keysSchema,
       1,
       signal
@@ -148,10 +150,12 @@ export class ConversationApi {
       return { keys: [] };
     }
 
-    console.log('memory response', json_response);
+    if (logLlmContentEnabled()) {
+      console.log('memory response', json_response);
+    }
     var keys = JSON.parse(content) as { keys: string[] };
-    var existing_keys = Object.keys(body.memories);
-    keys.keys = keys.keys.filter((x) => !existing_keys.includes(x));
+    var existing_keys = Object.keys(body.memories ?? {});
+    keys.keys = (keys.keys ?? []).filter((x) => !existing_keys.includes(x));
     return keys;
   }
 
@@ -176,7 +180,7 @@ export class ConversationApi {
       '\n\nThis is the list of all possible memories you can choose from: ' +
       JSON.stringify(memoryIndex);
 
-    const wrapper = this.getAIWrapper(AIProvider.Grok3Mini, user);
+    const wrapper = this.getAIWrapper(AIProvider.DeepSeekV4Flash, user);
     const json_response = await wrapper.getJSONResponse(
       memoryPrompt,
       [
@@ -199,10 +203,12 @@ export class ConversationApi {
       return { keys: [] };
     }
 
-    console.log('memory response', content);
+    if (logLlmContentEnabled()) {
+      console.log('memory response', content);
+    }
     var keys = JSON.parse(content) as { keys: string[] };
-    var existing_keys = Object.keys(existingMemories);
-    keys.keys = keys.keys.filter((x) => !existing_keys.includes(x));
+    var existing_keys = Object.keys(existingMemories ?? {});
+    keys.keys = (keys.keys ?? []).filter((x) => !existing_keys.includes(x));
     return keys;
   }
 
@@ -222,15 +228,9 @@ export class ConversationApi {
     let systemPrompt =
       input.customSystemPrompt ?? PromptList['/default'].prompt;
 
-    const firstPrompt = (<string>input.prompts[0]?.content)?.split(' ')[0];
-    if (firstPrompt in PromptList) {
-      systemPrompt = PromptList[firstPrompt].prompt;
-    } else if (
-      Object.values(PromptList).some((x) => x.aliases?.includes(firstPrompt))
-    ) {
-      systemPrompt = Object.values(PromptList).find((x) =>
-        x.aliases?.includes(firstPrompt)
-      )?.prompt!;
+    const command = resolvePromptListItem(input.prompts);
+    if (command) {
+      systemPrompt = command.prompt;
     }
 
     if (input.persona && String(input.persona).length > 0) {
@@ -269,6 +269,10 @@ export class ConversationApi {
 
     if (input.holisticTherapist) {
       systemPrompt += '\n\n' + holisticTherapistPrompt;
+    }
+
+    if (input.tools && input.tools.length > 0) {
+      systemPrompt += '\n\n' + ToolCallDisciplinePrompt;
     }
 
     systemPrompt = systemPrompt.replace(

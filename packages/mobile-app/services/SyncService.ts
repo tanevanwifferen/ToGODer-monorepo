@@ -29,6 +29,10 @@ import {
   ArtifactsState,
   setArtifactsFromSync,
 } from "../redux/slices/artifactsSlice";
+import {
+  MemoriesState,
+  setMemoriesFromSync,
+} from "../redux/slices/memoriesSlice";
 import { ApiChatMessage } from "../model/ChatRequest";
 
 const DEBOUNCE_DELAY = 2000; // 2 seconds
@@ -168,6 +172,7 @@ export class SyncService {
       | undefined;
     const projectsState = state.projects as ProjectsState | undefined;
     const artifactsState = state.artifacts as ArtifactsState | undefined;
+    const memoriesState = state.memories as MemoriesState | undefined;
 
     // Convert chats to syncable format
     // Use 0 as fallback to let remote data win if local has no timestamp
@@ -237,6 +242,7 @@ export class SyncService {
       userSettings: syncableUserSettings,
       projects: syncableProjects,
       artifacts: syncableArtifacts,
+      memories: memoriesState?.memories || {},
     };
   }
 
@@ -312,6 +318,19 @@ export class SyncService {
         }`
       );
       store.dispatch(setArtifactsFromSync(payload.artifacts));
+    }
+
+    // Apply memories (tombstones preserved so deletions propagate)
+    if (payload.memories) {
+      const activeCount = Object.values(payload.memories).filter(
+        (m) => !m.deleted
+      ).length;
+      console.log(
+        `[SyncService] applyPayloadToStore - Memories: ${
+          Object.keys(payload.memories).length
+        } total, ${activeCount} active`
+      );
+      store.dispatch(setMemoriesFromSync(payload.memories));
     }
 
     console.log("[SyncService] applyPayloadToStore - Complete");

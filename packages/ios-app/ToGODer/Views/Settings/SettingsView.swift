@@ -6,7 +6,10 @@ struct SettingsView: View {
     @EnvironmentObject var calendarService: CalendarService
     @EnvironmentObject var healthService: HealthService
     @EnvironmentObject var memoryService: MemoryService
+    @EnvironmentObject var chatService: ChatService
     @State private var showPasscodeSetup = false
+    @State private var isGeneratingPrompt = false
+    @State private var promptError: String?
 
     var body: some View {
         Form {
@@ -90,6 +93,30 @@ struct SettingsView: View {
             Section("Custom System Prompt") {
                 TextEditor(text: customPromptBinding)
                     .frame(minHeight: 100)
+
+                Button {
+                    Task { await generateSystemPrompt() }
+                } label: {
+                    if isGeneratingPrompt {
+                        HStack {
+                            ProgressView()
+                            Text("Generating...")
+                        }
+                    } else {
+                        Text("Generate System Prompt")
+                    }
+                }
+                .disabled(isGeneratingPrompt)
+
+                Text("Generate a personalized system prompt based on your data and preferences. Start a message with /custom to use it.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                if let promptError {
+                    Text("Error: \(promptError)")
+                        .font(.caption)
+                        .foregroundStyle(.red)
+                }
             }
 
             Section("Security") {
@@ -110,6 +137,20 @@ struct SettingsView: View {
         .navigationTitle("Settings")
         .sheet(isPresented: $showPasscodeSetup) {
             PasscodeView(mode: .setup)
+        }
+    }
+
+    // MARK: - Actions
+
+    private func generateSystemPrompt() async {
+        isGeneratingPrompt = true
+        promptError = nil
+        defer { isGeneratingPrompt = false }
+        do {
+            let prompt = try await chatService.generateSystemPrompt()
+            settingsService.updateSettings { $0.customSystemPrompt = prompt }
+        } catch {
+            promptError = error.localizedDescription
         }
     }
 

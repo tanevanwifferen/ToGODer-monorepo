@@ -7,6 +7,7 @@ import { useQuery, useMutation, useInfiniteQuery, useQueryClient } from '@tansta
 import { ShareApiClient } from '../apiClients/ShareApiClient';
 import {
   ShareRequest,
+  SharedArtifact,
   SharedConversation,
   ListSharedConversationsResponse,
   InfiniteSharedConversationsResponse
@@ -88,6 +89,17 @@ export function useShareConversation(): ShareConversationState {
     setIsModalVisible,
     sharedConversation,
   };
+}
+
+/**
+ * Hook for fetching a single shared artifact by ID
+ */
+export function useSharedArtifact(id: string) {
+  return useQuery<SharedArtifact, Error>({
+    queryKey: ['shared-artifact', id],
+    queryFn: () => ShareApiClient.getSharedArtifact(id),
+    enabled: !!id,
+  });
 }
 
 /**

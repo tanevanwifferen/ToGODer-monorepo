@@ -21,7 +21,7 @@ export class MemoryLoopService {
   // Check memory every 5 minutes
   private static readonly LOOP_INTERVAL = 5 * 60 * 1000;
 
-  // Compress when memory exceeds 2000 bytes (same as useMemoryCheck)
+  // Compress when memory exceeds 2000 bytes
   private static readonly MEMORY_SIZE_THRESHOLD = 2000;
 
   /**

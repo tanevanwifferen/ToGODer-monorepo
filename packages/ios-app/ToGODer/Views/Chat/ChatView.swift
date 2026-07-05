@@ -10,15 +10,26 @@ struct ChatView: View {
     @State private var editingMessageId: String?
     @State private var editText = ""
     @State private var showShareSheet = false
+    @State private var showVoiceChat = false
     @FocusState private var isInputFocused: Bool
 
     private var chat: Chat? {
         chatService.chats[chatId]
     }
 
+    /// Messages shown in the UI. Hidden messages (tool results, artifact
+    /// error notes) stay in the history sent to the AI but are not rendered,
+    /// matching the RN app.
+    private var displayMessages: [ChatMessage] {
+        chat?.activeMessages.filter { $0.hidden != true } ?? []
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             messageList
+            if let activity = chatService.toolActivity {
+                toolActivityIndicator(activity)
+            }
             if chatService.isStreaming {
                 streamingIndicator
             }
@@ -53,6 +64,9 @@ struct ChatView: View {
                 ShareChatView(chat: chat, apiClient: chatService.apiClient)
             }
         }
+        .fullScreenCover(isPresented: $showVoiceChat) {
+            VoiceChatView(chatId: chatId)
+        }
         .onAppear {
             inputText = chat?.draftInputText ?? ""
         }
@@ -67,26 +81,24 @@ struct ChatView: View {
         ScrollViewReader { proxy in
             ScrollView {
                 LazyVStack(spacing: 12) {
-                    if let messages = chat?.activeMessages {
-                        ForEach(messages) { message in
-                            MessageBubble(
-                                message: message,
-                                onEdit: {
-                                    editingMessageId = message.id
-                                    editText = message.content
-                                },
-                                onDelete: {
-                                    chatService.deleteMessage(message.id, in: chatId)
-                                },
-                                onRegenerate: message.isAssistant ? {
-                                    Task { await chatService.regenerateLastResponse(in: chatId) }
-                                } : nil,
-                                onRetry: message.isAssistant && (message.content.contains("Failed to get response") || message.content.hasPrefix("Error:")) ? {
-                                    Task { await chatService.retryLastMessage(in: chatId) }
-                                } : nil
-                            )
-                            .id(message.id)
-                        }
+                    ForEach(displayMessages) { message in
+                        MessageBubble(
+                            message: message,
+                            onEdit: {
+                                editingMessageId = message.id
+                                editText = message.content
+                            },
+                            onDelete: {
+                                chatService.deleteMessage(message.id, in: chatId)
+                            },
+                            onRegenerate: message.isAssistant ? {
+                                Task { await chatService.regenerateLastResponse(in: chatId) }
+                            } : nil,
+                            onRetry: message.isAssistant && (message.content.contains("Failed to get response") || message.content.hasPrefix("Error:")) ? {
+                                Task { await chatService.retryLastMessage(in: chatId) }
+                            } : nil
+                        )
+                        .id(message.id)
                     }
 
                     if chatService.isStreaming && !chatService.streamingContent.isEmpty {
@@ -104,15 +116,38 @@ struct ChatView: View {
                 }
                 .padding()
             }
+            .onAppear {
+                if let lastId = displayMessages.last?.id {
+                    proxy.scrollTo(lastId, anchor: .bottom)
+                }
+            }
             .onChange(of: chat?.messages.count) { _, _ in
                 withAnimation {
-                    proxy.scrollTo(chat?.activeMessages.last?.id, anchor: .bottom)
+                    proxy.scrollTo(displayMessages.last?.id, anchor: .bottom)
                 }
             }
             .onChange(of: chatService.streamingContent) { _, _ in
                 proxy.scrollTo("streaming", anchor: .bottom)
             }
         }
+    }
+
+    // MARK: - Tool Activity Indicator
+
+    /// Shows what the AI is currently doing with a tool
+    /// (e.g. "Searching the library…"), matching the RN ToolActivityIndicator.
+    private func toolActivityIndicator(_ activity: String) -> some View {
+        HStack(spacing: 8) {
+            ProgressView()
+                .controlSize(.small)
+            Text("\(activity)…")
+                .font(.caption)
+                .italic()
+                .foregroundStyle(.secondary)
+            Spacer()
+        }
+        .padding(.horizontal)
+        .padding(.vertical, 8)
     }
 
     // MARK: - Streaming Indicator
@@ -192,6 +227,17 @@ struct ChatView: View {
                 .lineLimit(1...6)
                 .focused($isInputFocused)
                 .onSubmit { sendMessage() }
+
+            if inputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                Button {
+                    showVoiceChat = true
+                } label: {
+                    Image(systemName: "waveform.circle.fill")
+                        .font(.title2)
+                        .foregroundStyle(.blue)
+                }
+                .disabled(chatService.isStreaming)
+            }
 
             Button {
                 sendMessage()

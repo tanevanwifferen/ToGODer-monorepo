@@ -20,5 +20,6 @@ enum Configuration {
     static let tokenRefreshInterval: TimeInterval = 15 * 60 // 15 minutes
     static let syncDebounceInterval: TimeInterval = 5
     static let maxMemoryLoops = 4
+    static let maxToolCallLoops = 10
     static let freeMessageLimit = 10
 }

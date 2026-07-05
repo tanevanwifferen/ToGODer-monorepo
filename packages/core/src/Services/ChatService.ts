@@ -77,4 +77,32 @@ export class ChatService {
       Buffer.from(expectedSignature, 'base64')
     );
   }
+
+  /**
+   * Signs a custom-instructions snapshot together with its timestamp, so
+   * clients can later prove both the content and the moment the server saw it.
+   * The timestamp is part of the signed payload — tampering with either
+   * invalidates the signature.
+   */
+  generateInstructionsSignature(content: string, timestamp: number): string {
+    return crypto
+      .createHmac('sha256', this.jwtSecret)
+      .update(`${timestamp}\n${content}`)
+      .digest('base64');
+  }
+
+  /**
+   * Verifies a signed custom-instructions snapshot (content + timestamp).
+   */
+  verifyInstructionsSignature(
+    content: string,
+    timestamp: number,
+    signature: string
+  ): boolean {
+    const expected = this.generateInstructionsSignature(content, timestamp);
+    const provided = Buffer.from(signature, 'base64');
+    const expectedBuf = Buffer.from(expected, 'base64');
+    if (provided.length !== expectedBuf.length) return false;
+    return crypto.timingSafeEqual(provided, expectedBuf);
+  }
 }

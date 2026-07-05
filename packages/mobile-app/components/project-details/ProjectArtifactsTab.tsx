@@ -5,8 +5,9 @@ import {
   TouchableOpacity,
   useColorScheme,
 } from "react-native";
-import { useDispatch } from "react-redux";
+import { useDispatch, useSelector } from "react-redux";
 import { v4 as uuidv4 } from "uuid";
+import Toast from "react-native-toast-message";
 import { Colors } from "../../constants/Colors";
 import {
   addArtifact,
@@ -15,6 +16,7 @@ import {
   moveArtifact,
   Artifact,
 } from "../../redux/slices/artifactsSlice";
+import { RootState } from "../../redux/store";
 import { ArtifactTree } from "../artifact-tree";
 import { IconSymbol } from "../ui/IconSymbol";
 import { ArtifactEditorModal } from "./ArtifactEditorModal";
@@ -22,6 +24,13 @@ import { MoveArtifactModal } from "./MoveArtifactModal";
 import { TextInputModal } from "./TextInputModal";
 import { DeleteConfirmModal } from "./DeleteConfirmModal";
 import { ArtifactActionsModal } from "./ArtifactActionsModal";
+import { ShareModal } from "../shared/ShareModal";
+import { ShareApiClient } from "../../apiClients/ShareApiClient";
+import {
+  ShareRequest,
+  SharedArtifact,
+  SignedInstructionSnapshot,
+} from "../../model/ShareTypes";
 
 interface ProjectArtifactsTabProps {
   projectId: string;
@@ -47,6 +56,27 @@ export function ProjectArtifactsTab({ projectId }: ProjectArtifactsTabProps) {
   const [actionArtifact, setActionArtifact] = useState<Artifact | null>(null);
   const [renameModalVisible, setRenameModalVisible] = useState(false);
   const [renamingArtifact, setRenamingArtifact] = useState<Artifact | null>(null);
+  const [shareModalVisible, setShareModalVisible] = useState(false);
+  const [sharingArtifact, setSharingArtifact] = useState<Artifact | null>(null);
+  const [sharedArtifact, setSharedArtifact] = useState<SharedArtifact | null>(null);
+  const [isSharing, setIsSharing] = useState(false);
+
+  const allChats = useSelector((state: RootState) => state.chats.chats);
+
+  // Signed custom-instruction snapshots from every chat in this project,
+  // merged chronologically with consecutive duplicates dropped. They document
+  // which instructions were active while the project's artifacts were created.
+  const projectInstructionHistory = React.useMemo(() => {
+    const merged: SignedInstructionSnapshot[] = [];
+    for (const chat of Object.values(allChats)) {
+      if (chat.projectId !== projectId || chat.deleted) continue;
+      merged.push(...(chat.instructionHistory ?? []));
+    }
+    merged.sort((a, b) => a.timestamp - b.timestamp);
+    return merged.filter(
+      (entry, i) => i === 0 || entry.content !== merged[i - 1].content
+    );
+  }, [allChats, projectId]);
 
   const handleAddFolder = () => {
     setCreateFolderModalVisible(true);
@@ -115,6 +145,42 @@ export function ProjectArtifactsTab({ projectId }: ProjectArtifactsTabProps) {
   const handleMoveArtifact = (artifact: Artifact) => {
     setMovingArtifact(artifact);
     setMoveModalVisible(true);
+  };
+
+  const handleShareArtifact = (artifact: Artifact) => {
+    setSharingArtifact(artifact);
+    setSharedArtifact(null);
+    setShareModalVisible(true);
+  };
+
+  const handleConfirmShare = async (request: ShareRequest) => {
+    if (!sharingArtifact) return;
+    setIsSharing(true);
+    try {
+      const result = await ShareApiClient.shareArtifact({
+        title: request.title,
+        description: request.description,
+        content: sharingArtifact.content ?? "",
+        visibility: request.visibility,
+        instructionHistory:
+          projectInstructionHistory.length > 0
+            ? projectInstructionHistory
+            : undefined,
+      });
+      setSharedArtifact(result);
+      Toast.show({
+        type: "success",
+        text1: "Artifact shared successfully",
+      });
+    } catch (error) {
+      Toast.show({
+        type: "error",
+        text1: "Failed to share artifact",
+        text2: error instanceof Error ? error.message : "Unknown error occurred",
+      });
+    } finally {
+      setIsSharing(false);
+    }
   };
 
   const handleMoveConfirm = (newParentId: string | null) => {
@@ -250,11 +316,27 @@ export function ProjectArtifactsTab({ projectId }: ProjectArtifactsTabProps) {
         artifact={actionArtifact}
         onRename={() => actionArtifact && handleRenameArtifact(actionArtifact)}
         onMove={() => actionArtifact && handleMoveArtifact(actionArtifact)}
+        onShare={() => actionArtifact && handleShareArtifact(actionArtifact)}
         onDelete={() => actionArtifact && handleDeleteArtifact(actionArtifact)}
         onClose={() => {
           setActionsModalVisible(false);
           setActionArtifact(null);
         }}
+      />
+
+      <ShareModal
+        visible={shareModalVisible}
+        onClose={() => {
+          setShareModalVisible(false);
+          setSharingArtifact(null);
+          setSharedArtifact(null);
+        }}
+        onShare={handleConfirmShare}
+        initialTitle={sharingArtifact?.name ?? ""}
+        isLoading={isSharing}
+        sharedId={sharedArtifact?.id}
+        entityLabel="Artifact"
+        pathPrefix="artifact"
       />
     </View>
   );

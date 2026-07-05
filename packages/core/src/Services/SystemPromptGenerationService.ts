@@ -71,7 +71,7 @@ export class SystemPromptGenerationService {
     );
 
     // Generate the initial personalized system prompt
-    const aiWrapper = this.conversationApi.getAIWrapper(AIProvider.Grok4, user);
+    const aiWrapper = this.conversationApi.getAIWrapper(AIProvider.DeepSeekV4Flash, user);
     const response = await aiWrapper.getResponse(
       AutoGenerateSystemPromptPrompt,
       [

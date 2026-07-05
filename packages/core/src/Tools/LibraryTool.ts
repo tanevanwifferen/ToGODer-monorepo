@@ -10,6 +10,30 @@ function parseBooleanFlag(value: string | undefined): boolean {
   return ['true', '1', 'yes', 'y', 'on'].includes(normalized);
 }
 
+const LIBRARY_REQUEST_TIMEOUT_MS = 120000;
+const LIBRARY_MAX_ATTEMPTS = 3;
+const LIBRARY_RETRY_BASE_DELAY_MS = 1000;
+
+const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/**
+ * Decide whether a failed library request is worth retrying. We retry on
+ * transient conditions (timeouts, dropped connections, no response, or 5xx
+ * server errors) but not on deterministic client errors (4xx) which would
+ * just fail again.
+ */
+function isRetryableLibraryError(error: any): boolean {
+  if (!axios.isAxiosError(error)) {
+    return false;
+  }
+  const status = error.response?.status;
+  if (status !== undefined) {
+    return status >= 500;
+  }
+  // No response: timeout or network-level failure.
+  return true;
+}
+
 /**
  * Register the query_library backend tool.
  *
@@ -33,7 +57,9 @@ export function registerLibraryTool(): void {
         name: TOOL_NAME,
         description:
           'Search the occult library for relevant book excerpts based on a query. ' +
-          'Use this when the user asks about topics that might be covered in the library.',
+          'Use this when the user asks about topics that might be covered in the library. ' +
+          'The result also lists library book titles matching the query, so when the user ' +
+          'is looking for a specific text, query with the (partial) title to find it.',
         parameters: {
           type: 'object',
           properties: {
@@ -57,25 +83,88 @@ export function registerLibraryTool(): void {
         return 'Library service is not configured.';
       }
 
-      const endpoint = `${baseUrl.replace(/\/$/, '')}/chat`;
+      const normalizedBaseUrl = baseUrl.replace(/\/$/, '');
+      const endpoint = `${normalizedBaseUrl}/chat`;
+
+      // Best-effort fuzzy title lookup, run alongside the RAG request so the
+      // model can also see which texts exist in the library by name.
+      const titleMatchesPromise: Promise<string[]> = axios
+        .get(`${normalizedBaseUrl}/books`, {
+          params: { q: query.trim() },
+          timeout: 15000,
+        })
+        .then((res) => {
+          const items = Array.isArray(res.data?.items) ? res.data.items : [];
+          return items
+            .slice(0, 10)
+            .map((item: any) => item?.filename)
+            .filter(
+              (filename: any): filename is string =>
+                typeof filename === 'string' && filename.length > 0
+            );
+        })
+        .catch((error: any) => {
+          console.warn(
+            'Library title lookup failed:',
+            error?.message ?? error
+          );
+          return [];
+        });
 
       try {
-        const response = await axios.post(
-          endpoint,
-          {
-            messages: [{ role: 'user', content: query }],
-          },
-          {
-            timeout: 30000,
+        let response;
+        let lastError: any;
+        for (let attempt = 1; attempt <= LIBRARY_MAX_ATTEMPTS; attempt++) {
+          try {
+            response = await axios.post(
+              endpoint,
+              {
+                messages: [{ role: 'user', content: query }],
+              },
+              {
+                timeout: LIBRARY_REQUEST_TIMEOUT_MS,
+              }
+            );
+            break;
+          } catch (error: any) {
+            lastError = error;
+            if (attempt >= LIBRARY_MAX_ATTEMPTS || !isRetryableLibraryError(error)) {
+              throw error;
+            }
+            const backoff = LIBRARY_RETRY_BASE_DELAY_MS * 2 ** (attempt - 1);
+            console.warn(
+              `Library tool request failed (attempt ${attempt}/${LIBRARY_MAX_ATTEMPTS}), retrying in ${backoff}ms:`,
+              error?.message ?? error
+            );
+            await delay(backoff);
           }
-        );
+        }
+
+        if (!response) {
+          throw lastError ?? new Error('Library request failed with no response.');
+        }
+
+        const titleMatches = await titleMatchesPromise;
 
         const answer = response.data?.answer;
         if (typeof answer !== 'string' || answer.trim().length === 0) {
+          if (titleMatches.length > 0) {
+            return (
+              'No relevant excerpts found for this query.\n\n' +
+              'Book titles in the library matching the query:\n' +
+              titleMatches.map((t) => `- ${t}`).join('\n')
+            );
+          }
           return 'No relevant excerpts found for this query.';
         }
 
         let result = answer.trim();
+
+        if (titleMatches.length > 0) {
+          result +=
+            '\n\nBook titles in the library matching the query:\n' +
+            titleMatches.map((t) => `- ${t}`).join('\n');
+        }
 
         const sources = Array.isArray(response.data?.sources)
           ? response.data.sources

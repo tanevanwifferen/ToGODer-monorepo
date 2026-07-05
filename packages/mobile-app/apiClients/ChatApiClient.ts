@@ -194,11 +194,37 @@ export interface ToolResultEvent {
   is_error: boolean;
 }
 
+/**
+ * Tool activity status emitted by the backend so the UI can show what the
+ * AI is currently doing (e.g. searching the library, writing an artifact).
+ * - generating: the model is producing the tool call (arguments streaming)
+ * - running: a backend tool is executing server-side
+ * - done: a backend tool finished executing
+ */
+export interface ToolStatusEvent {
+  id: string;
+  name: string;
+  status: "generating" | "running" | "done";
+  isError?: boolean;
+}
+
+/**
+ * Server-signed snapshot of the custom instructions active for the request.
+ * Signature covers content + timestamp so instruction changes are verifiable.
+ */
+export interface InstructionsSnapshotEvent {
+  content: string;
+  timestamp: number;
+  signature: string;
+}
+
 export type StreamEvent =
   | { type: "chunk"; data: string }
   | { type: "signature"; data: string }
+  | { type: "instructions"; data: InstructionsSnapshotEvent }
   | { type: "memory_request"; data: { keys: string[] } }
   | { type: "tool_call"; data: ArtifactToolCall }
+  | { type: "tool_status"; data: ToolStatusEvent }
   | { type: "tool_result"; data: ToolResultEvent }
   | { type: "error"; data: any }
   | { type: "done"; data: null };
@@ -476,6 +502,12 @@ export class ChatApiClient {
                 yield { type: "signature", data: sig };
                 break;
               }
+              case "instructions":
+                yield {
+                  type: "instructions",
+                  data: data as InstructionsSnapshotEvent,
+                };
+                break;
               case "memory_request":
                 yield {
                   type: "memory_request",
@@ -486,6 +518,12 @@ export class ChatApiClient {
                 yield {
                   type: "tool_call",
                   data: data as ArtifactToolCall,
+                };
+                break;
+              case "tool_status":
+                yield {
+                  type: "tool_status",
+                  data: data as ToolStatusEvent,
                 };
                 break;
               case "tool_result":
@@ -681,6 +719,12 @@ export class ChatApiClient {
               yield { type: "signature", data: sig };
               break;
             }
+            case "instructions":
+              yield {
+                type: "instructions",
+                data: data as InstructionsSnapshotEvent,
+              };
+              break;
             case "memory_request":
               yield {
                 type: "memory_request",
@@ -691,6 +735,12 @@ export class ChatApiClient {
               yield {
                 type: "tool_call",
                 data: data as ArtifactToolCall,
+              };
+              break;
+            case "tool_status":
+              yield {
+                type: "tool_status",
+                data: data as ToolStatusEvent,
               };
               break;
             case "tool_result":

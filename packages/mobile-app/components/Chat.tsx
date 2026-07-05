@@ -13,6 +13,8 @@ import { CustomInputToolbar } from "./chat/CustomInputToolbar";
 import { EmptyChat } from "./chat/EmptyChat";
 import { EditMessageModal } from "./chat/EditMessageModal";
 import { EmbeddedArtifact } from "./chat/EmbeddedArtifact";
+import { ToolActivityIndicator } from "./chat/ToolActivityIndicator";
+import { MessageWithMermaid } from "./chat/mermaid/MessageWithMermaid";
 import { useMessages } from "../hooks/useMessages";
 import { useMessageSending } from "../hooks/useMessageSending";
 import { useChatTitle } from "../hooks/useChatTitle";
@@ -46,6 +48,7 @@ export function Chat({ chatId, onBack }: ChatProps) {
     regenerate: regenerateResponse,
     cancel: cancelRequest,
     typing,
+    activity,
     error: errorMessage,
   } = useMessageSending(chatId);
 
@@ -71,6 +74,7 @@ export function Chat({ chatId, onBack }: ChatProps) {
   // Get message input state and handlers using the consolidated hook
   const {
     inputText,
+    inputTextRef,
     setInputText,
     showPrompts,
     filteredPrompts,
@@ -79,24 +83,36 @@ export function Chat({ chatId, onBack }: ChatProps) {
     clearInput
   } = useMessageInput(chatId, giftedMessages);
 
+  // Send from the ref: it is updated synchronously on every keystroke, while
+  // the rendered inputText prop can be a render behind when Send is tapped
+  // right after typing — which used to cut off the last characters.
+  const handleSendText = useCallback(
+    (fallbackText?: string) => {
+      const text = inputTextRef.current || fallbackText;
+      if (text) {
+        sendApiMessage(text);
+        clearInput();
+      }
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [sendApiMessage]
+  );
+
   // Get library integration state and handler
   const { libraryIntegrationEnabled, handleLibraryIntegrationToggle } = useLibraryIntegration();
 
-  // Handle edit message action from long press menu
+  // Handle edit message action from long press menu.
+  // Gifted message _id is the message's index in apiMessages.
   const handleEditMessage = useCallback(
     (messageId: string, content: string) => {
-      const messageIndex = giftedMessages.findIndex(
-        (msg) => msg._id === messageId
-      );
-      if (messageIndex !== -1 && apiMessages != null) {
-        // Convert from reversed index to original index
-        const originalIndex = apiMessages.length - 1 - messageIndex;
-        setEditingMessageIndex(originalIndex);
+      const messageIndex = Number(messageId);
+      if (Number.isInteger(messageIndex) && messageIndex >= 0) {
+        setEditingMessageIndex(messageIndex);
         setEditingMessageContent(content);
         setEditModalVisible(true);
       }
     },
-    [giftedMessages, apiMessages]
+    []
   );
 
   // Handle save from edit modal
@@ -133,12 +149,10 @@ export function Chat({ chatId, onBack }: ChatProps) {
   const { onLongPress } = useChatActions(
     giftedMessages,
     (messageId: string) => {
-      const messageIndex = giftedMessages.findIndex(
-        (msg) => msg._id === messageId
-      );
-      if (messageIndex !== -1 && apiMessages != null) {
-        // Convert from reversed index to original index
-        onDeleteMessage(apiMessages.length - 1 - messageIndex);
+      // Gifted message _id is the message's index in apiMessages.
+      const messageIndex = Number(messageId);
+      if (Number.isInteger(messageIndex) && messageIndex >= 0) {
+        onDeleteMessage(messageIndex);
       }
     },
     handleEditMessage
@@ -148,10 +162,7 @@ export function Chat({ chatId, onBack }: ChatProps) {
     <CustomInputToolbar
       {...toolbarProps}
       onSend={(messages: IMessage[]) => {
-        if (messages[0]) {
-          sendApiMessage(messages[0].text);
-          clearInput();
-        }
+        handleSendText(messages[0]?.text);
       }}
       showPrompts={showPrompts}
       inputText={inputText}
@@ -178,6 +189,10 @@ export function Chat({ chatId, onBack }: ChatProps) {
     return null;
   };
 
+  // Render assistant/user message text, turning ```mermaid fenced blocks into
+  // visual diagrams while leaving the rest of the text untouched.
+  const renderMessageText = (props: any) => <MessageWithMermaid {...props} />;
+
   const backgroundColor = Colors[colorScheme ?? "light"].background;
 
   return (
@@ -191,10 +206,7 @@ export function Chat({ chatId, onBack }: ChatProps) {
         <GiftedChat
           messages={giftedMessages}
           onSend={(messages) => {
-            if (messages[0]) {
-              sendApiMessage(messages[0].text);
-              clearInput();
-            }
+            handleSendText(messages[0]?.text);
           }}
           user={{
             _id: 1,
@@ -210,10 +222,12 @@ export function Chat({ chatId, onBack }: ChatProps) {
           minComposerHeight={60}
           inverted={true}
           isTyping={typing}
+          renderFooter={() => <ToolActivityIndicator activity={activity} />}
           minInputToolbarHeight={0}
           onLongPress={onLongPress}
           renderSystemMessage={renderSystemMessage}
           renderCustomView={renderCustomView}
+          renderMessageText={renderMessageText}
         />
       </View>
       <EditMessageModal

@@ -5,6 +5,15 @@ export enum ChatRequestCommunicationStyle {
   Informal = 3,
 }
 
+export interface ApiChatMessageToolCall {
+  id: string;
+  type: "function";
+  function: {
+    name: string;
+    arguments: string;
+  };
+}
+
 export interface ApiChatMessage {
   id?: string; // Unique ID for sync tracking
   content: string;
@@ -15,6 +24,7 @@ export interface ApiChatMessage {
   hidden?: boolean;
   artifactId?: string;
   tool_call_id?: string;
+  tool_calls?: ApiChatMessageToolCall[];
   deleted?: boolean; // Tombstone marker for sync
   deletedAt?: number; // When the message was deleted
 }
