@@ -111,10 +111,31 @@ interface BatchResultEntry {
 
 interface WorkerResult {
   text?: string;
-  predictions?: Record<string, number>;
+  /**
+   * The deployed worker returns an array of {label, score}; older/newer
+   * versions may return a Record. normalizePredictions() accepts both.
+   */
+  predictions?: { label: string; score: number }[] | Record<string, number>;
   top_emotion?: string;
   top_score?: number;
   valence?: number;
+}
+
+/** Normalize worker predictions ([{label, score}] or Record) to a Record. */
+function normalizePredictions(
+  predictions: WorkerResult['predictions']
+): Record<string, number> | null {
+  if (!predictions) return null;
+  if (Array.isArray(predictions)) {
+    const out: Record<string, number> = {};
+    for (const p of predictions) {
+      if (p && typeof p.label === 'string' && typeof p.score === 'number') {
+        out[p.label] = p.score;
+      }
+    }
+    return Object.keys(out).length > 0 ? out : null;
+  }
+  return predictions;
 }
 
 const SENTIMENT_MODEL_NAME =
@@ -306,11 +327,12 @@ export class SentimentService {
     const history: MessageSentiment[] = [];
     userMessages.forEach((text, index) => {
       const result = results.get(cmidFor(text));
-      if (!result?.predictions) return;
+      const predictions = normalizePredictions(result?.predictions);
+      if (!result || !predictions) return;
       history.push({
         index,
         excerpt: text.length > 60 ? text.slice(0, 57) + '…' : text,
-        predictions: result.predictions,
+        predictions,
         topEmotion: result.top_emotion ?? 'neutral',
         topScore: result.top_score ?? 0,
         valence: result.valence ?? 0,

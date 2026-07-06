@@ -21,6 +21,7 @@ import {
 import { useDispatch, useSelector } from 'react-redux';
 import { useAuth } from '../../../hooks/useAuth';
 import { selectBalance } from '../../../redux/slices/balanceSlice';
+import { selectSentimentEnabled } from '../../../redux/slices/globalConfigSlice';
 import {
   selectSentimentForChat,
   setSentiment,
@@ -38,9 +39,12 @@ import {
 function useEmotionsEligible(): boolean {
   const { isAuthenticated } = useAuth();
   const balance = useSelector(selectBalance);
-  // The analysis is billed to the user's own credit, so the view is hidden
-  // for logged-out users and users without a positive personal balance.
-  return isAuthenticated && balance.balance > 0;
+  const featureEnabled = useSelector(selectSentimentEnabled);
+  // Optional feature: hidden entirely unless the server has the sentiment
+  // service configured. The analysis is billed to the user's own credit, so
+  // the view is also hidden for logged-out users and users without a
+  // positive personal balance.
+  return featureEnabled && isAuthenticated && balance.balance > 0;
 }
 
 function trendGlyph(summary: SentimentSummary): string {
