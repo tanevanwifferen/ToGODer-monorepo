@@ -158,7 +158,7 @@ export class MessageService {
    * No-ops unless the feature is enabled and the user is logged in with a
    * positive personal balance (the same gate the server enforces).
    */
-  public autoFetchSentiment(chatId: string): void {
+  public autoFetchSentiment(chatId: string, retriesLeft: number = 2): void {
     if (this.sentimentRefetchInFlight) return;
     const state = store.getState();
     if (!state.globalConfig?.sentimentEnabled) return;
@@ -172,6 +172,11 @@ export class MessageService {
       .then((sentiment) => {
         if (sentiment) {
           store.dispatch(setSentiment({ chatId, sentiment }));
+        } else if (retriesLeft > 0) {
+          // Analysis jobs are still running server-side (e.g. GPU cold
+          // start); the backend keeps collecting them in the background, so
+          // check back in a bit.
+          setTimeout(() => this.autoFetchSentiment(chatId, retriesLeft - 1), 45000);
         }
       })
       .catch((error) => {

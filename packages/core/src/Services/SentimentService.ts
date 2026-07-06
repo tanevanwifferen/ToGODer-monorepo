@@ -159,6 +159,23 @@ function setCachedResult(cmid: string, result: WorkerResult): void {
   resultCache.set(cmid, result);
 }
 
+/**
+ * Jobs submitted but not yet resolved, keyed by per-message cmid. Shared
+ * across requests so a slow job (GPU cold start) is re-polled by later
+ * requests — and finished by the detached watcher below — instead of being
+ * resubmitted and re-billed.
+ */
+const inFlightJobs = new Map<string, string>();
+
+/** Job ids currently owned by a detached background watcher. */
+const watchedJobs = new Set<string>();
+
+/** How long the detached watcher keeps polling an abandoned job. */
+const BACKGROUND_WATCH_MS = Number(
+  process.env.SENTIMENT_BACKGROUND_WATCH_MS ?? 10 * 60 * 1000
+);
+const BACKGROUND_POLL_INTERVAL_MS = 3000;
+
 const SENTIMENT_MODEL_NAME =
   process.env.SENTIMENT_MODEL_NAME ??
   'multilingual_go_emotions_V1.1 (mBERT)';
@@ -275,16 +292,30 @@ export class SentimentService {
     }
     const uncached = items.filter((item) => !results.has(item.cmid));
 
-    // Submit all uncached messages as ONE batch per user (single HTTP call,
-    // single debit on the sentiment ledger), falling back to per-message
-    // submits if the service runs the older per-message API.
+    // Messages whose jobs are already running (submitted by an earlier
+    // request whose poll budget expired, or by a concurrent request) are
+    // RE-POLLED, never resubmitted — resubmitting would re-bill and abandon
+    // the original job.
     const pending = new Map<string, string>(); // cmid -> job_id
+    const toSubmit: { text: string; cmid: string }[] = [];
+    for (const item of uncached) {
+      const inFlight = inFlightJobs.get(item.cmid);
+      if (inFlight) {
+        pending.set(item.cmid, inFlight);
+      } else {
+        toSubmit.push(item);
+      }
+    }
+
+    // Submit the genuinely new messages as ONE batch per user (single HTTP
+    // call, single debit on the sentiment ledger), falling back to
+    // per-message submits if the service runs the older per-message API.
     let newlyBilledUsd = 0;
-    if (uncached.length > 0) {
-      const submitted = await this.submitBatch(uncached, user, pending);
+    if (toSubmit.length > 0) {
+      const submitted = await this.submitBatch(toSubmit, user, pending);
       newlyBilledUsd = submitted ?? 0;
       if (submitted === null) {
-        newlyBilledUsd = await this.submitPerMessage(uncached, pending, results);
+        newlyBilledUsd = await this.submitPerMessage(toSubmit, pending, results);
       }
     }
 
@@ -313,8 +344,10 @@ export class SentimentService {
             if (status === 'succeeded' && job.data?.result?.predictions) {
               results.set(cmid, job.data.result as WorkerResult);
               setCachedResult(cmid, job.data.result as WorkerResult);
+              inFlightJobs.delete(cmid);
               pending.delete(cmid);
             } else if (status === 'failed') {
+              inFlightJobs.delete(cmid);
               pending.delete(cmid);
             }
           } catch {
@@ -322,6 +355,14 @@ export class SentimentService {
           }
         })
       );
+    }
+
+    // Jobs that outlived our poll budget stay registered in inFlightJobs and
+    // get a detached watcher, so their results still land in the cache (and
+    // are picked up by the client's auto-refresh) instead of being abandoned
+    // and resubmitted.
+    if (pending.size > 0) {
+      this.watchInBackground(new Map(pending));
     }
 
     const history: MessageSentiment[] = [];
@@ -347,6 +388,51 @@ export class SentimentService {
   /** Poll budget suited for the dedicated chart endpoint. */
   public viewPollBudgetMs(): number {
     return VIEW_POLL_BUDGET_MS;
+  }
+
+  /**
+   * Detached watcher for jobs that outlived a request's poll budget (GPU
+   * cold starts routinely take 1–2 minutes). Keeps polling and writes
+   * results into the process cache; the client's auto-refresh then finds
+   * them on its next call. Each job is watched at most once.
+   */
+  private watchInBackground(pending: Map<string, string>): void {
+    for (const [cmid, jobId] of pending) {
+      if (watchedJobs.has(jobId)) continue;
+      watchedJobs.add(jobId);
+      void (async () => {
+        const deadline = Date.now() + BACKGROUND_WATCH_MS;
+        try {
+          while (Date.now() < deadline) {
+            await delay(BACKGROUND_POLL_INTERVAL_MS);
+            // Someone else (a foreground poll) may have finished it already.
+            if (getCachedResult(cmid)) return;
+            try {
+              const job = await axios.get(
+                `${baseUrl()}/internal/jobs/${jobId}`,
+                { timeout: REQUEST_TIMEOUT_MS, validateStatus: () => true }
+              );
+              const status = job.data?.status;
+              if (status === 'succeeded' && job.data?.result?.predictions) {
+                setCachedResult(cmid, job.data.result as WorkerResult);
+                inFlightJobs.delete(cmid);
+                return;
+              }
+              if (status === 'failed' || job.status === 404) {
+                inFlightJobs.delete(cmid);
+                return;
+              }
+            } catch {
+              // transient poll failure — keep watching until the deadline
+            }
+          }
+          // Timed out: forget the job so a future request may resubmit.
+          inFlightJobs.delete(cmid);
+        } finally {
+          watchedJobs.delete(jobId);
+        }
+      })();
+    }
   }
 
   /**
@@ -382,11 +468,15 @@ export class SentimentService {
     }
 
     if (response.status === 202 && Array.isArray(response.data?.jobs)) {
-      // jobs come back in input order; key them by OUR per-message cmid.
+      // jobs come back in input order; key them by OUR per-message cmid and
+      // register them as in-flight so no later request resubmits them.
       const jobs = response.data.jobs as { job_id: string; status: string }[];
       jobs.forEach((job, i) => {
         const item = uncached[i];
-        if (item && job?.job_id) pending.set(item.cmid, job.job_id);
+        if (item && job?.job_id) {
+          pending.set(item.cmid, job.job_id);
+          inFlightJobs.set(item.cmid, job.job_id);
+        }
       });
       return typeof response.data.total_cost_usd === 'number'
         ? response.data.total_cost_usd
@@ -397,9 +487,17 @@ export class SentimentService {
       return null;
     }
     if (response.status === 409) {
-      // Same batch already submitted concurrently; its results will land in
-      // the cache via that request. Nothing to bill here.
-      console.warn('Sentiment batch duplicate (409); skipping this round');
+      // Identical batch submitted concurrently by another request. Give the
+      // winner a moment to register its job ids, then poll THOSE jobs
+      // instead of dropping the messages for this round.
+      await delay(500);
+      for (const item of uncached) {
+        const jobId = inFlightJobs.get(item.cmid);
+        if (jobId) pending.set(item.cmid, jobId);
+      }
+      console.warn(
+        `Sentiment batch duplicate (409); re-polling ${pending.size}/${uncached.length} in-flight jobs`
+      );
       return 0;
     }
     console.warn(
@@ -450,6 +548,7 @@ export class SentimentService {
         setCachedResult(entry.client_message_id, entry.result);
       } else if (entry.status === 'queued' || entry.status === 'processing') {
         pending.set(entry.client_message_id, entry.job_id);
+        inFlightJobs.set(entry.client_message_id, entry.job_id);
       }
     }
 
