@@ -22,6 +22,7 @@ import { useMessageInput } from "../hooks/useMessageInput";
 import { useChatActions } from "../hooks/useChatActions";
 import { useGiftedMessages, ExtendedIMessage } from "../hooks/useGiftedMessages";
 import { useLibraryIntegration } from "../hooks/useLibraryIntegration";
+import { useAutoSentiment } from "../hooks/useAutoSentiment";
 import Toast from "react-native-toast-message";
 import { ThemedText } from "./ThemedText";
 import { useExperienceContext } from "./providers/ExperienceProvider";
@@ -40,6 +41,10 @@ export function Chat({ chatId, onBack }: ChatProps) {
 
   // useMessages provides message display and deletion
   const { messages: apiMessages, onDeleteMessage } = useMessages(chatId);
+
+  // Keep the emotion analysis fresh: fetches automatically when the chat has
+  // none yet (billed feature — no-ops when logged out / without credit).
+  useAutoSentiment(chatId);
 
   // useMessageSending provides message sending functionality
   const {

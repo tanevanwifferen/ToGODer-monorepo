@@ -38,6 +38,7 @@ import { selectIsAuthenticated } from "../redux/slices/authSlice";
 import { selectHasFunds } from "../redux/slices/balanceSlice";
 import { selectDefaultModel } from "../redux/slices/globalConfigSlice";
 import { setSentiment } from "../redux/slices/sentimentSlice";
+import { SentimentApiClient } from "../apiClients/SentimentApiClient";
 
 const MAX_MEMORY_FETCH_LOOPS = 4;
 
@@ -143,6 +144,46 @@ export class MessageService {
       MessageService.instance = new MessageService();
     }
     return MessageService.instance;
+  }
+
+  /** Guard so overlapping turns don't stack sentiment refetches. */
+  private sentimentRefetchInFlight = false;
+
+  /**
+   * Fetch the emotion analysis for a chat in the background and store it.
+   * Used when a turn finished without a sentiment event (the analysis
+   * outlived the server's in-chat poll budget, e.g. GPU cold start) and when
+   * opening a chat that has no analysis yet. Re-analysing already-analysed
+   * messages is a free replay server-side, so this never double-bills.
+   * No-ops unless the feature is enabled and the user is logged in with a
+   * positive personal balance (the same gate the server enforces).
+   */
+  public autoFetchSentiment(chatId: string): void {
+    if (this.sentimentRefetchInFlight) return;
+    const state = store.getState();
+    if (!state.globalConfig?.sentimentEnabled) return;
+    if (!selectIsAuthenticated(state)) return;
+    if ((state.balance?.balance ?? 0) <= 0) return;
+    const messages = state.chats.chats[chatId]?.messages ?? [];
+    if (!messages.some((m: ApiChatMessage) => m.role === "user")) return;
+
+    this.sentimentRefetchInFlight = true;
+    SentimentApiClient.analyze(messages)
+      .then((sentiment) => {
+        if (sentiment) {
+          store.dispatch(setSentiment({ chatId, sentiment }));
+        }
+      })
+      .catch((error) => {
+        // Non-fatal background refresh; 402 just means credit ran out.
+        console.log(
+          "Sentiment auto-refresh skipped:",
+          error instanceof Error ? error.message : error
+        );
+      })
+      .finally(() => {
+        this.sentimentRefetchInFlight = false;
+      });
   }
 
   /**
@@ -873,6 +914,7 @@ export class MessageService {
         throw new Error("Request cancelled");
       }
 
+      let sawSentiment = false;
       for await (const evt of ChatApiClient.sendMessageStream(
         effectiveModel,
         userSettings.humanPrompt,
@@ -935,6 +977,7 @@ export class MessageService {
           case "sentiment": {
             // Emotion analysis of the user's recent messages, streamed
             // alongside the response for the emotions view.
+            sawSentiment = true;
             store.dispatch(setSentiment({ chatId, sentiment: evt.data }));
             break;
           }
@@ -1196,6 +1239,13 @@ export class MessageService {
 
       // Stream completed successfully - always call onComplete to stop typing indicator
       this.clearCurrentRequest();
+
+      // The server only waits a few seconds for the emotion analysis during a
+      // chat turn; if it wasn't ready, fetch it in the background now.
+      if (!sawSentiment) {
+        this.autoFetchSentiment(chatId);
+      }
+
       if (onComplete) {
         const assistantMessage: ApiChatMessage = {
           role: "assistant",
@@ -1386,9 +1436,12 @@ export class MessageService {
         );
       }
 
-      // Emotion analysis of the user's recent messages, if the server ran one
+      // Emotion analysis of the user's recent messages, if the server ran one;
+      // otherwise fetch it in the background (free replay once jobs finish).
       if (response.sentiment) {
         store.dispatch(setSentiment({ chatId, sentiment: response.sentiment }));
+      } else {
+        this.autoFetchSentiment(chatId);
       }
 
       onComplete?.(assistantMessage);
