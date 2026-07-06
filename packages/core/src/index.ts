@@ -12,6 +12,7 @@ import { setupRunners } from './Auth/Runners';
 import { GetShareRouter } from './Web/ShareController';
 import { GetMemoryRouter } from './Web/MemoryController';
 import { GetSyncRouter } from './Web/SyncController';
+import { GetSentimentRouter } from './Web/SentimentController';
 import {
   GetRealtimeVoiceRouter,
   setupRealtimeVoiceWebSocket,
@@ -82,6 +83,7 @@ const memoryRouter = GetMemoryRouter(messageLimiter);
 const shareRouter = GetShareRouter(messageLimiter);
 const realtimeVoiceRouter = GetRealtimeVoiceRouter(messageLimiter);
 const syncRouter = GetSyncRouter(messageLimiter);
+const sentimentRouter = GetSentimentRouter(messageLimiter);
 
 app.use(chatRouter);
 app.use(authRouter);
@@ -90,6 +92,7 @@ app.use(memoryRouter);
 app.use(shareRouter);
 app.use(realtimeVoiceRouter);
 app.use(syncRouter);
+app.use(sentimentRouter);
 
 const donateOptions: { address: string }[] = JSON.parse(
   process.env.DONATE_OPTIONS || '[]'

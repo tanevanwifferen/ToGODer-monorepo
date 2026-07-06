@@ -15,6 +15,7 @@ import { selectCurrentChat } from '../../redux/slices/chatSelectors';
 import { recordShare } from '../../redux/slices/chatsSlice';
 import Toast from 'react-native-toast-message';
 import { useAuth } from '../../hooks/useAuth';
+import { MoodChip, EmotionsPanel } from './emotions/EmotionsPanel';
 
 interface ChatHeaderProps {
   title: string | undefined;
@@ -27,6 +28,7 @@ export function ChatHeader({ title = 'Chat', onBack, messages }: ChatHeaderProps
   const theme = Colors[colorScheme ?? 'light'];
   const { isAuthenticated } = useAuth();
   const [showLoginHint, setShowLoginHint] = React.useState(false);
+  const [showEmotions, setShowEmotions] = React.useState(false);
 
   const handleSharePress = () => {
     if (isAuthenticated) {
@@ -116,6 +118,11 @@ export function ChatHeader({ title = 'Chat', onBack, messages }: ChatHeaderProps
         <View style={styles.titleContainer}>
           <Text style={[styles.headerTitle, { color: theme.text }]} numberOfLines={1}>{title}</Text>
         </View>
+        <MoodChip
+          chatId={currentChat?.id ?? ''}
+          hasMessages={messages.some((m) => m.role === 'user')}
+          onPress={() => setShowEmotions(true)}
+        />
         <View style={styles.shareContainer}>
           <TouchableOpacity
             onPress={handleSharePress}
@@ -133,6 +140,13 @@ export function ChatHeader({ title = 'Chat', onBack, messages }: ChatHeaderProps
           )}
         </View>
       </View>
+
+      <EmotionsPanel
+        chatId={currentChat?.id ?? ''}
+        messages={messages}
+        visible={showEmotions}
+        onClose={() => setShowEmotions(false)}
+      />
 
       <ShareModal
         visible={isModalVisible}

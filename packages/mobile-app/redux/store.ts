@@ -19,6 +19,7 @@ import userSettingsReducer, {
 import projectsReducer, { ProjectsState } from "./slices/projectsSlice";
 import artifactsReducer, { ArtifactsState } from "./slices/artifactsSlice";
 import memoriesReducer, { MemoriesState } from "./slices/memoriesSlice";
+import sentimentReducer, { SentimentState } from "./slices/sentimentSlice";
 import { personalDataMiddleware } from "./middleware/personalDataMiddleware";
 import { syncMiddleware } from "./middleware/syncMiddleware";
 import { GlobalConfig } from "../model/GlobalConfig";
@@ -42,6 +43,7 @@ export interface RootState {
   projects: ProjectsState;
   artifacts: ArtifactsState;
   memories: MemoriesState;
+  sentiment: SentimentState;
 }
 
 const rootReducer = combineReducers({
@@ -58,6 +60,7 @@ const rootReducer = combineReducers({
   projects: projectsReducer,
   artifacts: artifactsReducer,
   memories: memoriesReducer,
+  sentiment: sentimentReducer,
 });
 
 // Migration function to transfer settings from chats slice to userSettings slice

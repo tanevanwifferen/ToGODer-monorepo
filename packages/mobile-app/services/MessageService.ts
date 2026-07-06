@@ -37,6 +37,7 @@ import { v4 as uuidv4 } from "uuid";
 import { selectIsAuthenticated } from "../redux/slices/authSlice";
 import { selectHasFunds } from "../redux/slices/balanceSlice";
 import { selectDefaultModel } from "../redux/slices/globalConfigSlice";
+import { setSentiment } from "../redux/slices/sentimentSlice";
 
 const MAX_MEMORY_FETCH_LOOPS = 4;
 
@@ -931,6 +932,13 @@ export class MessageService {
             break;
           }
 
+          case "sentiment": {
+            // Emotion analysis of the user's recent messages, streamed
+            // alongside the response for the emotions view.
+            store.dispatch(setSentiment({ chatId, sentiment: evt.data }));
+            break;
+          }
+
           case "memory_request": {
             const rawKeys = evt.data?.keys ?? [];
             const keys = rawKeys.filter((x: string) =>
@@ -1376,6 +1384,11 @@ export class MessageService {
             snapshot: response.instructionsSnapshot,
           })
         );
+      }
+
+      // Emotion analysis of the user's recent messages, if the server ran one
+      if (response.sentiment) {
+        store.dispatch(setSentiment({ chatId, sentiment: response.sentiment }));
       }
 
       onComplete?.(assistantMessage);

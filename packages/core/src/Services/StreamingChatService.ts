@@ -7,6 +7,7 @@ import { ConversationApi } from '../Api/ConversationApi';
 import { AIProvider, getDefaultModel } from '../LLM/Model/AIProvider';
 import { StreamChunk } from '../LLM/AIWrapper';
 import { ToolRegistry } from '../Tools/ToolRegistry';
+import { SentimentService, SentimentSummary } from './SentimentService';
 import { resolvePromptListItem } from '../LLM/prompts/promptlist';
 import {
   ChatCompletionMessageParam,
@@ -165,6 +166,7 @@ export type StreamEvent =
   | { type: 'tool_status'; data: ToolStatusData }
   | { type: 'signature'; data: { signature: string } }
   | { type: 'instructions'; data: InstructionsSnapshotData }
+  | { type: 'sentiment'; data: SentimentSummary }
   | { type: 'error'; data: { message: string } }
   | { type: 'done'; data?: null };
 
@@ -276,6 +278,22 @@ export class StreamingChatService {
         yield { type: 'signature', data: { signature } };
         yield { type: 'done' };
         return;
+      }
+    }
+
+    // Sentiment analysis of the user's recent messages: billed to the user,
+    // so only for logged-in users with a positive personal balance. The
+    // summary is streamed to the client (emotions view) and injected hidden
+    // into the LLM's copy of the last user message.
+    const sentimentService = new SentimentService();
+    if (user && (await sentimentService.isEligible(user))) {
+      const sentiment = await sentimentService.analyzeConversation(
+        body.prompts,
+        user
+      );
+      if (sentiment) {
+        body.sentimentContext = sentimentService.buildContextBlock(sentiment);
+        yield { type: 'sentiment', data: sentiment };
       }
     }
 
