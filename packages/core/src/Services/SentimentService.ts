@@ -138,6 +138,27 @@ function normalizePredictions(
   return predictions;
 }
 
+/**
+ * In-process cache of completed analyses keyed by per-message cmid. The
+ * model is deterministic per text, so entries never go stale — the cap just
+ * bounds memory (FIFO eviction). Lost on restart, in which case a window's
+ * messages are re-billed once (~$0.0005 per user).
+ */
+const RESULT_CACHE_MAX = Number(process.env.SENTIMENT_RESULT_CACHE_MAX ?? 20000);
+const resultCache = new Map<string, WorkerResult>();
+
+function getCachedResult(cmid: string): WorkerResult | undefined {
+  return resultCache.get(cmid);
+}
+
+function setCachedResult(cmid: string, result: WorkerResult): void {
+  if (resultCache.size >= RESULT_CACHE_MAX) {
+    const oldest = resultCache.keys().next().value;
+    if (oldest !== undefined) resultCache.delete(oldest);
+  }
+  resultCache.set(cmid, result);
+}
+
 const SENTIMENT_MODEL_NAME =
   process.env.SENTIMENT_MODEL_NAME ??
   'multilingual_go_emotions_V1.1 (mBERT)';
@@ -242,61 +263,39 @@ export class SentimentService {
         .digest('hex')
         .slice(0, 40);
 
-    // Submit each message individually: the single /internal/analyze endpoint
-    // is idempotent on client_message_id (a repeat submit replays the cached
-    // result for free), so only genuinely new messages are ever charged.
-    const entries = (
-      await Promise.all(
-        userMessages.map(async (text) => {
-          const cmid = cmidFor(text);
-          try {
-            const response = await axios.post(
-              `${baseUrl()}/internal/analyze`,
-              { text, client_message_id: cmid },
-              { timeout: REQUEST_TIMEOUT_MS, validateStatus: () => true }
-            );
-            if (response.status !== 200 && response.status !== 202) {
-              // 402 = the operator wallet on the sentiment service is out of
-              // funds; anything else is unexpected. Degrade gracefully.
-              console.warn(
-                `Sentiment analyze rejected (${response.status}):`,
-                response.data?.code ?? response.data?.error
-              );
-              return null;
-            }
-            return response.data as BatchResultEntry;
-          } catch (error: any) {
-            console.warn('Sentiment analyze failed:', error?.message ?? error);
-            return null;
-          }
-        })
-      )
-    ).filter((e): e is BatchResultEntry => e !== null);
+    const items = userMessages.map((text) => ({ text, cmid: cmidFor(text) }));
 
-    if (entries.length === 0) return null;
+    // Results we already hold in the in-process cache cost nothing: the
+    // model is deterministic per text, so a cached prediction never goes
+    // stale. Only messages we have never seen are submitted (and billed).
+    const results = new Map<string, WorkerResult>();
+    for (const item of items) {
+      const cached = getCachedResult(item.cmid);
+      if (cached) results.set(item.cmid, cached);
+    }
+    const uncached = items.filter((item) => !results.has(item.cmid));
 
-    // Bill the user for newly accepted jobs only — replays and already-in-
-    // flight jobs carry no cost fields and were paid for on a previous turn.
-    const newlyBilledUsd = entries
-      .filter((e) => !e.replay && typeof e.estimated_cost_usd === 'number')
-      .reduce((sum, e) => sum + (e.estimated_cost_usd as number), 0);
+    // Submit all uncached messages as ONE batch per user (single HTTP call,
+    // single debit on the sentiment ledger), falling back to per-message
+    // submits if the service runs the older per-message API.
+    const pending = new Map<string, string>(); // cmid -> job_id
+    let newlyBilledUsd = 0;
+    if (uncached.length > 0) {
+      const submitted = await this.submitBatch(uncached, user, pending);
+      newlyBilledUsd = submitted ?? 0;
+      if (submitted === null) {
+        newlyBilledUsd = await this.submitPerMessage(uncached, pending, results);
+      }
+    }
+
+    if (results.size === 0 && pending.size === 0) return null;
+
+    // Bill the user for what the sentiment service actually charged us.
     if (newlyBilledUsd > 0) {
       await this.billingApi.BillForMonth(
         new Decimal(newlyBilledUsd.toFixed(12)),
         user.email
       );
-    }
-
-    // Collect results: replays may already carry them; fresh jobs are polled
-    // within the latency budget.
-    const results = new Map<string, WorkerResult>();
-    const pending = new Map<string, string>(); // cmid -> job_id
-    for (const entry of entries) {
-      if (entry.status === 'succeeded' && entry.result?.predictions) {
-        results.set(entry.client_message_id, entry.result);
-      } else if (entry.status === 'queued' || entry.status === 'processing') {
-        pending.set(entry.client_message_id, entry.job_id);
-      }
     }
 
     const budget = options?.pollBudgetMs ?? CHAT_POLL_BUDGET_MS;
@@ -313,6 +312,7 @@ export class SentimentService {
             const status = job.data?.status;
             if (status === 'succeeded' && job.data?.result?.predictions) {
               results.set(cmid, job.data.result as WorkerResult);
+              setCachedResult(cmid, job.data.result as WorkerResult);
               pending.delete(cmid);
             } else if (status === 'failed') {
               pending.delete(cmid);
@@ -347,6 +347,117 @@ export class SentimentService {
   /** Poll budget suited for the dedicated chart endpoint. */
   public viewPollBudgetMs(): number {
     return VIEW_POLL_BUDGET_MS;
+  }
+
+  /**
+   * Submit uncached messages as one POST /internal/analyze/batch. Returns
+   * the USD amount charged, or null when the service doesn't speak this
+   * batch dialect (caller falls back to per-message submits).
+   */
+  private async submitBatch(
+    uncached: { text: string; cmid: string }[],
+    user: User,
+    pending: Map<string, string>
+  ): Promise<number | null> {
+    // Batch idempotency key derived from the exact set of texts, so an
+    // accidental duplicate submit collides (409) instead of double-billing.
+    const batchCmid =
+      'togoder-batch-' +
+      crypto
+        .createHash('sha256')
+        .update(user.email + '\n' + uncached.map((u) => u.cmid).join('\n'))
+        .digest('hex')
+        .slice(0, 40);
+
+    let response;
+    try {
+      response = await axios.post(
+        `${baseUrl()}/internal/analyze/batch`,
+        { texts: uncached.map((u) => u.text), client_message_id: batchCmid },
+        { timeout: REQUEST_TIMEOUT_MS, validateStatus: () => true }
+      );
+    } catch (error: any) {
+      console.warn('Sentiment batch failed:', error?.message ?? error);
+      return 0;
+    }
+
+    if (response.status === 202 && Array.isArray(response.data?.jobs)) {
+      // jobs come back in input order; key them by OUR per-message cmid.
+      const jobs = response.data.jobs as { job_id: string; status: string }[];
+      jobs.forEach((job, i) => {
+        const item = uncached[i];
+        if (item && job?.job_id) pending.set(item.cmid, job.job_id);
+      });
+      return typeof response.data.total_cost_usd === 'number'
+        ? response.data.total_cost_usd
+        : 0;
+    }
+    if (response.status === 400 && response.data?.code === 'bad_texts') {
+      // Older/newer service speaking a different batch dialect.
+      return null;
+    }
+    if (response.status === 409) {
+      // Same batch already submitted concurrently; its results will land in
+      // the cache via that request. Nothing to bill here.
+      console.warn('Sentiment batch duplicate (409); skipping this round');
+      return 0;
+    }
+    console.warn(
+      `Sentiment batch rejected (${response.status}):`,
+      response.data?.code ?? response.data?.error
+    );
+    return 0;
+  }
+
+  /**
+   * Fallback: submit each message via POST /internal/analyze, which is
+   * idempotent per client_message_id (replays are free and may carry the
+   * cached result). Returns the USD amount charged.
+   */
+  private async submitPerMessage(
+    uncached: { text: string; cmid: string }[],
+    pending: Map<string, string>,
+    results: Map<string, WorkerResult>
+  ): Promise<number> {
+    const entries = (
+      await Promise.all(
+        uncached.map(async ({ text, cmid }) => {
+          try {
+            const response = await axios.post(
+              `${baseUrl()}/internal/analyze`,
+              { text, client_message_id: cmid },
+              { timeout: REQUEST_TIMEOUT_MS, validateStatus: () => true }
+            );
+            if (response.status !== 200 && response.status !== 202) {
+              console.warn(
+                `Sentiment analyze rejected (${response.status}):`,
+                response.data?.code ?? response.data?.error
+              );
+              return null;
+            }
+            return response.data as BatchResultEntry;
+          } catch (error: any) {
+            console.warn('Sentiment analyze failed:', error?.message ?? error);
+            return null;
+          }
+        })
+      )
+    ).filter((e): e is BatchResultEntry => e !== null);
+
+    for (const entry of entries) {
+      if (entry.status === 'succeeded' && entry.result?.predictions) {
+        results.set(entry.client_message_id, entry.result);
+        setCachedResult(entry.client_message_id, entry.result);
+      } else if (entry.status === 'queued' || entry.status === 'processing') {
+        pending.set(entry.client_message_id, entry.job_id);
+      }
+    }
+
+    // Replays and in-flight jobs carry no cost fields — they were already
+    // paid for.
+    return entries
+      .filter((e) => !e.replay && typeof e.estimated_cost_usd === 'number')
+      .reduce((sum, e) => sum + (e.estimated_cost_usd as number), 0);
   }
 
   private summarize(
