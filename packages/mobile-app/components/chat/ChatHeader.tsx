@@ -5,15 +5,17 @@
 
 import React from 'react';
 import { StyleSheet, View, TouchableOpacity, Text, useColorScheme } from 'react-native';
-import { useSelector } from 'react-redux';
+import { useDispatch, useSelector } from 'react-redux';
 import { Colors } from '../../constants/Colors';
 import { useShareConversation } from '../../query-hooks/useSharedConversations';
 import { ShareModal } from '../shared/ShareModal';
 import { ApiChatMessage } from '../../model/ChatRequest';
 import { ShareRequest, SignedMessage } from '../../model/ShareTypes';
 import { selectCurrentChat } from '../../redux/slices/chatSelectors';
+import { recordShare } from '../../redux/slices/chatsSlice';
 import Toast from 'react-native-toast-message';
 import { useAuth } from '../../hooks/useAuth';
+import { MoodChip, EmotionsPanel } from './emotions/EmotionsPanel';
 
 interface ChatHeaderProps {
   title: string | undefined;
@@ -26,9 +28,13 @@ export function ChatHeader({ title = 'Chat', onBack, messages }: ChatHeaderProps
   const theme = Colors[colorScheme ?? 'light'];
   const { isAuthenticated } = useAuth();
   const [showLoginHint, setShowLoginHint] = React.useState(false);
+  const [showEmotions, setShowEmotions] = React.useState(false);
 
   const handleSharePress = () => {
     if (isAuthenticated) {
+      // Start a fresh publish: clear the previous share result so the modal
+      // shows the form again instead of the last instance's URL.
+      resetSharedConversation();
       setIsModalVisible(true);
     } else {
       setShowLoginHint(true);
@@ -42,18 +48,38 @@ export function ChatHeader({ title = 'Chat', onBack, messages }: ChatHeaderProps
     isModalVisible,
     setIsModalVisible,
     sharedConversation,
+    resetSharedConversation,
   } = useShareConversation();
 
   const currentChat = useSelector(selectCurrentChat);
+  const dispatch = useDispatch();
+
+  // Re-publishing never touches earlier instances: each publish is a fresh
+  // shared chat. Suffix the pre-filled title with the version (-1, -2, ...)
+  // so the copies are distinguishable.
+  const publishCount = currentChat?.shareHistory?.length ?? 0;
+  const shareTitle = publishCount > 0 ? `${title}-${publishCount}` : title;
 
   const handleShare = async (request: ShareRequest) => {
     try {
       // Attach the signed custom-instructions history so viewers can see
       // (and the server can verify) which instructions shaped this chat.
-      await shareConversation({
+      const shared = await shareConversation({
         ...request,
         instructionHistory: currentChat?.instructionHistory,
       });
+      if (currentChat) {
+        dispatch(
+          recordShare({
+            chatId: currentChat.id,
+            record: {
+              sharedId: shared.id,
+              title: request.title,
+              sharedAt: Date.now(),
+            },
+          })
+        );
+      }
       Toast.show({
         type: 'success',
         text1: 'Conversation shared successfully',
@@ -92,6 +118,11 @@ export function ChatHeader({ title = 'Chat', onBack, messages }: ChatHeaderProps
         <View style={styles.titleContainer}>
           <Text style={[styles.headerTitle, { color: theme.text }]} numberOfLines={1}>{title}</Text>
         </View>
+        <MoodChip
+          chatId={currentChat?.id ?? ''}
+          hasMessages={messages.some((m) => m.role === 'user')}
+          onPress={() => setShowEmotions(true)}
+        />
         <View style={styles.shareContainer}>
           <TouchableOpacity
             onPress={handleSharePress}
@@ -110,14 +141,22 @@ export function ChatHeader({ title = 'Chat', onBack, messages }: ChatHeaderProps
         </View>
       </View>
 
+      <EmotionsPanel
+        chatId={currentChat?.id ?? ''}
+        messages={messages}
+        visible={showEmotions}
+        onClose={() => setShowEmotions(false)}
+      />
+
       <ShareModal
         visible={isModalVisible}
         onClose={() => setIsModalVisible(false)}
         onShare={handleShare}
-        initialTitle={title}
+        initialTitle={shareTitle}
         messages={signedMessages}
         isLoading={isLoading}
         sharedId={sharedConversation?.id}
+        shareHistory={currentChat?.shareHistory}
       />
     </>
   );

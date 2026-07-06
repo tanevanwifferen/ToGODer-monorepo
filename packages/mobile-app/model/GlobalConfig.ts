@@ -32,4 +32,6 @@ export interface GlobalConfig {
   libraryIntegrationEnabled: boolean;
   librarianApiUrl: string;
   previousDefaultModel: string;
+  /** Whether the (optional) billed emotion-analysis feature is configured server-side. */
+  sentimentEnabled?: boolean;
 }

@@ -49,6 +49,34 @@ function JsonToContent(completion: ParsedChatCompletion<any>): string {
   return completion.choices[0].message.content!;
 }
 
+/**
+ * Return a copy of the prompts where the last user message carries the
+ * hidden sentiment-analysis block. The original request prompts are left
+ * untouched (signatures are computed over the originals), so the injection
+ * is only ever visible to the model.
+ */
+function withSentimentContext(
+  input: ChatRequest
+): ChatCompletionMessageParam[] {
+  if (!input.sentimentContext) return input.prompts;
+  const lastUserIndex = input.prompts
+    .map((p) => p.role)
+    .lastIndexOf('user');
+  if (lastUserIndex === -1) return input.prompts;
+  const last = input.prompts[lastUserIndex];
+  if (typeof last.content !== 'string') return input.prompts;
+  const injected = {
+    ...last,
+    content:
+      last.content + '\n\n<hidden-context>\n' + input.sentimentContext + '\n</hidden-context>',
+  } as ChatCompletionMessageParam;
+  return [
+    ...input.prompts.slice(0, lastUserIndex),
+    injected,
+    ...input.prompts.slice(lastUserIndex + 1),
+  ];
+}
+
 export class ConversationApi {
   public get assistant_name(): string {
     return this._assistant_name;
@@ -307,7 +335,7 @@ export class ConversationApi {
     const output = CompletionToContent(
       await aiWrapper.getResponse(
         systemPrompt,
-        input.prompts,
+        withSentimentContext(input),
         input.libraryIntegrationEnabled ? 2 : 1,
         signal
       )
@@ -334,7 +362,7 @@ export class ConversationApi {
     const systemPrompt = await this.buildSystemPrompt(input);
     for await (const delta of aiWrapper.streamResponse(
       systemPrompt,
-      input.prompts,
+      withSentimentContext(input),
       input.libraryIntegrationEnabled ? 2 : 1,
       signal
     )) {
@@ -361,7 +389,7 @@ export class ConversationApi {
     const systemPrompt = await this.buildSystemPrompt(input);
     for await (const chunk of aiWrapper.streamResponseWithTools(
       systemPrompt,
-      input.prompts,
+      withSentimentContext(input),
       input.tools,
       input.libraryIntegrationEnabled ? 2 : 1,
       signal

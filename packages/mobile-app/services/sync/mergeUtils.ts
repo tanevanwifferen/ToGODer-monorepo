@@ -279,12 +279,25 @@ export function mergeSingleChat(
     .sort((a, b) => a.timestamp - b.timestamp)
     .filter((entry, i, arr) => i === 0 || entry.content !== arr[i - 1].content);
 
+  // Union share histories from both sides, deduped by sharedId (each publish
+  // is a distinct immutable instance), in chronological order.
+  const shareUnion = [
+    ...(local.shareHistory ?? []),
+    ...(remote.shareHistory ?? []),
+  ]
+    .filter(
+      (entry, i, arr) =>
+        arr.findIndex((e) => e.sharedId === entry.sharedId) === i
+    )
+    .sort((a, b) => a.sharedAt - b.sharedAt);
+
   const merged: SyncableChat = {
     ...metadataWinner,
     messages: mergedMessages,
     updatedAt: effectiveMax,
     instructionHistory:
       instructionUnion.length > 0 ? instructionUnion : undefined,
+    shareHistory: shareUnion.length > 0 ? shareUnion : undefined,
   };
 
   console.log(

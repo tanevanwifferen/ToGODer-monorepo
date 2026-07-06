@@ -33,6 +33,13 @@ export interface SyncableChat {
     timestamp: number;
     signature: string;
   }>;
+  // Every publish of this chat (re-publishing creates new instances).
+  // Merged as a union across devices, deduped by sharedId.
+  shareHistory?: Array<{
+    sharedId: string;
+    title: string;
+    sharedAt: number;
+  }>;
 }
 
 export interface SyncablePersonal {

@@ -61,6 +61,9 @@ interface ShareConversationState {
   isLoading: boolean;
   error: Error | null;
   sharedConversation: SharedConversation | null;
+  // Clear the last share result so the modal offers a fresh publish
+  // (re-publishing creates a new instance; older ones are kept).
+  resetSharedConversation: () => void;
 }
 
 /**
@@ -88,6 +91,7 @@ export function useShareConversation(): ShareConversationState {
     isModalVisible,
     setIsModalVisible,
     sharedConversation,
+    resetSharedConversation: () => setSharedConversation(null),
   };
 }
 

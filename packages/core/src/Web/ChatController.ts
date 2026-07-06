@@ -22,6 +22,7 @@ import { SystemPromptGenerationService } from '../Services/SystemPromptGeneratio
 import { BillingApi } from '../Api/BillingApi';
 import { SseStream } from './Utils/Sse';
 import { StreamingChatService } from '../Services/StreamingChatService';
+import { SentimentService } from '../Services/SentimentService';
 
 function getAssistantName(): string {
   return process.env.ASSISTANT_NAME ?? 'ToGODer';
@@ -118,6 +119,22 @@ const chatHandler = async (req: Request, res: Response, next: NextFunction) => {
       return;
     }
 
+    // Sentiment analysis of the user's recent messages: billed to the user,
+    // so only for logged-in users with a positive personal balance. The
+    // result is injected hidden into the LLM's copy of the last message and
+    // returned to the client for the emotions view.
+    let sentiment = null;
+    const sentimentService = new SentimentService();
+    if (user && (await sentimentService.isEligible(user))) {
+      sentiment = await sentimentService.analyzeConversation(
+        body.prompts,
+        user
+      );
+      if (sentiment) {
+        body.sentimentContext = sentimentService.buildContextBlock(sentiment);
+      }
+    }
+
     const response = await chatService.getChatResponse(body, user);
     const signature = chatService.generateSignature([
       ...body.prompts,
@@ -143,6 +160,7 @@ const chatHandler = async (req: Request, res: Response, next: NextFunction) => {
       content: response,
       signature: signature,
       instructionsSnapshot,
+      sentiment,
       updateData: null,
     });
   } catch (error) {
@@ -225,6 +243,10 @@ export function GetChatRouter(messageLimiter: RateLimitRequestHandler): Router {
               break;
             case 'instructions':
               sse.event('instructions', evt.data);
+              break;
+            case 'sentiment':
+              sse.event('sentiment', evt.data);
+              sse.comment('keep-alive');
               break;
             case 'tool_call':
               sse.event('tool_call', evt.data);
