@@ -34,6 +34,12 @@ export interface ChatRequest {
   memoryLoopLimitReached?: boolean;
   artifactIndex?: ArtifactInfo[];
   tools?: ChatCompletionTool[];
+  /**
+   * Server-side only: compact emotional-analysis block injected (hidden)
+   * into the LLM's copy of the latest user message. Never sent by clients;
+   * set by the chat pipeline after SentimentService runs.
+   */
+  sentimentContext?: string;
 }
 
 export interface ExperienceRequest {

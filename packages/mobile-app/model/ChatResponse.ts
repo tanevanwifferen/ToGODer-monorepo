@@ -1,3 +1,5 @@
+import { SentimentSummary } from "./Sentiment";
+
 export type ChatResponse = MemoryRequestResponse | MessageResponse;
 
 export interface UpdateMemoryResponse {
@@ -18,6 +20,8 @@ export interface MessageResponse{
     timestamp: number;
     signature: string;
   };
+  // Emotion analysis of the user's recent messages (logged-in, with credit)
+  sentiment?: SentimentSummary;
 }
 
 export interface TitleResponse {

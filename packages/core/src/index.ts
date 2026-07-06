@@ -12,6 +12,8 @@ import { setupRunners } from './Auth/Runners';
 import { GetShareRouter } from './Web/ShareController';
 import { GetMemoryRouter } from './Web/MemoryController';
 import { GetSyncRouter } from './Web/SyncController';
+import { GetSentimentRouter } from './Web/SentimentController';
+import { sentimentIntegrationEnabled } from './Services/SentimentService';
 import {
   GetRealtimeVoiceRouter,
   setupRealtimeVoiceWebSocket,
@@ -82,6 +84,7 @@ const memoryRouter = GetMemoryRouter(messageLimiter);
 const shareRouter = GetShareRouter(messageLimiter);
 const realtimeVoiceRouter = GetRealtimeVoiceRouter(messageLimiter);
 const syncRouter = GetSyncRouter(messageLimiter);
+const sentimentRouter = GetSentimentRouter(messageLimiter);
 
 app.use(chatRouter);
 app.use(authRouter);
@@ -90,6 +93,7 @@ app.use(memoryRouter);
 app.use(shareRouter);
 app.use(realtimeVoiceRouter);
 app.use(syncRouter);
+app.use(sentimentRouter);
 
 const donateOptions: { address: string }[] = JSON.parse(
   process.env.DONATE_OPTIONS || '[]'
@@ -112,6 +116,10 @@ app.get('/api/global_config', (req, res) => {
       .trim()
       .toLowerCase() === 'true';
   const librarianApiUrl = process.env.LIBRARIAN_API_URL || '';
+  // Sentiment/emotion analysis is optional: only advertised when the service
+  // is configured (SENTIMENT_INTEGRATION_ENABLED + SENTIMENT_API_URL in env).
+  // The URL itself is never exposed to clients.
+  const sentimentEnabled = sentimentIntegrationEnabled();
   // When the default model changes, set PREVIOUS_DEFAULT_MODEL to the old
   // default so clients can migrate users who never picked a model themselves.
   const previousDefaultModel = process.env.PREVIOUS_DEFAULT_MODEL || '';
@@ -123,6 +131,7 @@ app.get('/api/global_config', (req, res) => {
     libraryIntegrationEnabled,
     librarianApiUrl,
     previousDefaultModel,
+    sentimentEnabled,
   });
 });
 

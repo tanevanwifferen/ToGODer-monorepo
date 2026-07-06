@@ -187,6 +187,8 @@ export const ARTIFACT_TOOL_SCHEMAS: ToolSchema[] = [
   }
 ];
 
+import type { SentimentSummary } from "../model/Sentiment";
+
 export interface ToolResultEvent {
   tool_call_id: string;
   name: string;
@@ -226,6 +228,7 @@ export type StreamEvent =
   | { type: "tool_call"; data: ArtifactToolCall }
   | { type: "tool_status"; data: ToolStatusEvent }
   | { type: "tool_result"; data: ToolResultEvent }
+  | { type: "sentiment"; data: SentimentSummary }
   | { type: "error"; data: any }
   | { type: "done"; data: null };
 
@@ -532,6 +535,12 @@ export class ChatApiClient {
                   data: data as ToolResultEvent,
                 };
                 break;
+              case "sentiment":
+                yield {
+                  type: "sentiment",
+                  data: data as SentimentSummary,
+                };
+                break;
               case "error":
                 yield { type: "error", data };
                 break;
@@ -747,6 +756,12 @@ export class ChatApiClient {
               yield {
                 type: "tool_result",
                 data: data as ToolResultEvent,
+              };
+              break;
+            case "sentiment":
+              yield {
+                type: "sentiment",
+                data: data as SentimentSummary,
               };
               break;
             case "error":

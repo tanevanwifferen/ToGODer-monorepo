@@ -12,6 +12,7 @@ const initialState: GlobalConfig = {
   libraryIntegrationEnabled: false,
   librarianApiUrl: "",
   previousDefaultModel: "",
+  sentimentEnabled: false,
 };
 
 const globalConfigSlice = createSlice({
@@ -32,6 +33,11 @@ export const { setGlobalConfig } = globalConfigSlice.actions;
 export const selectGlobalConfig = (state: {
   globalConfig: GlobalConfig;
 }): GlobalConfig => state.globalConfig;
+
+export const selectSentimentEnabled = createSelector(
+  [selectGlobalConfig],
+  (globalConfig) => globalConfig.sentimentEnabled ?? false
+);
 
 export const selectOldDefaultModel = createSelector(
   [selectGlobalConfig],
