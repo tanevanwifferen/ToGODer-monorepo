@@ -13,6 +13,7 @@ import { GetShareRouter } from './Web/ShareController';
 import { GetMemoryRouter } from './Web/MemoryController';
 import { GetSyncRouter } from './Web/SyncController';
 import { GetSentimentRouter } from './Web/SentimentController';
+import { GetMcpRouter } from './Web/McpController';
 import { sentimentIntegrationEnabled } from './Services/SentimentService';
 import {
   GetRealtimeVoiceRouter,
@@ -85,6 +86,7 @@ const shareRouter = GetShareRouter(messageLimiter);
 const realtimeVoiceRouter = GetRealtimeVoiceRouter(messageLimiter);
 const syncRouter = GetSyncRouter(messageLimiter);
 const sentimentRouter = GetSentimentRouter(messageLimiter);
+const mcpRouter = GetMcpRouter(messageLimiter);
 
 app.use(chatRouter);
 app.use(authRouter);
@@ -94,6 +96,7 @@ app.use(shareRouter);
 app.use(realtimeVoiceRouter);
 app.use(syncRouter);
 app.use(sentimentRouter);
+app.use(mcpRouter);
 
 const donateOptions: { address: string }[] = JSON.parse(
   process.env.DONATE_OPTIONS || '[]'
