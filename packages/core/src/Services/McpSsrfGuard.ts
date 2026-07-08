@@ -71,18 +71,48 @@ function isIpv4InBlockedRange(ip: string): boolean {
 }
 
 /**
- * Returns true if the address is an IPv6 address that, when it is an
- * IPv4-mapped (::ffff:a.b.c.d) or IPv4-compatible (::a.b.c.d) address,
- * maps to a blocked IPv4 range. Otherwise returns false.
+ * If `addr` is an IPv4-mapped (::ffff:a.b.c.d) or IPv4-compatible (::a.b.c.d)
+ * IPv6 address, return the embedded IPv4 string (dotted-quad). The WHATWG
+ * URL parser normalizes these to hex form (::ffff:XXXX:YYYY / ::XXXX:YYYY),
+ * so we decode both the dotted-quad and hex representations. Returns null if
+ * the address is not an IPv4-mapped/compatible form.
+ */
+function extractMappedIpv4(addr: string): string | null {
+  const lower = addr.toLowerCase();
+  // Check the mapped prefix (::ffff:) first, then the compatible prefix (::).
+  for (const prefix of ['::ffff:', '::']) {
+    if (!lower.startsWith(prefix)) continue;
+    const s = lower.slice(prefix.length);
+    if (s.length === 0) continue;
+
+    // Dotted-quad form: a.b.c.d
+    const dotted = s.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+    if (dotted && dotted[1] && dotted[2] && dotted[3] && dotted[4]) {
+      const octets = [dotted[1], dotted[2], dotted[3], dotted[4]].map(Number);
+      if (octets.every((o) => o >= 0 && o <= 255)) {
+        return `${octets[0]}.${octets[1]}.${octets[2]}.${octets[3]}`;
+      }
+      return null;
+    }
+
+    // Hex form: XXXX:YYYY (two 16-bit groups) -> decode to a.b.c.d
+    const hexPair = s.match(/^([0-9a-f]{1,4}):([0-9a-f]{1,4})$/);
+    if (hexPair && hexPair[1] && hexPair[2]) {
+      const hi = parseInt(hexPair[1], 16);
+      const lo = parseInt(hexPair[2], 16);
+      return `${(hi >> 8) & 0xff}.${hi & 0xff}.${(lo >> 8) & 0xff}.${lo & 0xff}`;
+    }
+  }
+  return null;
+}
+
+/**
+ * Returns the embedded IPv4 if the given IPv6 address is an IPv4-mapped or
+ * IPv4-compatible address that resolves to a blocked IPv4 range, else null.
  */
 function ipv6MapsToBlockedIpv4(addr: string): string | null {
-  // IPv4-mapped: ::ffff:a.b.c.d  /  ::ffff:hex
-  // IPv4-compatible (deprecated but block anyway): ::a.b.c.d
-  const mapped = addr.match(/^(?:::ffff:|::)(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})$/i);
-  if (mapped && mapped[1]) {
-    const v4 = mapped[1];
-    if (isIpv4InBlockedRange(v4)) return v4;
-  }
+  const v4 = extractMappedIpv4(addr);
+  if (v4 !== null && isIpv4InBlockedRange(v4)) return v4;
   return null;
 }
 
@@ -92,18 +122,15 @@ function isIpv6Blocked(addr: string): boolean {
   if (lower === '::1') return true;
   // IPv4-mapped / IPv4-compatible forms that resolve to a blocked v4 range.
   if (ipv6MapsToBlockedIpv4(lower) !== null) return true;
-  // ULA fc00::/7  -> first byte & 0xfe === 0xfc
-  // link-local fe80::/10 -> first two bytes: 0xfe, (second & 0xc0) === 0x80
+  // Inspect the first 16-bit group for ULA (fc00::/7) and link-local (fe80::/10).
   const firstColon = lower.indexOf(':');
   const firstGroupHex = firstColon === -1 ? lower : lower.slice(0, firstColon);
-  const firstByte = firstGroupHex.length >= 2 ? parseInt(firstGroupHex.slice(0, 2), 16) : NaN;
-  if (Number.isNaN(firstByte)) return false;
-  if ((firstByte & 0xfe) === 0xfc) return true; // fc00::/7
-  if (firstByte === 0xfe) {
-    // fe80::/10: second 16-bit group's top 6 bits set. For fe80:: the
-    // remainder is zero, which satisfies /10.
-    return true;
-  }
+  const firstGroup = parseInt(firstGroupHex, 16);
+  if (Number.isNaN(firstGroup)) return false;
+  // ULA fc00::/7  -> (firstGroup & 0xfe00) === 0xfc00
+  if ((firstGroup & 0xfe00) === 0xfc00) return true;
+  // link-local fe80::/10 -> (firstGroup & 0xffc0) === 0xfe80
+  if ((firstGroup & 0xffc0) === 0xfe80) return true;
   return false;
 }
 
@@ -152,25 +179,29 @@ export async function checkUrl(
 
   const hostname = parsed.hostname;
 
-  // 6. Handle raw IP literals (including IPv6 brackets, already stripped by
-  // URL.hostname) without DNS lookup.
-  if (net.isIPv4(hostname)) {
-    if (isBlockedIp(hostname)) {
-      return { ok: false, reason: `blocked private/loopback/link-local IP ${hostname}` };
+  // 6. Handle raw IP literals (including IPv6 brackets, which the WHATWG
+  // URL spec leaves in `hostname` as e.g. "[fe80::1]") without DNS lookup.
+  const bareHost =
+    hostname.startsWith('[') && hostname.endsWith(']')
+      ? hostname.slice(1, -1)
+      : hostname;
+  if (net.isIPv4(bareHost)) {
+    if (isBlockedIp(bareHost)) {
+      return { ok: false, reason: `blocked private/loopback/link-local IP ${bareHost}` };
     }
-    return { ok: true, resolvedIp: hostname };
+    return { ok: true, resolvedIp: bareHost };
   }
-  if (net.isIPv6(hostname)) {
-    if (isBlockedIp(hostname)) {
-      return { ok: false, reason: `blocked private/loopback/link-local IP ${hostname}` };
+  if (net.isIPv6(bareHost)) {
+    if (isBlockedIp(bareHost)) {
+      return { ok: false, reason: `blocked private/loopback/link-local IP ${bareHost}` };
     }
-    return { ok: true, resolvedIp: hostname };
+    return { ok: true, resolvedIp: bareHost };
   }
 
   // 3. Resolve hostname to A + AAAA records.
   let records: LookupAddress[];
   try {
-    records = await dnsPromises.lookup(hostname, { all: true });
+    records = await dnsPromises.lookup(bareHost, { all: true });
   } catch {
     return { ok: false, reason: 'hostname does not resolve' };
   }
@@ -190,7 +221,7 @@ export async function checkUrl(
   }
   return {
     ok: false,
-    reason: `blocked private/loopback/link-local IP ${firstBlocked ?? records[0]?.address ?? hostname}`,
+    reason: `blocked private/loopback/link-local IP ${firstBlocked ?? records[0]?.address ?? bareHost}`,
   };
 }
 
@@ -208,6 +239,12 @@ if (require.main === module) {
       { name: 'private 172.16.x', url: 'http://172.16.0.1', bypass: false, expectOk: false },
       { name: 'cgnat 100.64.x', url: 'http://100.64.0.1', bypass: false, expectOk: false },
       { name: 'ipv6 loopback', url: 'http://[::1]', bypass: false, expectOk: false },
+      { name: 'ipv6 mapped v4 loopback ::ffff:127.0.0.1', url: 'http://[::ffff:127.0.0.1]', bypass: false, expectOk: false },
+      { name: 'ipv6 ula fc00::', url: 'http://[fc00::1]', bypass: false, expectOk: false },
+      { name: 'ipv6 ula fd00::', url: 'http://[fd00::1]', bypass: false, expectOk: false },
+      { name: 'ipv6 link-local fe80::', url: 'http://[fe80::1]', bypass: false, expectOk: false },
+      { name: 'ipv6 fec0:: outside fe80::/10 (allowed)', url: 'http://[fec0::1]', bypass: false, expectOk: true },
+      { name: 'ipv6 public 2606:4700::1', url: 'http://[2606:4700::1]', bypass: false, expectOk: true },
       { name: '8.8.8.8 public', url: 'http://8.8.8.8', bypass: false, expectOk: true },
       { name: 'example.com resolves public', url: 'http://example.com', bypass: false, expectOk: true },
       { name: 'bypass on 127.0.0.1', url: 'http://127.0.0.1', bypass: true, expectOk: true },
