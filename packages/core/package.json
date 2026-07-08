@@ -41,6 +41,7 @@
   "dependencies": {
     "@ko-fi/express": "^1.0.5",
     "@ko-fi/types": "^1.0.4",
+    "@modelcontextprotocol/sdk": "^1.27.1",
     "@opendocsg/pdf2md": "^0.2.4",
     "@prisma/client": "^6.16.3",
     "@types/bcrypt": "^5.0.2",

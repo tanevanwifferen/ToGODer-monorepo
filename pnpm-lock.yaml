@@ -26,6 +26,9 @@ importers:
       '@ko-fi/types':
         specifier: ^1.0.4
         version: 1.0.4
+      '@modelcontextprotocol/sdk':
+        specifier: ^1.27.1
+        version: 1.27.1(zod@3.25.76)
       '@opendocsg/pdf2md':
         specifier: ^0.2.4
         version: 0.2.5
