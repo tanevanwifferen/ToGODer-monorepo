@@ -3,3 +3,4 @@ export * from './slices/globalConfigSlice';
 export * from './slices/chatsSlice';
 export * from './slices/chatUISlice';
 export * from './slices/systemPromptSlice';
+export * from './slices/mcpSlice';

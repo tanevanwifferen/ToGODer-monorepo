@@ -3,3 +3,4 @@ export * from './AuthApiClient';
 export * from './ChatApiClient';
 export * from './GlobalApiClient';
 export * from './ExperienceApiClient';
+export * from './McpApiClient';
