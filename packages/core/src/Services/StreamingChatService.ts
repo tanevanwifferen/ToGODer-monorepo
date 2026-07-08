@@ -1,5 +1,5 @@
 import { ChatRequest } from '../Model/ChatRequest';
-import { User } from '@prisma/client';
+import { User, McpServer } from '@prisma/client';
 import { ChatService } from './ChatService';
 import { MemoryService, MAX_MEMORY_FETCH_LOOPS } from './MemoryService';
 import { BillingApi } from '../Api/BillingApi';
@@ -7,6 +7,8 @@ import { ConversationApi } from '../Api/ConversationApi';
 import { AIProvider, getDefaultModel } from '../LLM/Model/AIProvider';
 import { StreamChunk } from '../LLM/AIWrapper';
 import { ToolRegistry } from '../Tools/ToolRegistry';
+import { getMcpClientManager } from '../Tools/McpClientManager';
+import { getDbContext } from '../Entity/Database';
 import { SentimentService, SentimentSummary } from './SentimentService';
 import { resolvePromptListItem } from '../LLM/prompts/promptlist';
 import {
@@ -385,6 +387,36 @@ export class StreamingChatService {
     // Merge backend tool definitions with frontend-provided tools
     const mergedTools = this.mergeTools(body.tools ?? [], registry, body);
 
+    // Per-request MCP tool integration (authenticated users only). Load the
+    // user's enabled MCP servers, fetch their OpenAI-style tool defs from the
+    // MCP client manager, and merge them in. MCP tool names are namespaced
+    // (mcp__<server>__<tool>__<hash>) so they cannot collide with backend or
+    // frontend tools. Any error here is treated as zero MCP tools — chat must
+    // never break because an MCP server is unreachable. Everything here is a
+    // local const scoped to this request (no global state).
+    const mcpToolNames = new Set<string>();
+    let mcpServers: McpServer[] = [];
+    if (user) {
+      try {
+        mcpServers = await getDbContext().mcpServer.findMany({
+          where: { userId: user.id, enabled: true },
+        });
+        if (mcpServers.length > 0) {
+          const mcpTools = await getMcpClientManager().getToolsForUser(
+            user,
+            mcpServers
+          );
+          for (const t of mcpTools) {
+            if (t.type === 'function') mcpToolNames.add(t.function.name);
+          }
+          mergedTools.push(...mcpTools);
+        }
+      } catch (err) {
+        console.warn('[tool-loop] MCP tool loading failed; proceeding with zero MCP tools', err);
+        mcpToolNames.clear();
+      }
+    }
+
     // Work with a mutable copy of prompts that we extend with tool results.
     // Trailing assistant messages are trimmed so the request never ends with
     // an assistant message (rejected as prefill by Anthropic models).
@@ -419,6 +451,8 @@ export class StreamingChatService {
           tools_offered: mergedTools
             .filter((t) => t.type === 'function')
             .map((t) => t.function.name),
+          mcp_tools_offered:
+            mcpToolNames.size > 0 ? Array.from(mcpToolNames) : undefined,
           tool_calls: iterationResult.toolCalls.map((tc) => tc.name),
           text_length: iterationResult.text.length,
         })
@@ -439,24 +473,37 @@ export class StreamingChatService {
         break;
       }
 
-      // Separate backend, frontend, and unknown tool calls. A frontend tool
-      // is one the client actually declared in body.tools — anything else
-      // that isn't backend-registered is a hallucinated tool name, which we
-      // must answer server-side with an error tool_result (forwarding it to
-      // the client would leave a dangling tool_use nobody responds to).
+      // Separate backend, frontend, MCP, and unknown tool calls. A frontend
+      // tool is one the client actually declared in body.tools. An MCP tool is
+      // one we offered this request whose namespaced name (mcp__...) is in the
+      // per-request MCP dispatch set. Anything else that isn't backend-
+      // registered is a hallucinated tool name, which we must answer
+      // server-side with an error tool_result (forwarding it to the client
+      // would leave a dangling tool_use nobody responds to).
       const frontendToolNames = new Set(
         (body.tools ?? [])
           .filter((t) => t.type === 'function')
           .map((t) => t.function.name)
       );
+      const isMcpCall = (tc: { name: string }) =>
+        tc.name.startsWith('mcp__') && mcpToolNames.has(tc.name);
       const backendCalls = iterationResult.toolCalls.filter((tc) =>
         registry.has(tc.name)
       );
+      const mcpCalls = iterationResult.toolCalls.filter((tc) =>
+        isMcpCall(tc)
+      );
       const frontendCalls = iterationResult.toolCalls.filter(
-        (tc) => !registry.has(tc.name) && frontendToolNames.has(tc.name)
+        (tc) =>
+          !registry.has(tc.name) &&
+          !isMcpCall(tc) &&
+          frontendToolNames.has(tc.name)
       );
       const unknownCalls = iterationResult.toolCalls.filter(
-        (tc) => !registry.has(tc.name) && !frontendToolNames.has(tc.name)
+        (tc) =>
+          !registry.has(tc.name) &&
+          !isMcpCall(tc) &&
+          !frontendToolNames.has(tc.name)
       );
 
       // Yield frontend tool calls to the client
@@ -466,7 +513,7 @@ export class StreamingChatService {
 
       // If nothing to handle server-side, stop looping (remaining are
       // frontend-only and the client will continue the conversation)
-      const serverHandledCalls = [...backendCalls, ...unknownCalls];
+      const serverHandledCalls = [...backendCalls, ...mcpCalls, ...unknownCalls];
       if (serverHandledCalls.length === 0) {
         break;
       }
@@ -520,6 +567,46 @@ export class StreamingChatService {
           tool_call_id: tc.id,
           content: result,
         });
+      }
+
+      // Execute MCP tools (server-side, like backend tools) and add results
+      // to the conversation. The manager re-validates the URL via the SSRF
+      // guard and may throw on block/unreachable/error — surface that as an
+      // error tool_result so the model can recover and answer in text.
+      if (mcpCalls.length > 0) {
+        const mgr = getMcpClientManager();
+        for (const tc of mcpCalls) {
+          yield {
+            type: 'tool_status',
+            data: { id: tc.id, name: tc.name, status: 'running' },
+          };
+
+          let result: string;
+          let isError = false;
+          try {
+            result = await mgr.callTool(
+              user!,
+              mcpServers,
+              tc.name,
+              tc.arguments
+            );
+          } catch (err: any) {
+            result = `Error executing MCP tool ${tc.name}: ${err?.message ?? String(err)}`;
+            isError = true;
+            console.error(`MCP tool execution error (${tc.name}):`, err);
+          }
+
+          yield {
+            type: 'tool_status',
+            data: { id: tc.id, name: tc.name, status: 'done', isError },
+          };
+
+          prompts.push({
+            role: 'tool',
+            tool_call_id: tc.id,
+            content: result,
+          });
+        }
       }
 
       // Answer hallucinated tool calls with an error result so the model can
