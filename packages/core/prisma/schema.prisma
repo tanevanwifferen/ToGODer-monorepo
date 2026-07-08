@@ -15,6 +15,7 @@ model User {
   verificationToken String        @default(uuid())
   createdAt         DateTime      @default(now())
   dataSync          UserDataSync?
+  mcpServers        McpServer[]
 }
 
 model UserDataSync {
@@ -88,6 +89,21 @@ model SharedArtifact {
   views              Int      @default(0)
   visibility         String   @default("PUBLIC") // Can be "PUBLIC" or "PRIVATE"
   instructionHistory String? // JSON blob of signed {content, timestamp, signature} custom-instruction snapshots
+}
+
+// table for MCP servers (per-user, HTTP-based MCP server connections)
+model McpServer {
+  id          String   @id @default(uuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name        String
+  url         String
+  headersJson String   @default("{}")
+  enabled     Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([userId])
 }
 
 generator client {
