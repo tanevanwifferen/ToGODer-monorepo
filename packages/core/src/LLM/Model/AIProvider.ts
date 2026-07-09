@@ -28,7 +28,7 @@ export enum AIProvider {
   DeepSeekV4Flash = 'deepseek/deepseek-v4-flash',
   LLama3370b = 'meta-llama/llama-3.3-70b-instruct',
   Llama4Maverick = 'meta-llama/llama-4-maverick',
-  Grok45 = 'x-ai/grok-4.5',
+  Grok420 = 'x-ai/grok-4.20',
   Gemini31Pro = 'google/gemini-3.1-pro-preview',
   Qwen3Coder = 'moonshotai/kimi-k2.5',
   Qwen36Plus = 'qwen/qwen3.6-plus',
@@ -57,7 +57,7 @@ export function getAIWrapper(model: AIProvider): AIWrapper {
     case AIProvider.DeepSeekV4Flash:
     case AIProvider.LLama3370b:
     case AIProvider.Llama4Maverick:
-    case AIProvider.Grok45:
+    case AIProvider.Grok420:
     case AIProvider.Gemini31Pro:
     case AIProvider.Qwen3Coder:
     case AIProvider.Qwen36Plus:
@@ -159,7 +159,7 @@ export function getTokenCost(model: AIProvider): AICost {
         output_cost_per_million: new Decimal('10'),
       };
       break;
-    case AIProvider.Grok45:
+    case AIProvider.Grok420:
       torReturn = {
         input_cost_per_million: new Decimal('2'),
         output_cost_per_million: new Decimal('6'),
@@ -240,7 +240,7 @@ export function GetModelName(provider: AIProvider): string {
       return 'Llama 3.3 70b';
     case AIProvider.Llama4Maverick:
       return 'Llama 4 Maverick';
-    case AIProvider.Grok45:
+    case AIProvider.Grok420:
       return 'Grok 4.20';
     case AIProvider.Gemini31Pro:
       return 'Gemini 3.1 Pro preview';
@@ -283,7 +283,7 @@ export function ListModels(): AIProvider[] {
     AIProvider.LLama3370b,
     AIProvider.Llama4Maverick,
     AIProvider.Gemini31Pro,
-    AIProvider.Grok45,
+    AIProvider.Grok420,
     AIProvider.Qwen36Plus,
   ].filter((x) => {
     try {
@@ -311,7 +311,7 @@ export function ListModels(): AIProvider[] {
         case AIProvider.LLama3370b:
         case AIProvider.Llama4Maverick:
         case AIProvider.Gemini31Pro:
-        case AIProvider.Grok45:
+        case AIProvider.Grok420:
         case AIProvider.Qwen36Plus:
         case AIProvider.Ministral:
           a = new OpenRouterWrapper(x);
