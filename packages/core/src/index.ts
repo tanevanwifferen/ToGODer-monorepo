@@ -1,40 +1,45 @@
-import express, { NextFunction, Request, Response } from 'express';
-import cors from 'cors';
-import path from 'path';
-import rateLimit from 'express-rate-limit';
-import { GetChatRouter } from './Web/ChatController';
-import { ConversationApi } from './Api/ConversationApi';
-import { GetAuthRouter } from './Web/AuthController';
-import { GetModelName, ListModels } from './LLM/Model/AIProvider';
-import { GetBillingRouter } from './Web/BillingController';
-import { setupKoFi } from './Web/KoFiController';
-import { setupRunners } from './Auth/Runners';
-import { GetShareRouter } from './Web/ShareController';
-import { GetMemoryRouter } from './Web/MemoryController';
-import { GetSyncRouter } from './Web/SyncController';
-import { GetSentimentRouter } from './Web/SentimentController';
-import { GetMcpRouter } from './Web/McpController';
-import { sentimentIntegrationEnabled } from './Services/SentimentService';
+import express, { NextFunction, Request, Response } from "express";
+import cors from "cors";
+import path from "path";
+import rateLimit from "express-rate-limit";
+import { GetChatRouter } from "./Web/ChatController";
+import { ConversationApi } from "./Api/ConversationApi";
+import { GetAuthRouter } from "./Web/AuthController";
+import {
+  GetModelName,
+  ListModels,
+  modelSupportsDocuments,
+} from "./LLM/Model/AIProvider";
+import { fetchDocumentCapableModels } from "./LLM/Model/OpenRouterModels";
+import { GetBillingRouter } from "./Web/BillingController";
+import { setupKoFi } from "./Web/KoFiController";
+import { setupRunners } from "./Auth/Runners";
+import { GetShareRouter } from "./Web/ShareController";
+import { GetMemoryRouter } from "./Web/MemoryController";
+import { GetSyncRouter } from "./Web/SyncController";
+import { GetSentimentRouter } from "./Web/SentimentController";
+import { GetMcpRouter } from "./Web/McpController";
+import { sentimentIntegrationEnabled } from "./Services/SentimentService";
 import {
   GetRealtimeVoiceRouter,
   setupRealtimeVoiceWebSocket,
-} from './Web/RealtimeVoiceController';
-import { createServer } from 'http';
-import WebSocket from 'ws';
-import { registerLibraryTool } from './Tools/LibraryTool';
-import { registerArxivTools } from './Tools/ArxivTool';
+} from "./Web/RealtimeVoiceController";
+import { createServer } from "http";
+import WebSocket from "ws";
+import { registerLibraryTool } from "./Tools/LibraryTool";
+import { registerArxivTools } from "./Tools/ArxivTool";
 
 const app = express();
 const port = process.env.PORT || 3000;
 
 // Trust the first proxy to allow the app to get the client's IP address
-app.set('trust proxy', 1);
+app.set("trust proxy", 1);
 
 // Allow cross-origin requests from the production and beta frontends
 const allowedOrigins = [
-  'https://togoder.click',
-  'https://www.togoder.click',
-  'https://beta.togoder.click',
+  "https://togoder.click",
+  "https://www.togoder.click",
+  "https://beta.togoder.click",
 ];
 app.use(
   cors({
@@ -47,35 +52,35 @@ app.use(
       }
     },
     credentials: true,
-  })
+  }),
 );
 
 // Rate limiter to prevent abuse
 const messageLimiter = rateLimit({
   windowMs: 60 * 1000, // 1 minute
   max: 12, // The first one is the initial request so we (4 + 1)
-  message: 'Too many requests from this IP, please try again later.',
+  message: "Too many requests from this IP, please try again later.",
   standardHeaders: true,
   legacyHeaders: false,
   handler: (req: Request, res: Response) => {
     console.log(`Rate limit exceeded for IP: ${req.ip}`);
     res
       .status(429)
-      .send('Too many messages sent from this IP, please try again later.');
+      .send("Too many messages sent from this IP, please try again later.");
   },
   headers: true,
 });
 
-app.use(express.json({ limit: '50mb' }));
+app.use(express.json({ limit: "50mb" }));
 
 app.use(
   express.urlencoded({
     extended: true,
-  })
+  }),
 );
 
 // Serve static files from the "../Frontend" directory
-app.use(express.static(path.join(__dirname, '../Frontend')));
+app.use(express.static(path.join(__dirname, "../Frontend")));
 
 // controllers
 const chatRouter = GetChatRouter(messageLimiter);
@@ -99,33 +104,44 @@ app.use(sentimentRouter);
 app.use(mcpRouter);
 
 const donateOptions: { address: string }[] = JSON.parse(
-  process.env.DONATE_OPTIONS || '[]'
+  process.env.DONATE_OPTIONS || "[]",
 );
-if (donateOptions.filter((x) => x.address.includes('ko-fi.com')).length > 0) {
+if (donateOptions.filter((x) => x.address.includes("ko-fi.com")).length > 0) {
   setupKoFi(app);
 }
 
-app.get('/api/links', (req, res) => {
-  res.json(JSON.parse(process.env.LINKS || '[]'));
+app.get("/api/links", (req, res) => {
+  res.json(JSON.parse(process.env.LINKS || "[]"));
 });
 
-app.get('/api/global_config', (req, res) => {
-  var donateOptions = JSON.parse(process.env.DONATE_OPTIONS || '[]');
-  var showLogin = JSON.parse(process.env.SHOW_LOGIN || 'false');
-  var quote = new ConversationApi('').getQuote();
-  var models = ListModels().map((x) => ({ model: x, title: GetModelName(x) }));
+app.get("/api/global_config", async (req, res) => {
+  var donateOptions = JSON.parse(process.env.DONATE_OPTIONS || "[]");
+  var showLogin = JSON.parse(process.env.SHOW_LOGIN || "false");
+  var quote = new ConversationApi("").getQuote();
+  // Discover document (PDF) capability dynamically from OpenRouter and attach
+  // a per-model flag so the client model picker can gate PDF attachment.
+  const documentCapable = await fetchDocumentCapableModels();
+  var models = await Promise.all(
+    ListModels().map(async (x) => ({
+      model: x,
+      title: GetModelName(x),
+      supportsDocuments: documentCapable.has(
+        String(x).includes("/") ? String(x) : `openai/${x}`,
+      ),
+    })),
+  );
   const libraryIntegrationEnabled =
-    String(process.env.LIBRARY_INTEGRATION_ENABLED || 'false')
+    String(process.env.LIBRARY_INTEGRATION_ENABLED || "false")
       .trim()
-      .toLowerCase() === 'true';
-  const librarianApiUrl = process.env.LIBRARIAN_API_URL || '';
+      .toLowerCase() === "true";
+  const librarianApiUrl = process.env.LIBRARIAN_API_URL || "";
   // Sentiment/emotion analysis is optional: only advertised when the service
   // is configured (SENTIMENT_INTEGRATION_ENABLED + SENTIMENT_API_URL in env).
   // The URL itself is never exposed to clients.
   const sentimentEnabled = sentimentIntegrationEnabled();
   // When the default model changes, set PREVIOUS_DEFAULT_MODEL to the old
   // default so clients can migrate users who never picked a model themselves.
-  const previousDefaultModel = process.env.PREVIOUS_DEFAULT_MODEL || '';
+  const previousDefaultModel = process.env.PREVIOUS_DEFAULT_MODEL || "";
   res.json({
     donateOptions: donateOptions,
     quote: quote,
@@ -139,22 +155,22 @@ app.get('/api/global_config', (req, res) => {
 });
 
 // SPA catch-all: serve index.html for all non-API routes
-app.get('*', (req, res) => {
-  res.sendFile(path.join(__dirname, '../Frontend/index.html'));
+app.get("*", (req, res) => {
+  res.sendFile(path.join(__dirname, "../Frontend/index.html"));
 });
 
 // Centralized error handling middleware
 app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
-  console.error('Unhandled error at ' + new Date() + ':', err);
+  console.error("Unhandled error at " + new Date() + ":", err);
   console.error(_req.body);
-  res.status(500).send('Internal Server Error');
+  res.status(500).send("Internal Server Error");
 });
 
 // Create HTTP server and WebSocket server
 const server = createServer(app);
 const wss = new WebSocket.Server({
   server,
-  path: '/api/realtime/ws',
+  path: "/api/realtime/ws",
 });
 
 // Setup realtime voice WebSocket handling
@@ -163,7 +179,7 @@ setupRealtimeVoiceWebSocket(wss, messageLimiter);
 server.listen(port, () => {
   console.log(`Server is running on port ${port}`);
   console.log(
-    `WebSocket server is available at ws://localhost:${port}/api/realtime/ws`
+    `WebSocket server is available at ws://localhost:${port}/api/realtime/ws`,
   );
 });
 

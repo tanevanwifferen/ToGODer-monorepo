@@ -11,6 +11,8 @@ export interface PromptsResponse {
 export interface Model {
   model: string;
   title: string;
+  /** Whether the model supports PDF / document input (OpenRouter input_modalities includes "file"). */
+  supportsDocuments?: boolean;
 }
 
 export interface DonateOption {

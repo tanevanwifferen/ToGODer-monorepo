@@ -4,7 +4,7 @@
   "description": "An LLM God that gives answers and settles disputes",
   "main": "bin/index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
+    "test": "vitest run",
     "build": "prisma generate && tsc",
     "dev": "tsc --watch",
     "start": "node --env-file=.env bin/index.js",
@@ -36,7 +36,8 @@
     "lint-staged": "^15.2.5",
     "prettier": "^3.2.5",
     "prisma": "^6.16.3",
-    "typescript": "^5.4.5"
+    "typescript": "^5.4.5",
+    "vitest": "^4.1.10"
   },
   "dependencies": {
     "@ko-fi/express": "^1.0.5",

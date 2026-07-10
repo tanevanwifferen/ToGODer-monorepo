@@ -1,37 +1,42 @@
-import { Request, Response, NextFunction, Router } from 'express';
+import { Request, Response, NextFunction, Router } from "express";
 import {
   validateChatCompletionMessageArray,
   validateTitleMessage,
-} from './Validators';
-import { RateLimitRequestHandler } from 'express-rate-limit';
-import { PromptList } from '../LLM/prompts/promptlist';
+} from "./Validators";
+import { RateLimitRequestHandler } from "express-rate-limit";
+import { PromptList } from "../LLM/prompts/promptlist";
 import {
   ChatRequest,
   ChatRequestCommunicationStyle,
   ExperienceRequest,
-} from '../Model/ChatRequest';
-import { AIProvider, getDefaultModel } from '../LLM/Model/AIProvider';
-import { setAuthUser } from './Middleware/auth';
-import { ToGODerRequest } from './Model/ToGODerRequest';
-import { ChatService } from '../Services/ChatService';
+} from "../Model/ChatRequest";
+import {
+  AIProvider,
+  getDefaultModel,
+  modelSupportsDocuments,
+} from "../LLM/Model/AIProvider";
+import { hasPdfArtifact } from "../Api/ConversationApi";
+import { setAuthUser } from "./Middleware/auth";
+import { ToGODerRequest } from "./Model/ToGODerRequest";
+import { ChatService } from "../Services/ChatService";
 import {
   MemoryService,
   MAX_MEMORY_FETCH_LOOPS,
-} from '../Services/MemoryService';
-import { SystemPromptGenerationService } from '../Services/SystemPromptGenerationService';
-import { BillingApi } from '../Api/BillingApi';
-import { SseStream } from './Utils/Sse';
-import { StreamingChatService } from '../Services/StreamingChatService';
-import { SentimentService } from '../Services/SentimentService';
+} from "../Services/MemoryService";
+import { SystemPromptGenerationService } from "../Services/SystemPromptGenerationService";
+import { BillingApi } from "../Api/BillingApi";
+import { SseStream } from "./Utils/Sse";
+import { StreamingChatService } from "../Services/StreamingChatService";
+import { SentimentService } from "../Services/SentimentService";
 
 function getAssistantName(): string {
-  return process.env.ASSISTANT_NAME ?? 'ToGODer';
+  return process.env.ASSISTANT_NAME ?? "ToGODer";
 }
 
 const chatHandler = async (req: Request, res: Response, next: NextFunction) => {
   try {
     let body: ChatRequest = req.body;
-    if (!('prompts' in req.body)) {
+    if (!("prompts" in req.body)) {
       body = {
         model: getDefaultModel(),
         humanPrompt: false,
@@ -45,7 +50,7 @@ const chatHandler = async (req: Request, res: Response, next: NextFunction) => {
         assistant_name: getAssistantName(),
       };
     }
-    if (body.assistant_name == null || body.assistant_name == '') {
+    if (body.assistant_name == null || body.assistant_name == "") {
       body.assistant_name = getAssistantName();
     }
     if (body.libraryIntegrationEnabled == null) {
@@ -57,12 +62,12 @@ const chatHandler = async (req: Request, res: Response, next: NextFunction) => {
     const memoryService = new MemoryService(body.assistant_name);
     const totalMessages = Array.isArray(body.prompts) ? body.prompts.length : 0;
     const paywallMessage =
-      'Insufficient balance. Please donate through KoFi with this email address to continue using the service.';
+      "Insufficient balance. Please donate through KoFi with this email address to continue using the service.";
 
     const respondWithPaywall = () => {
       const signature = chatService.generateSignature([
         ...body.prompts,
-        { content: paywallMessage, role: 'assistant' },
+        { content: paywallMessage, role: "assistant" },
       ]);
       res.json({
         signature,
@@ -76,6 +81,16 @@ const chatHandler = async (req: Request, res: Response, next: NextFunction) => {
       body.model = getDefaultModel();
       body.artifactIndex = undefined;
       body.tools = undefined;
+    }
+
+    // Guard: a PDF may only be sent to a document-capable model. Never
+    // silently drop the attachment.
+    if (hasPdfArtifact(body) && !(await modelSupportsDocuments(body.model))) {
+      res.status(400).json({
+        error:
+          "The selected model does not support PDF documents. Please choose a document-capable model (marked 📄) to send a PDF.",
+      });
+      return;
     }
 
     const isDefaultModel = body.model === getDefaultModel();
@@ -128,7 +143,7 @@ const chatHandler = async (req: Request, res: Response, next: NextFunction) => {
     if (user && (await sentimentService.isEligible(user))) {
       sentiment = await sentimentService.analyzeConversation(
         body.prompts,
-        user
+        user,
       );
       if (sentiment) {
         body.sentimentContext = sentimentService.buildContextBlock(sentiment);
@@ -138,7 +153,7 @@ const chatHandler = async (req: Request, res: Response, next: NextFunction) => {
     const response = await chatService.getChatResponse(body, user);
     const signature = chatService.generateSignature([
       ...body.prompts,
-      { content: response, role: 'assistant' },
+      { content: response, role: "assistant" },
     ]);
 
     // Signed snapshot of the custom instructions used for this response, so
@@ -151,7 +166,7 @@ const chatHandler = async (req: Request, res: Response, next: NextFunction) => {
         timestamp,
         signature: chatService.generateInstructionsSignature(
           body.customSystemPrompt,
-          timestamp
+          timestamp,
         ),
       };
     }
@@ -172,21 +187,21 @@ export function GetChatRouter(messageLimiter: RateLimitRequestHandler): Router {
   const chatRouter = Router();
   // Route handlers
   chatRouter.post(
-    '/api/chat',
+    "/api/chat",
     messageLimiter,
     validateChatCompletionMessageArray,
     setAuthUser,
-    chatHandler
+    chatHandler,
   );
 
   // Streaming chat endpoint (SSE). Streams assistant output as chunks and ends with a signature + done.
   chatRouter.post(
-    '/api/chat/stream',
+    "/api/chat/stream",
     messageLimiter,
     validateChatCompletionMessageArray,
     setAuthUser,
     async (req: Request, res: Response, next: NextFunction) => {
-      res.setHeader('X-Accel-Buffering', 'no');
+      res.setHeader("X-Accel-Buffering", "no");
       const sse = new SseStream(res);
 
       // Create AbortController to cancel streaming when client disconnects
@@ -194,12 +209,12 @@ export function GetChatRouter(messageLimiter: RateLimitRequestHandler): Router {
       const onClientDisconnect = () => {
         abortController.abort();
       };
-      res.on('close', onClientDisconnect);
+      res.on("close", onClientDisconnect);
 
       try {
         // Normalize body to ChatRequest like the non-streaming endpoint
         let body: ChatRequest = req.body;
-        if (!('prompts' in req.body)) {
+        if (!("prompts" in req.body)) {
           body = {
             model: getDefaultModel(),
             humanPrompt: false,
@@ -228,45 +243,45 @@ export function GetChatRouter(messageLimiter: RateLimitRequestHandler): Router {
         for await (const evt of streamingService.streamChat(
           body,
           user,
-          abortController.signal
+          abortController.signal,
         )) {
           switch (evt.type) {
-            case 'chunk':
-              sse.event('chunk', evt.data);
-              sse.comment('keep-alive');
+            case "chunk":
+              sse.event("chunk", evt.data);
+              sse.comment("keep-alive");
               break;
-            case 'memory_request':
-              sse.event('memory_request', evt.data);
+            case "memory_request":
+              sse.event("memory_request", evt.data);
               break;
-            case 'signature':
-              sse.event('signature', evt.data);
+            case "signature":
+              sse.event("signature", evt.data);
               break;
-            case 'instructions':
-              sse.event('instructions', evt.data);
+            case "instructions":
+              sse.event("instructions", evt.data);
               break;
-            case 'sentiment':
-              sse.event('sentiment', evt.data);
-              sse.comment('keep-alive');
+            case "sentiment":
+              sse.event("sentiment", evt.data);
+              sse.comment("keep-alive");
               break;
-            case 'tool_call':
-              sse.event('tool_call', evt.data);
+            case "tool_call":
+              sse.event("tool_call", evt.data);
               break;
-            case 'tool_status':
-              sse.event('tool_status', evt.data);
-              sse.comment('keep-alive');
+            case "tool_status":
+              sse.event("tool_status", evt.data);
+              sse.comment("keep-alive");
               break;
-            case 'error':
-              sse.event('error', evt.data);
+            case "error":
+              sse.event("error", evt.data);
               break;
-            case 'done':
-              sse.event('done', null);
+            case "done":
+              sse.event("done", null);
               sse.done();
               return;
           }
         }
 
         // Safety: Ensure stream is closed
-        sse.event('done', null);
+        sse.event("done", null);
         sse.done();
       } catch (error: any) {
         // Stream error to client, then end
@@ -274,7 +289,7 @@ export function GetChatRouter(messageLimiter: RateLimitRequestHandler): Router {
 
         // Check if this is an abort error from client disconnect
         const isAbortError =
-          error?.name === 'AbortError' || abortController.signal.aborted;
+          error?.name === "AbortError" || abortController.signal.aborted;
         if (isAbortError) {
           // Client disconnected - this is expected, no need to log or send error
           return;
@@ -283,35 +298,35 @@ export function GetChatRouter(messageLimiter: RateLimitRequestHandler): Router {
         try {
           if (!res.headersSent) {
             // If headers haven't been sent yet, we can still use SSE
-            sse.event('error', { message: error?.message ?? 'Unknown error' });
-            sse.event('done', null);
+            sse.event("error", { message: error?.message ?? "Unknown error" });
+            sse.event("done", null);
             sse.done();
           } else {
             // Headers already sent, just log the error
             console.error(
-              'Error during SSE streaming (headers already sent):',
-              error
+              "Error during SSE streaming (headers already sent):",
+              error,
             );
           }
         } catch (sseError) {
           // If SSE operations fail, just log
-          console.error('Failed to send error via SSE:', sseError);
+          console.error("Failed to send error via SSE:", sseError);
         }
         // Do NOT call next(error) - it would try to send another response
       } finally {
         // Clean up the disconnect listener
-        res.off('close', onClientDisconnect);
+        res.off("close", onClientDisconnect);
       }
-    }
+    },
   );
   chatRouter.post(
-    '/api/experience',
+    "/api/experience",
     messageLimiter,
     setAuthUser,
     async (req: Request, res: Response, next: NextFunction) => {
       try {
         let body: ExperienceRequest = req.body;
-        if (body.assistant_name == null || body.assistant_name == '') {
+        if (body.assistant_name == null || body.assistant_name == "") {
           body.assistant_name = getAssistantName();
         }
 
@@ -323,31 +338,31 @@ export function GetChatRouter(messageLimiter: RateLimitRequestHandler): Router {
       } catch (error) {
         next(error);
       }
-    }
+    },
   );
 
   chatRouter.post(
-    '/api/title',
+    "/api/title",
     messageLimiter,
     validateTitleMessage,
     setAuthUser,
     async (req: Request, res: Response, next: NextFunction) => {
       try {
-        const chatService = new ChatService('');
+        const chatService = new ChatService("");
         const user = (req as ToGODerRequest).togoder_auth?.user ?? null;
         const response = await chatService.getTitle(
           req.body.content,
           getDefaultModel(),
-          user
+          user,
         );
         res.json({ content: response });
       } catch (error) {
         next(error);
       }
-    }
+    },
   );
 
-  chatRouter.get('/api/prompts', (req, res) => {
+  chatRouter.get("/api/prompts", (req, res) => {
     let toreturn = {};
     for (let key of Object.keys(PromptList)) {
       if (PromptList[key].display) {
@@ -360,20 +375,20 @@ export function GetChatRouter(messageLimiter: RateLimitRequestHandler): Router {
     res.send(toreturn);
   });
 
-  chatRouter.get('/api/quote', (req, res) => {
-    const chatService = new ChatService('');
+  chatRouter.get("/api/quote", (req, res) => {
+    const chatService = new ChatService("");
     res.json({ quote: chatService.getQuote() });
   });
 
   // Endpoint for asynchronous memory updates
   chatRouter.post(
-    '/api/chat/memory-update',
+    "/api/chat/memory-update",
     messageLimiter,
     setAuthUser,
     async (req: Request, res: Response, next: NextFunction) => {
       try {
         let body: ChatRequest = req.body;
-        if (body.assistant_name == null || body.assistant_name == '') {
+        if (body.assistant_name == null || body.assistant_name == "") {
           body.assistant_name = getAssistantName();
         }
 
@@ -386,7 +401,7 @@ export function GetChatRouter(messageLimiter: RateLimitRequestHandler): Router {
             body.configurableData,
             body.staticData?.date ?? new Date().toISOString(),
             body.model,
-            user
+            user,
           );
 
           res.json({ updateData });
@@ -396,12 +411,12 @@ export function GetChatRouter(messageLimiter: RateLimitRequestHandler): Router {
       } catch (error) {
         next(error);
       }
-    }
+    },
   );
 
   // Endpoint for auto-generating personalized system prompts
   chatRouter.post(
-    '/api/generate-system-prompt',
+    "/api/generate-system-prompt",
     messageLimiter,
     setAuthUser,
     async (req: Request, res: Response, next: NextFunction) => {
@@ -410,13 +425,13 @@ export function GetChatRouter(messageLimiter: RateLimitRequestHandler): Router {
 
         if (!user) {
           res.status(401).json({
-            error: 'Authentication required for system prompt generation',
+            error: "Authentication required for system prompt generation",
           });
           return;
         }
 
         let body: ChatRequest = req.body;
-        if (body.assistant_name == null || body.assistant_name == '') {
+        if (body.assistant_name == null || body.assistant_name == "") {
           body.assistant_name = getAssistantName();
         }
 
@@ -432,13 +447,13 @@ export function GetChatRouter(messageLimiter: RateLimitRequestHandler): Router {
         }
 
         const systemPromptService = new SystemPromptGenerationService(
-          body.assistant_name
+          body.assistant_name,
         );
 
         const result =
           await systemPromptService.generatePersonalizedSystemPrompt(
             body,
-            user
+            user,
           );
 
         if (result.requestForMemory) {
@@ -456,7 +471,7 @@ export function GetChatRouter(messageLimiter: RateLimitRequestHandler): Router {
       } catch (error) {
         next(error);
       }
-    }
+    },
   );
 
   return chatRouter;

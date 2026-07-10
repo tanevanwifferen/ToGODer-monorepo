@@ -16,7 +16,12 @@ import { Platform } from "react-native";
 
 export interface ArtifactToolCall {
   id: string;
-  name: "read_artifact" | "write_artifact" | "delete_artifact" | "move_artifact" | "list_directory";
+  name:
+    | "read_artifact"
+    | "write_artifact"
+    | "delete_artifact"
+    | "move_artifact"
+    | "list_directory";
   arguments: {
     path: string;
     content?: string;
@@ -32,6 +37,13 @@ export interface ArtifactIndexItem {
   name: string;
   mimeType?: string;
   type: "file" | "folder";
+  /**
+   * Optional base64-encoded file content (no data-URI prefix). When present
+   * for a PDF (mimeType `application/pdf`) and the selected model supports
+   * document input, the backend sends the file as a native `file` content
+   * part to the model.
+   */
+  data?: string;
 }
 
 /**
@@ -44,10 +56,13 @@ export interface ToolSchema {
     description: string;
     parameters: {
       type: "object";
-      properties: Record<string, {
-        type: string;
-        description: string;
-      }>;
+      properties: Record<
+        string,
+        {
+          type: string;
+          description: string;
+        }
+      >;
       required: string[];
     };
   };
@@ -61,18 +76,20 @@ export const LIBRARY_TOOL_SCHEMA: ToolSchema = {
   type: "function",
   function: {
     name: "query_library",
-    description: "Search the user's personal library for relevant information. Use this to find notes, saved content, or knowledge the user has stored.",
+    description:
+      "Search the user's personal library for relevant information. Use this to find notes, saved content, or knowledge the user has stored.",
     parameters: {
       type: "object",
       properties: {
         query: {
           type: "string",
-          description: "The search query to find relevant content in the library"
-        }
+          description:
+            "The search query to find relevant content in the library",
+        },
       },
-      required: ["query"]
-    }
-  }
+      required: ["query"],
+    },
+  },
 };
 
 /**
@@ -84,107 +101,121 @@ export const ARTIFACT_TOOL_SCHEMAS: ToolSchema[] = [
     type: "function",
     function: {
       name: "read_artifact",
-      description: "Read the content of an artifact file or list contents of a folder. Use this to view existing artifacts.",
+      description:
+        "Read the content of an artifact file or list contents of a folder. Use this to view existing artifacts.",
       parameters: {
         type: "object",
         properties: {
           path: {
             type: "string",
-            description: "The path to the artifact to read (e.g., '/src/main.ts' or '/docs')"
-          }
+            description:
+              "The path to the artifact to read (e.g., '/src/main.ts' or '/docs')",
+          },
         },
-        required: ["path"]
-      }
-    }
+        required: ["path"],
+      },
+    },
   },
   {
     type: "function",
     function: {
       name: "write_artifact",
-      description: "Create a new artifact or update an existing artifact's content. Use this to save code, documents, or other files.",
+      description:
+        "Create a new artifact or update an existing artifact's content. Use this to save code, documents, or other files.",
       parameters: {
         type: "object",
         properties: {
           path: {
             type: "string",
-            description: "The path where the artifact should be saved (e.g., '/src/utils.ts')"
+            description:
+              "The path where the artifact should be saved (e.g., '/src/utils.ts')",
           },
           content: {
             type: "string",
-            description: "The content to write to the artifact"
+            description: "The content to write to the artifact",
           },
           name: {
             type: "string",
-            description: "Optional display name for the artifact. If not provided, the filename from the path will be used."
+            description:
+              "Optional display name for the artifact. If not provided, the filename from the path will be used.",
           },
           mimeType: {
             type: "string",
-            description: "Optional MIME type for the artifact (e.g., 'text/typescript', 'application/json')"
-          }
+            description:
+              "Optional MIME type for the artifact (e.g., 'text/typescript', 'application/json')",
+          },
         },
-        required: ["path", "content"]
-      }
-    }
+        required: ["path", "content"],
+      },
+    },
   },
   {
     type: "function",
     function: {
       name: "delete_artifact",
-      description: "Delete an existing artifact. Use this to remove files or folders that are no longer needed.",
+      description:
+        "Delete an existing artifact. Use this to remove files or folders that are no longer needed.",
       parameters: {
         type: "object",
         properties: {
           path: {
             type: "string",
-            description: "The path to the artifact to delete (e.g., '/old-file.txt')"
-          }
+            description:
+              "The path to the artifact to delete (e.g., '/old-file.txt')",
+          },
         },
-        required: ["path"]
-      }
-    }
+        required: ["path"],
+      },
+    },
   },
   {
     type: "function",
     function: {
       name: "move_artifact",
-      description: "Move an artifact to a different folder. Use this to reorganize files and folders.",
+      description:
+        "Move an artifact to a different folder. Use this to reorganize files and folders.",
       parameters: {
         type: "object",
         properties: {
           path: {
             type: "string",
-            description: "The path to the artifact to move (e.g., '/src/old-location.ts')"
+            description:
+              "The path to the artifact to move (e.g., '/src/old-location.ts')",
           },
           destination: {
             type: "string",
-            description: "The destination folder path (e.g., '/lib' or '/' for root)"
-          }
+            description:
+              "The destination folder path (e.g., '/lib' or '/' for root)",
+          },
         },
-        required: ["path", "destination"]
-      }
-    }
+        required: ["path", "destination"],
+      },
+    },
   },
   {
     type: "function",
     function: {
       name: "list_directory",
-      description: "List the contents of a directory incrementally. Use this for navigating the artifact tree without loading everything at once. Returns immediate children of the specified path.",
+      description:
+        "List the contents of a directory incrementally. Use this for navigating the artifact tree without loading everything at once. Returns immediate children of the specified path.",
       parameters: {
         type: "object",
         properties: {
           path: {
             type: "string",
-            description: "The directory path to list (e.g., '/' for root, '/src' for a subfolder)"
+            description:
+              "The directory path to list (e.g., '/' for root, '/src' for a subfolder)",
           },
           depth: {
             type: "number",
-            description: "How many levels deep to list (default: 1 for immediate children only, use higher values for nested listing)"
-          }
+            description:
+              "How many levels deep to list (default: 1 for immediate children only, use higher values for nested listing)",
+          },
         },
-        required: ["path"]
-      }
-    }
-  }
+        required: ["path"],
+      },
+    },
+  },
 ];
 
 import type { SentimentSummary } from "../model/Sentiment";
@@ -244,7 +275,7 @@ export class ChatApiClient {
     staticData?: Record<string, any> | undefined,
     assistant_name?: string | undefined,
     memoryIndex?: string[] | undefined,
-    memories?: Record<string, string> | undefined
+    memories?: Record<string, string> | undefined,
   ): Promise<UpdateMemoryResponse> {
     const response = await ApiClient.post<UpdateMemoryResponse>(
       "/chat/memory-update",
@@ -256,7 +287,7 @@ export class ChatApiClient {
         assistant_name,
         memoryIndex,
         memories,
-      }
+      },
     );
 
     if (response instanceof Error) {
@@ -284,7 +315,7 @@ export class ChatApiClient {
     memoryLoopCount?: number,
     memoryLoopLimitReached?: boolean,
     artifactIndex?: ArtifactIndexItem[] | undefined,
-    tools?: ToolSchema[] | undefined
+    tools?: ToolSchema[] | undefined,
   ): Promise<ChatResponse> {
     const response = await ApiClient.post<ChatResponse>("/chat", {
       model,
@@ -338,7 +369,7 @@ export class ChatApiClient {
     memoryLoopLimitReached?: boolean,
     artifactIndex?: ArtifactIndexItem[] | undefined,
     tools?: ToolSchema[] | undefined,
-    signal?: AbortSignal
+    signal?: AbortSignal,
   ): AsyncGenerator<StreamEvent> {
     const baseUrl = getApiUrl();
     if (!baseUrl) {
@@ -441,7 +472,7 @@ export class ChatApiClient {
                 xhr.abort();
               } catch {}
             },
-            { once: true }
+            { once: true },
           );
         }
 
@@ -501,7 +532,7 @@ export class ChatApiClient {
               }
               case "signature": {
                 const sig =
-                  typeof data === "string" ? data : data?.signature ?? "";
+                  typeof data === "string" ? data : (data?.signature ?? "");
                 yield { type: "signature", data: sig };
                 break;
               }
@@ -724,7 +755,7 @@ export class ChatApiClient {
             }
             case "signature": {
               const sig =
-                typeof data === "string" ? data : data?.signature ?? "";
+                typeof data === "string" ? data : (data?.signature ?? "");
               yield { type: "signature", data: sig };
               break;
             }
@@ -802,7 +833,7 @@ export class ChatApiClient {
   static async startExperience(
     model: string,
     language: string,
-    data?: Record<string, any>
+    data?: Record<string, any>,
   ): Promise<string> {
     const response = await ApiClient.post<ExperienceResponse>("/experience", {
       model,
@@ -835,7 +866,7 @@ export class ChatApiClient {
     memoryIndex?: string[] | undefined,
     memories?: Record<string, string> | undefined,
     memoryLoopCount?: number,
-    memoryLoopLimitReached?: boolean
+    memoryLoopLimitReached?: boolean,
   ): Promise<SystemPromptResponse> {
     const response = await ApiClient.post<SystemPromptResponse>(
       "/generate-system-prompt",
@@ -854,7 +885,7 @@ export class ChatApiClient {
         memories,
         memoryLoopCount,
         memoryLoopLimitReached,
-      }
+      },
     );
 
     if (response instanceof Error) {

@@ -48,6 +48,13 @@ export interface ArtifactIndexItem {
   name: string;
   mimeType?: string;
   type: "file" | "folder";
+  /**
+   * Optional base64-encoded file content (no data-URI prefix). When present
+   * for a PDF (mimeType `application/pdf`) and the selected model supports
+   * document input, the backend sends the file as a native `file` content
+   * part to the model.
+   */
+  data?: string;
 }
 
 export interface ToolSchema {

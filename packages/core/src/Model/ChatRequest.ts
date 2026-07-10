@@ -1,5 +1,8 @@
-import { ChatCompletionMessageParam, ChatCompletionTool } from 'openai/resources';
-import { AIProvider } from '../LLM/Model/AIProvider';
+import {
+  ChatCompletionMessageParam,
+  ChatCompletionTool,
+} from "openai/resources";
+import { AIProvider } from "../LLM/Model/AIProvider";
 
 export enum ChatRequestCommunicationStyle {
   Default = 0,
@@ -12,6 +15,13 @@ export interface ArtifactInfo {
   path: string;
   name: string;
   mimeType: string;
+  /**
+   * Optional base64-encoded file content (no data-URI prefix). When present
+   * for a PDF (mimeType `application/pdf`) and the selected model supports
+   * document input, the backend sends the file as a native `file` content
+   * part to the model instead of only listing it as readable text.
+   */
+  data?: string;
 }
 
 export interface ChatRequest {
