@@ -100,8 +100,13 @@ export class ChatService {
     };
 
     // Make the API request
+    // Allow up to 10 minutes for the remote ToGODer chat call so heavy
+    // requests (long-running model generation) are not cut off early.
+    // undici's defaults are 5 minutes, which is too short.
     const response = await request(`${this.baseUrl}/api/chat`, {
       method: "POST",
+      headersTimeout: 10 * 60 * 1000,
+      bodyTimeout: 10 * 60 * 1000,
       headers: {
         "content-type": "application/json",
         authorization: `Bearer ${authToken}`,

@@ -33,7 +33,7 @@ export interface McpUser {
 export type McpChatCompletionTool = ChatCompletionTool;
 
 const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
-const CALL_TOOL_TIMEOUT_MS = 30 * 1000; // 30 seconds
+const CALL_TOOL_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes — heavy MCP tools may run long
 
 interface CachedConnection {
   client: Client;
@@ -94,7 +94,8 @@ class McpClientManager {
    * JSON-stringified) suitable to feed back to the LLM.
    *
    * Throws on: unknown namespaced tool, SSRF block, connect failure, or server
-   * error. Applies a 30s timeout so a hung server cannot stall the chat loop.
+   * error. Applies a 10-minute timeout so heavy MCP tools can complete without
+   * being cut off prematurely.
    */
   async callTool(
     user: McpUser,
