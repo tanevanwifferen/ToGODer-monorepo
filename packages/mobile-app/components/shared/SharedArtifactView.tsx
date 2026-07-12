@@ -4,7 +4,7 @@
  * custom instructions that were active while it was created.
  */
 
-import React from 'react';
+import React, { useState } from 'react';
 import {
   StyleSheet,
   View,
@@ -12,9 +12,10 @@ import {
   TouchableOpacity,
 } from 'react-native';
 import CustomAlert from '../ui/CustomAlert';
-import { useSelector } from 'react-redux';
+import { useSelector, useDispatch } from 'react-redux';
 import { useColorScheme } from '../../hooks/useColorScheme';
 import { selectUserId } from '../../redux/slices/authSlice';
+import { addArtifact } from '../../redux/slices/artifactsSlice';
 import { Colors } from '../../constants/Colors';
 import { ThemedText } from '../ThemedText';
 import { ThemedView } from '../ThemedView';
@@ -22,7 +23,10 @@ import { MermaidMessageContent } from '../chat/mermaid/MermaidMessageContent';
 import { SharedArtifact, parseInstructionHistory } from '../../model/ShareTypes';
 import { ShareApiClient } from '../../apiClients/ShareApiClient';
 import { InstructionHistorySection } from './InstructionHistorySection';
+import { ImportToProjectModal } from './ImportToProjectModal';
 import Toast from 'react-native-toast-message';
+import { router } from 'expo-router';
+import { v4 as uuidv4 } from 'uuid';
 
 interface SharedArtifactViewProps {
   artifact: SharedArtifact;
@@ -33,7 +37,35 @@ export function SharedArtifactView({ artifact, onBack }: SharedArtifactViewProps
   const colorScheme = useColorScheme();
   const theme = Colors[colorScheme ?? 'light'];
   const currentUserId = useSelector(selectUserId);
+  const dispatch = useDispatch();
   const isOwner = currentUserId === artifact.ownerId;
+
+  const [importModalVisible, setImportModalVisible] = useState(false);
+
+  const handleImport = () => {
+    setImportModalVisible(true);
+  };
+
+  const handleConfirmImport = (projectId: string) => {
+    dispatch(
+      addArtifact({
+        id: uuidv4(),
+        projectId,
+        name: artifact.title,
+        type: 'file',
+        parentId: null,
+        content: artifact.content,
+      })
+    );
+    setImportModalVisible(false);
+    Toast.show({
+      type: 'success',
+      text1: 'Artifact imported into project',
+    });
+    // Navigate to the project so the user can see the imported file.
+    router.replace(`/projects/${projectId}` as any);
+    onBack();
+  };
 
   const handleDelete = () => {
     CustomAlert.alert(
@@ -79,14 +111,31 @@ export function SharedArtifactView({ artifact, onBack }: SharedArtifactViewProps
         <TouchableOpacity onPress={onBack} style={styles.backButton}>
           <ThemedText>← Back</ThemedText>
         </TouchableOpacity>
-        {isOwner && (
-          <TouchableOpacity
-            onPress={handleDelete}
-            style={[styles.deleteButton, { backgroundColor: theme.error }]}
-          >
-            <ThemedText style={[styles.buttonText, { color: 'white' }]}>Delete</ThemedText>
-          </TouchableOpacity>
-        )}
+        <View style={styles.buttonContainer}>
+          {isOwner && (
+            <TouchableOpacity
+              onPress={handleDelete}
+              style={[styles.deleteButton, { backgroundColor: theme.error }]}
+            >
+              <ThemedText style={[styles.buttonText, { color: 'white' }]}>Delete</ThemedText>
+            </TouchableOpacity>
+          )}
+          {currentUserId && (
+            <TouchableOpacity
+              onPress={handleImport}
+              style={[styles.importButton, { backgroundColor: Colors.light.tint }]}
+            >
+              <ThemedText
+                style={[
+                  styles.buttonText,
+                  { color: colorScheme === 'dark' ? Colors.dark.text : 'white' },
+                ]}
+              >
+                Import to Project
+              </ThemedText>
+            </TouchableOpacity>
+          )}
+        </View>
       </View>
 
       <ScrollView style={styles.content}>
@@ -119,6 +168,13 @@ export function SharedArtifactView({ artifact, onBack }: SharedArtifactViewProps
           />
         </View>
       </ScrollView>
+
+      <ImportToProjectModal
+        visible={importModalVisible}
+        artifactTitle={artifact.title}
+        onImport={handleConfirmImport}
+        onClose={() => setImportModalVisible(false)}
+      />
     </ThemedView>
   );
 }
@@ -136,6 +192,16 @@ const styles = StyleSheet.create({
   },
   backButton: {
     paddingVertical: 8,
+  },
+  buttonContainer: {
+    flexDirection: 'row',
+    gap: 8,
+    alignItems: 'center',
+  },
+  importButton: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 8,
   },
   deleteButton: {
     paddingHorizontal: 16,
