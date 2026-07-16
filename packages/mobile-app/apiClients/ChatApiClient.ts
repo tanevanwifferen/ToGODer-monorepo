@@ -316,6 +316,8 @@ export class ChatApiClient {
     memoryLoopLimitReached?: boolean,
     artifactIndex?: ArtifactIndexItem[] | undefined,
     tools?: ToolSchema[] | undefined,
+    pdfCacheId?: string | undefined,
+    pdfName?: string | undefined,
   ): Promise<ChatResponse> {
     const response = await ApiClient.post<ChatResponse>("/chat", {
       model,
@@ -337,6 +339,8 @@ export class ChatApiClient {
       memoryLoopLimitReached,
       artifactIndex,
       tools,
+      pdfCacheId,
+      pdfName,
     });
 
     if (response instanceof Error) {
@@ -369,6 +373,8 @@ export class ChatApiClient {
     memoryLoopLimitReached?: boolean,
     artifactIndex?: ArtifactIndexItem[] | undefined,
     tools?: ToolSchema[] | undefined,
+    pdfCacheId?: string | undefined,
+    pdfName?: string | undefined,
     signal?: AbortSignal,
   ): AsyncGenerator<StreamEvent> {
     const baseUrl = getApiUrl();
@@ -409,6 +415,8 @@ export class ChatApiClient {
       memoryLoopLimitReached,
       artifactIndex,
       tools,
+      pdfCacheId,
+      pdfName,
     };
 
     // On React Native mobile, fetch() does not support ReadableStream for
@@ -828,6 +836,61 @@ export class ChatApiClient {
       throw response;
     }
     return (response as TitleResponse).content;
+  }
+
+  /**
+   * Upload a PDF out-of-band for a document-capable model. The server caches
+   * the bytes and returns an opaque id; only that id is sent in subsequent
+   * chat requests (as pdfCacheId) so the message/conversation payload stays
+   * small. The PDF is never embedded in the conversation history.
+   *
+   * @param model  togoder model slug (must be document-capable)
+   * @param name   original filename (must end with .pdf)
+   * @param data   base64-encoded content (no data-URI prefix)
+   * @param chatId optional chat id to ref-count the upload against
+   * @returns `{ id, name }` where id is the opaque cache id
+   */
+  static async uploadPdf(
+    model: string,
+    name: string,
+    data: string,
+    chatId?: string,
+  ): Promise<{ id: string; name: string }> {
+    const response = await ApiClient.post<{ id: string; name: string }>(
+      "/chat/pdf",
+      { model, name, data, chatId },
+    );
+    if (response instanceof Error) {
+      throw response;
+    }
+    return response as { id: string; name: string };
+  }
+
+  /**
+   * Release a chat's reference to a cached PDF so it can be evicted. Called
+   * when the user removes the attachment or clears the chat.
+   */
+  static async releasePdf(id: string, chatId: string): Promise<void> {
+    try {
+      await ApiClient.post("/chat/pdf/release", { id, chatId });
+    } catch {
+      // Non-fatal: the server's TTL/size eviction is the backstop.
+    }
+  }
+
+  /**
+   * Peek at a cached PDF's metadata (without its bytes) to verify an id is
+   * still valid before sending.
+   */
+  static async peekPdf(id: string): Promise<{ id: string; name: string } | null> {
+    try {
+      const response = await ApiClient.get<{ id: string; name: string }>(
+        `/chat/pdf?id=${encodeURIComponent(id)}`,
+      );
+      return response as { id: string; name: string };
+    } catch {
+      return null;
+    }
   }
 
   static async startExperience(

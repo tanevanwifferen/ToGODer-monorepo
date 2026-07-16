@@ -45,6 +45,20 @@ export interface ChatRequest {
   artifactIndex?: ArtifactInfo[];
   tools?: ChatCompletionTool[];
   /**
+   * Out-of-band reference to an uploaded PDF. The client uploads the file
+   * once (POST /api/chat/pdf) and receives an opaque id; only that id is
+   * carried here so the message/conversation payload stays small. The
+   * backend resolves the cached bytes at send time and injects native
+   * `file` content parts for document-capable models. Never base64-embeds
+   * the PDF into the conversation history.
+   */
+  pdfCacheId?: string;
+  /**
+   * Optional filename override for the cached PDF upload, shown to the user
+   * and used as the `file_data` filename when sent to the model.
+   */
+  pdfName?: string;
+  /**
    * Server-side only: compact emotional-analysis block injected (hidden)
    * into the LLM's copy of the latest user message. Never sent by clients;
    * set by the chat pipeline after SentimentService runs.

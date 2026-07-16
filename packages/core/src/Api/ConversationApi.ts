@@ -38,6 +38,7 @@ import { BillingDecorator } from "../Decorators/BillingDecorator";
 import { keysSchema } from "../zod/requestformemory";
 import { rootpersona } from "../LLM/prompts/rootprompts";
 import { ParsedChatCompletion } from "openai/resources/chat/completions/index";
+import { getPdf } from "../Services/PdfCache";
 
 let quote = "";
 
@@ -80,10 +81,14 @@ function withSentimentContext(
 }
 
 /**
- * Whether the request carries a PDF artifact (with base64 content) that
- * should be sent to the model as a native file content part.
+ * Whether the request carries a PDF that should be sent to the model as a
+ * native file content part: either an explicit PDF artifact (with base64
+ * content, legacy path) or, preferably, an out-of-band cached upload
+ * referenced by `pdfCacheId` (resolved from the in-memory cache, so the
+ * message payload never carries the bytes).
  */
 export function hasPdfArtifact(input: ChatRequest): boolean {
+  if (input.pdfCacheId && getPdf(input.pdfCacheId)) return true;
   return !!(
     input.artifactIndex &&
     input.artifactIndex.some((a) => a.mimeType === "application/pdf" && a.data)
@@ -91,14 +96,15 @@ export function hasPdfArtifact(input: ChatRequest): boolean {
 }
 
 /**
- * Inject PDF artifacts as native OpenRouter/OpenAI `file` content parts into
- * the last user message, so a document-capable model can read the PDF
- * contents directly instead of only seeing a text listing of artifacts.
+ * Inject PDFs as native OpenRouter/OpenAI `file` content parts into the last
+ * user message, so a document-capable model can read the PDF contents
+ * directly instead of only seeing a text listing of artifacts.
  *
- * Only called when the selected model supports document input. Non-PDF
- * artifacts (and PDFs without `data`) are left to the existing text listing
- * path. The returned array is a new copy; the original prompts (used for
- * signature generation) are left untouched.
+ * Only called when the selected model supports document input. Out-of-band
+ * cached uploads (pdfCacheId) are resolved from the in-memory cache here;
+ * they are never embedded in the conversation history. Legacy PDF artifacts
+ * (with `data`) are also handled. The returned array is a new copy; the
+ * original prompts (used for signature generation) are left untouched.
  */
 function injectPdfFileParts(
   prompts: ChatCompletionMessageParam[],
@@ -106,9 +112,24 @@ function injectPdfFileParts(
   supportsDocs: boolean,
 ): ChatCompletionMessageParam[] {
   if (!supportsDocs) return prompts;
-  const pdfs = (input.artifactIndex ?? []).filter(
-    (a) => a.mimeType === "application/pdf" && a.data,
-  );
+
+  const pdfs: { name: string; data: string }[] = [];
+
+  // Preferred: out-of-band cached upload (payload stays small)
+  if (input.pdfCacheId) {
+    const cached = getPdf(input.pdfCacheId);
+    if (cached) {
+      pdfs.push({ name: input.pdfName || cached.name, data: cached.data });
+    }
+  }
+
+  // Legacy path: base64 PDF in the artifact index
+  for (const a of input.artifactIndex ?? []) {
+    if (a.mimeType === "application/pdf" && a.data) {
+      pdfs.push({ name: a.name, data: a.data });
+    }
+  }
+
   if (pdfs.length === 0) return prompts;
 
   const lastUserIndex = prompts.map((p) => p.role).lastIndexOf("user");
@@ -124,7 +145,7 @@ function injectPdfFileParts(
     parts.push({
       type: "file",
       file: {
-        file_data: `data:${pdf.mimeType};base64,${pdf.data}`,
+        file_data: `data:application/pdf;base64,${pdf.data}`,
         filename: pdf.name,
       },
     });
@@ -141,9 +162,10 @@ function injectPdfFileParts(
 /**
  * Build the prompts to send to the model: sentiment-context injection
  * followed by PDF file-content-part injection (when the model is
- * document-capable).
+ * document-capable). Out-of-band cached PDFs are resolved from the cache
+ * so the conversation payload stays small.
  */
-async function buildLlmMessages(
+export async function buildLlmMessages(
   input: ChatRequest,
 ): Promise<ChatCompletionMessageParam[]> {
   const base = withSentimentContext(input);

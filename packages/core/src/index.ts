@@ -19,6 +19,7 @@ import { GetMemoryRouter } from "./Web/MemoryController";
 import { GetSyncRouter } from "./Web/SyncController";
 import { GetSentimentRouter } from "./Web/SentimentController";
 import { GetMcpRouter } from "./Web/McpController";
+import { GetPdfUploadRouter } from "./Web/PdfUploadController";
 import { sentimentIntegrationEnabled } from "./Services/SentimentService";
 import {
   GetRealtimeVoiceRouter,
@@ -92,6 +93,7 @@ const realtimeVoiceRouter = GetRealtimeVoiceRouter(messageLimiter);
 const syncRouter = GetSyncRouter(messageLimiter);
 const sentimentRouter = GetSentimentRouter(messageLimiter);
 const mcpRouter = GetMcpRouter(messageLimiter);
+const pdfUploadRouter = GetPdfUploadRouter();
 
 app.use(chatRouter);
 app.use(authRouter);
@@ -102,6 +104,7 @@ app.use(realtimeVoiceRouter);
 app.use(syncRouter);
 app.use(sentimentRouter);
 app.use(mcpRouter);
+app.use(pdfUploadRouter);
 
 const donateOptions: { address: string }[] = JSON.parse(
   process.env.DONATE_OPTIONS || "[]",

@@ -42,6 +42,7 @@ import {
 } from "../redux/slices/globalConfigSlice";
 import { setSentiment } from "../redux/slices/sentimentSlice";
 import { SentimentApiClient } from "../apiClients/SentimentApiClient";
+import { selectPdfAttachment, clearPdfAttachment } from "../redux/slices/pdfUploadSlice";
 
 const MAX_MEMORY_FETCH_LOOPS = 4;
 
@@ -67,6 +68,9 @@ export interface SendMessageStreamOptions {
   tools?: typeof ARTIFACT_TOOL_SCHEMAS;
   toolCallLoopCount?: number;
   signal?: AbortSignal;
+  /** Out-of-band cached PDF reference (uploaded separately; not in history) */
+  pdfCacheId?: string;
+  pdfName?: string;
   onChunk?: (content: string) => void;
   onComplete?: (message: ApiChatMessage) => void;
   onError?: (error: string) => void;
@@ -803,6 +807,12 @@ export class MessageService {
       const memoryEnabled = isAuthenticated && hasFunds;
       const memories = memoryEnabled ? chat.memories : [];
 
+      // Out-of-band PDF attachment (uploaded separately; not in history).
+      // Only sent for document-capable models; the upload was already gated.
+      const pdfAttachment = selectPdfAttachment(updatedState, chatId);
+      const pdfCacheId = pdfAttachment?.id;
+      const pdfName = pdfAttachment?.name;
+
       // Send the message and get response
       if (useStreaming) {
         await this.sendMessageWithStreaming({
@@ -813,6 +823,8 @@ export class MessageService {
           memoryLoopLimitReached,
           artifactIndex,
           tools,
+          pdfCacheId,
+          pdfName,
           signal,
           onChunk,
           onComplete,
@@ -828,6 +840,8 @@ export class MessageService {
           memoryLoopLimitReached,
           artifactIndex,
           tools,
+          pdfCacheId,
+          pdfName,
           signal,
           onComplete,
           onError,
@@ -837,6 +851,11 @@ export class MessageService {
       // Update balance after successful send
       const balanceService = BalanceService.getInstance();
       await balanceService.updateBalanceIfAuthenticated();
+
+      // The attached PDF was for this message; clear the client-side chip.
+      // The server-side cache ref is released here (it stays cached only
+      // while referenced; the TTL/size eviction is the backstop).
+      store.dispatch(clearPdfAttachment({ chatId }));
     } catch (error) {
       this.clearCurrentRequest();
 
@@ -880,6 +899,8 @@ export class MessageService {
       tools,
       toolCallLoopCount = 0,
       signal,
+      pdfCacheId,
+      pdfName,
       onChunk,
       onComplete,
       onError,
@@ -1029,6 +1050,8 @@ export class MessageService {
         memoryLoopLimitReached,
         artifactIndex,
         tools,
+        pdfCacheId,
+        pdfName,
         signal,
       )) {
         switch (evt.type) {
@@ -1121,6 +1144,8 @@ export class MessageService {
               memoryLoopLimitReached: nextLimitReached,
               artifactIndex: updatedArtifactIndex,
               tools: updatedTools,
+              pdfCacheId,
+              pdfName,
               signal,
               onChunk,
               onComplete,
@@ -1334,6 +1359,8 @@ export class MessageService {
           artifactIndex: updatedArtifactIndex,
           tools: updatedTools,
           toolCallLoopCount: toolCallLoopCount + 1,
+          pdfCacheId,
+          pdfName,
           signal,
           onChunk,
           onComplete,
@@ -1406,6 +1433,8 @@ export class MessageService {
       artifactIndex,
       tools,
       signal,
+      pdfCacheId,
+      pdfName,
       onComplete,
       onError,
     } = options;
@@ -1469,6 +1498,8 @@ export class MessageService {
         memoryLoopLimitReached,
         artifactIndex,
         tools,
+        pdfCacheId,
+        pdfName,
       );
 
       if ("requestForMemory" in response) {
@@ -1512,6 +1543,8 @@ export class MessageService {
           memoryLoopLimitReached: nextLimitReached,
           artifactIndex: updatedArtifactIndex,
           tools: updatedTools,
+          pdfCacheId,
+          pdfName,
           onComplete,
           onError,
         });
