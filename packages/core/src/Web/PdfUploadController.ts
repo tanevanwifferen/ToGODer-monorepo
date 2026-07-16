@@ -3,6 +3,11 @@ import { setAuthUser } from "./Middleware/auth";
 import { ToGODerRequest } from "./Model/ToGODerRequest";
 import { modelSupportsDocuments } from "../LLM/Model/AIProvider";
 import { storePdf, releasePdf, getPdf } from "../Services/PdfCache";
+import {
+  storeEncryptedPdf,
+  hasEncryptedPdf,
+  removeEncryptedPdf,
+} from "../Services/PdfDocStore";
 
 /**
  * PDF upload controller.
@@ -38,7 +43,7 @@ function isPdfUploadValid(
   if (!name.toLowerCase().endsWith(".pdf")) {
     return "only PDF files are supported";
   }
-  // base64 size: 25MB raw -> ~33MB base64
+  // base64 size: 25MB raw -> ~33MB base64 (ciphertext is ~same length)
   if (data.length > (MAX_PDF_BYTES * 4) / 3 + 1024) {
     return `PDF too large (max ${Math.floor(MAX_PDF_BYTES / (1024 * 1024))}MB)`;
   }
@@ -50,21 +55,23 @@ export function GetPdfUploadRouter(): Router {
 
   /**
    * Upload a PDF for a document-capable model. Returns `{ id, name }` where
-   * `id` is the opaque cache id to send as `pdfCacheId` in /api/chat(/stream).
+   * `id` is the opaque document id to send as `pdfCacheId` in /api/chat(/stream).
    *
-   * Body: { model: string, name: string, data: string (base64, no data-URI prefix), chatId?: string }
+   * Two forms are accepted:
+   *  - Encrypted (preferred): `{ model, name, encryptedData, iv, chatId? }`
+   *    where `encryptedData` is base64 `ciphertext || authTag` and `iv` is the
+   *    base64 12-byte GCM nonce. The server persists only the ciphertext to
+   *    disk (PdfDocStore); the client keeps the decryption key and sends it
+   *    per request as `pdfKey`. The PDF then persists across messages.
+   *  - Legacy plaintext: `{ model, name, data, chatId? }` with base64 content.
+   *    Stored in the in-memory PdfCache only (not persisted across restarts).
    */
   router.post(
     "/api/chat/pdf",
     setAuthUser,
     async (req: Request, res: Response, next: NextFunction) => {
       try {
-        const { model, name, data, chatId } = req.body ?? {};
-        const validationError = isPdfUploadValid(model, name, data);
-        if (validationError) {
-          res.status(400).json({ error: validationError });
-          return;
-        }
+        const { model, name, data, encryptedData, iv, chatId } = req.body ?? {};
 
         // Gate: only document-capable models accept PDF uploads. This is
         // re-checked in the chat pipeline, but rejecting here gives the
@@ -77,15 +84,35 @@ export function GetPdfUploadRouter(): Router {
           return;
         }
 
-        const id = storePdf(
-          {
+        // Encrypted (persisted) path: the server keeps ciphertext + nonce on
+        // disk; only the client can derive the key to read it.
+        if (encryptedData && iv) {
+          const validationError = isPdfUploadValid(model, name, encryptedData);
+          if (validationError) {
+            res.status(400).json({ error: validationError });
+            return;
+          }
+          const id = storeEncryptedPdf({
             name,
             mimeType: "application/pdf",
-            data,
-          },
+            iv,
+            data: encryptedData,
+          });
+          res.json({ id, name });
+          return;
+        }
+
+        // Legacy plaintext path: in-memory hot cache only.
+        const validationError = isPdfUploadValid(model, name, data);
+        if (validationError) {
+          res.status(400).json({ error: validationError });
+          return;
+        }
+
+        const id = storePdf(
+          { name, mimeType: "application/pdf", data },
           chatId,
         );
-
         res.json({ id, name });
       } catch (error) {
         next(error);
@@ -110,6 +137,9 @@ export function GetPdfUploadRouter(): Router {
           return;
         }
         releasePdf(id, chatId);
+        // Also drop the persisted (encrypted) doc so the upload is fully gone
+        // when the user removes the attachment or clears the chat.
+        removeEncryptedPdf(id);
         res.json({ ok: true });
       } catch (error) {
         next(error);
@@ -130,7 +160,12 @@ export function GetPdfUploadRouter(): Router {
     (req: Request, res: Response, next: NextFunction) => {
       try {
         const id = String(req.query.id ?? "");
-        const cached = id ? getPdf(id) : null;
+        let cached = id ? getPdf(id) : null;
+        // Fall back to the persisted encrypted doc so a peek still validates an
+        // id after a server restart (hot cache is empty then).
+        if (!cached && id && hasEncryptedPdf(id)) {
+          cached = { id, name: "" } as any;
+        }
         if (!cached) {
           res.status(404).json({ error: "PDF not found or expired" });
           return;

@@ -252,6 +252,7 @@ export class StreamingChatService {
       body.model = getDefaultModel();
       body.artifactIndex = undefined;
       body.pdfCacheId = undefined;
+      body.pdfKey = undefined;
       body.tools = undefined;
     }
 

@@ -318,6 +318,7 @@ export class ChatApiClient {
     tools?: ToolSchema[] | undefined,
     pdfCacheId?: string | undefined,
     pdfName?: string | undefined,
+    pdfKey?: string | undefined,
   ): Promise<ChatResponse> {
     const response = await ApiClient.post<ChatResponse>("/chat", {
       model,
@@ -341,6 +342,7 @@ export class ChatApiClient {
       tools,
       pdfCacheId,
       pdfName,
+      pdfKey,
     });
 
     if (response instanceof Error) {
@@ -375,6 +377,7 @@ export class ChatApiClient {
     tools?: ToolSchema[] | undefined,
     pdfCacheId?: string | undefined,
     pdfName?: string | undefined,
+    pdfKey?: string | undefined,
     signal?: AbortSignal,
   ): AsyncGenerator<StreamEvent> {
     const baseUrl = getApiUrl();
@@ -417,6 +420,7 @@ export class ChatApiClient {
       tools,
       pdfCacheId,
       pdfName,
+      pdfKey,
     };
 
     // On React Native mobile, fetch() does not support ReadableStream for
@@ -839,26 +843,31 @@ export class ChatApiClient {
   }
 
   /**
-   * Upload a PDF out-of-band for a document-capable model. The server caches
-   * the bytes and returns an opaque id; only that id is sent in subsequent
-   * chat requests (as pdfCacheId) so the message/conversation payload stays
-   * small. The PDF is never embedded in the conversation history.
+   * Upload a PDF out-of-band for a document-capable model. The client encrypts
+   * the file (AES-256-GCM with a client-derived key) and uploads only the
+   * ciphertext + nonce; the server persists the ciphertext and returns an
+   * opaque document id. Only that id is sent in subsequent chat requests (as
+   * pdfCacheId), along with the client-derived key (as pdfKey) so the server
+   * can decrypt transiently at send time. The PDF is never embedded in the
+   * conversation history, and the server never stores the key or plaintext.
    *
-   * @param model  togoder model slug (must be document-capable)
-   * @param name   original filename (must end with .pdf)
-   * @param data   base64-encoded content (no data-URI prefix)
-   * @param chatId optional chat id to ref-count the upload against
-   * @returns `{ id, name }` where id is the opaque cache id
+   * @param model         togoder model slug (must be document-capable)
+   * @param name          original filename (must end with .pdf)
+   * @param encryptedData base64 `ciphertext || authTag` (client-encrypted)
+   * @param iv            base64 12-byte GCM nonce
+   * @param chatId        optional chat id to ref-count the upload against
+   * @returns `{ id, name }` where id is the opaque document id
    */
   static async uploadPdf(
     model: string,
     name: string,
-    data: string,
+    encryptedData: string,
+    iv: string,
     chatId?: string,
   ): Promise<{ id: string; name: string }> {
     const response = await ApiClient.post<{ id: string; name: string }>(
       "/chat/pdf",
-      { model, name, data, chatId },
+      { model, name, encryptedData, iv, chatId },
     );
     if (response instanceof Error) {
       throw response;

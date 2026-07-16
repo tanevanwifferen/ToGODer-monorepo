@@ -59,6 +59,14 @@ export interface ChatRequest {
    */
   pdfName?: string;
   /**
+   * Client-derived AES-256-GCM key (base64) for a persisted encrypted PDF
+   * upload. The client derives this from a per-user secret + the document
+   * title (never stored server-side); the server only keeps the ciphertext
+   * and decrypts transiently at send time using this key. Lets a PDF persist
+   * across messages without re-upload. Stripped for anonymous users.
+   */
+  pdfKey?: string;
+  /**
    * Server-side only: compact emotional-analysis block injected (hidden)
    * into the LLM's copy of the latest user message. Never sent by clients;
    * set by the chat pipeline after SentimentService runs.

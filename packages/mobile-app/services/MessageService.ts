@@ -42,7 +42,8 @@ import {
 } from "../redux/slices/globalConfigSlice";
 import { setSentiment } from "../redux/slices/sentimentSlice";
 import { SentimentApiClient } from "../apiClients/SentimentApiClient";
-import { selectPdfAttachment, clearPdfAttachment } from "../redux/slices/pdfUploadSlice";
+import { selectPdfAttachment, selectPdfSecret } from "../redux/slices/pdfUploadSlice";
+import { derivePdfKeyBase64 } from "../utils/pdfCrypto";
 
 const MAX_MEMORY_FETCH_LOOPS = 4;
 
@@ -71,6 +72,8 @@ export interface SendMessageStreamOptions {
   /** Out-of-band cached PDF reference (uploaded separately; not in history) */
   pdfCacheId?: string;
   pdfName?: string;
+  /** Client-derived AES-256-GCM key (base64) for the persisted PDF */
+  pdfKey?: string;
   onChunk?: (content: string) => void;
   onComplete?: (message: ApiChatMessage) => void;
   onError?: (error: string) => void;
@@ -809,9 +812,19 @@ export class MessageService {
 
       // Out-of-band PDF attachment (uploaded separately; not in history).
       // Only sent for document-capable models; the upload was already gated.
+      // The attachment PERSISTS across messages: the server keeps the
+      // ciphertext and the client re-derives the key from its secret + the
+      // filename on every send, so no re-upload is needed between turns.
       const pdfAttachment = selectPdfAttachment(updatedState, chatId);
       const pdfCacheId = pdfAttachment?.id;
       const pdfName = pdfAttachment?.name;
+      const pdfKey =
+        pdfAttachment && pdfAttachment.name
+          ? (() => {
+              const secret = selectPdfSecret(store.getState());
+              return secret ? derivePdfKeyBase64(secret, pdfAttachment.name) : undefined;
+            })()
+          : undefined;
 
       // Send the message and get response
       if (useStreaming) {
@@ -825,6 +838,7 @@ export class MessageService {
           tools,
           pdfCacheId,
           pdfName,
+          pdfKey,
           signal,
           onChunk,
           onComplete,
@@ -842,6 +856,7 @@ export class MessageService {
           tools,
           pdfCacheId,
           pdfName,
+          pdfKey,
           signal,
           onComplete,
           onError,
@@ -852,10 +867,11 @@ export class MessageService {
       const balanceService = BalanceService.getInstance();
       await balanceService.updateBalanceIfAuthenticated();
 
-      // The attached PDF was for this message; clear the client-side chip.
-      // The server-side cache ref is released here (it stays cached only
-      // while referenced; the TTL/size eviction is the backstop).
-      store.dispatch(clearPdfAttachment({ chatId }));
+      // NOTE: the PDF attachment is intentionally NOT cleared here. It must
+      // persist across messages: the user attaches once and the document stays
+      // available for every subsequent turn (server holds the ciphertext; the
+      // client re-derives the key each send). It is cleared only when the user
+      // removes it (usePdfAttachment.removeAttachment) or the chat is deleted.
     } catch (error) {
       this.clearCurrentRequest();
 
@@ -901,6 +917,7 @@ export class MessageService {
       signal,
       pdfCacheId,
       pdfName,
+      pdfKey,
       onChunk,
       onComplete,
       onError,
@@ -1052,6 +1069,7 @@ export class MessageService {
         tools,
         pdfCacheId,
         pdfName,
+        pdfKey,
         signal,
       )) {
         switch (evt.type) {
@@ -1146,6 +1164,7 @@ export class MessageService {
               tools: updatedTools,
               pdfCacheId,
               pdfName,
+              pdfKey,
               signal,
               onChunk,
               onComplete,
@@ -1361,6 +1380,7 @@ export class MessageService {
           toolCallLoopCount: toolCallLoopCount + 1,
           pdfCacheId,
           pdfName,
+          pdfKey,
           signal,
           onChunk,
           onComplete,
@@ -1435,6 +1455,7 @@ export class MessageService {
       signal,
       pdfCacheId,
       pdfName,
+      pdfKey,
       onComplete,
       onError,
     } = options;
@@ -1500,6 +1521,7 @@ export class MessageService {
         tools,
         pdfCacheId,
         pdfName,
+        pdfKey,
       );
 
       if ("requestForMemory" in response) {
@@ -1545,6 +1567,7 @@ export class MessageService {
           tools: updatedTools,
           pdfCacheId,
           pdfName,
+          pdfKey,
           onComplete,
           onError,
         });
@@ -1696,6 +1719,19 @@ export class MessageService {
         return;
       }
 
+      // Persisted PDF attachment (kept across turns). Re-derive the key from
+      // the client secret + filename so the server can decrypt on send.
+      const pdfAttachment = selectPdfAttachment(state, chatId);
+      const pdfCacheId = pdfAttachment?.id;
+      const pdfName = pdfAttachment?.name;
+      const pdfKey =
+        pdfAttachment && pdfAttachment.name
+          ? (() => {
+              const secret = selectPdfSecret(store.getState());
+              return secret ? derivePdfKeyBase64(secret, pdfAttachment.name) : undefined;
+            })()
+          : undefined;
+
       // Send the message and get response
       if (useStreaming) {
         await this.sendMessageWithStreaming({
@@ -1704,6 +1740,9 @@ export class MessageService {
           memories,
           artifactIndex,
           tools,
+          pdfCacheId,
+          pdfName,
+          pdfKey,
           signal,
           onChunk,
           onComplete,
@@ -1717,6 +1756,9 @@ export class MessageService {
           memories,
           artifactIndex,
           tools,
+          pdfCacheId,
+          pdfName,
+          pdfKey,
           signal,
           onComplete,
           onError,

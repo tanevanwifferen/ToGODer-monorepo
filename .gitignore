@@ -51,3 +51,6 @@
 .dolt/
 *.db
 .beads-credential-key
+
+# Persisted encrypted PDF uploads (server-side, out-of-band)
+**/data/pdf-docs/

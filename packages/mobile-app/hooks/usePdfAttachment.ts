@@ -6,10 +6,17 @@ import {
   setPdfAttachment,
   clearPdfAttachment,
   selectPdfAttachment,
+  selectPdfSecret,
+  setPdfSecret,
 } from "../redux/slices/pdfUploadSlice";
 import { selectModelSupportsDocuments } from "../redux/slices/globalConfigSlice";
 import { selectModel } from "../redux/slices/userSettingsSlice";
 import { ChatApiClient } from "../apiClients/ChatApiClient";
+import {
+  derivePdfKey,
+  encryptPdfData,
+  generatePdfSecret,
+} from "../utils/pdfCrypto";
 import Toast from "react-native-toast-message";
 
 /**
@@ -34,19 +41,22 @@ export interface UsePdfAttachmentResult {
   attachment: { id: string; name: string } | null;
   /** True when the selected model can read PDFs (gates the UI affordance) */
   modelSupportsPdfs: boolean;
-  /** Attach a File (web) or base64 payload. Uploads it out-of-band. */
+  /** Attach a File (web) or base64 payload. Encrypts and uploads out-of-band. */
   attachFile: (file: File) => Promise<void>;
-  /** Remove the current attachment and release the server-side cache ref. */
+  /** Remove the current attachment and release the server-side doc. */
   removeAttachment: () => Promise<void>;
 }
 
 /**
- * Manages an out-of-band PDF attachment for a chat.
+ * Manages an out-of-band, *persisted* PDF attachment for a chat.
  *
- * The file is uploaded once to the backend (POST /api/chat/pdf) and only the
- * returned opaque cache id is kept in Redux — the bytes never enter the
- * conversation history or the chat message payload. The composer reads this
- * attachment to show a chip and to pass `pdfCacheId`/`pdfName` on send.
+ * The file is encrypted on the client (AES-256-GCM with a key derived from a
+ * per-install secret + the filename) and uploaded once to the backend, which
+ * stores only the ciphertext. The client keeps the doc id (+ secret, which is
+ * persisted in Redux) and re-derives the key on every send, so the attachment
+ * survives across messages, app reloads, and server restarts without
+ * re-upload. The composer reads this attachment to show a chip and to pass
+ * `pdfCacheId`/`pdfName`/`pdfKey` on send.
  *
  * Web-only drag-and-drop / file-picker is supported here; native mobile file
  * picking is intentionally out of scope for the web interface task.
@@ -60,6 +70,19 @@ export function usePdfAttachment(chatId: string): UsePdfAttachmentResult {
   const attachment = useSelector((state: any) =>
     selectPdfAttachment(state, chatId),
   );
+
+  /**
+   * Resolve (or lazily create) the per-install client secret used to derive
+   * PDF decryption keys. The secret is never sent to the server; it lives in
+   * the persisted pdfUpload slice so keys remain reproducible after a reload.
+   */
+  const ensureSecret = useCallback((): string => {
+    const existing = selectPdfSecret(store.getState());
+    if (existing) return existing;
+    const fresh = generatePdfSecret();
+    dispatch(setPdfSecret(fresh));
+    return fresh;
+  }, [dispatch]);
 
   const attachFile = useCallback(
     async (file: File) => {
@@ -83,7 +106,19 @@ export function usePdfAttachment(chatId: string): UsePdfAttachmentResult {
       }
       try {
         const data = await fileToBase64(file);
-        const { id } = await ChatApiClient.uploadPdf(model, name, data, chatId);
+        // Derive the decryption key from the client secret + the filename, then
+        // encrypt so only ciphertext leaves the device. The key is re-derived
+        // on each send (same inputs), so it doesn't need to be stored.
+        const secret = ensureSecret();
+        const key = derivePdfKey(secret, name);
+        const { iv, data: encryptedData } = encryptPdfData(key, data);
+        const { id } = await ChatApiClient.uploadPdf(
+          model,
+          name,
+          encryptedData,
+          iv,
+          chatId,
+        );
         dispatch(setPdfAttachment({ chatId, attachment: { id, name } }));
         Toast.show({
           type: "success",
@@ -100,14 +135,14 @@ export function usePdfAttachment(chatId: string): UsePdfAttachmentResult {
         });
       }
     },
-    [chatId, dispatch, model, modelSupportsPdfs],
+    [chatId, dispatch, ensureSecret, model, modelSupportsPdfs],
   );
 
   const removeAttachment = useCallback(async () => {
     const current = selectPdfAttachment(store.getState(), chatId);
     if (current) {
       dispatch(clearPdfAttachment({ chatId }));
-      // Best-effort release; the server TTL evicts anyway.
+      // Best-effort release; the server deletes the persisted ciphertext.
       ChatApiClient.releasePdf(current.id, chatId).catch(() => {});
     }
   }, [chatId, dispatch]);

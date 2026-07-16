@@ -60,10 +60,11 @@ function approxBytes(data: string): number {
  * released.
  */
 export function storePdf(
-  pdf: Omit<CachedPdf, "id" | "createdAt" | "lastUsedAt" | "sizeBytes">,
+  pdf: Omit<CachedPdf, "id" | "createdAt" | "lastUsedAt" | "sizeBytes"> &
+    Partial<Pick<CachedPdf, "id">>,
   chatId?: string,
 ): string {
-  const id = generateId();
+  const id = pdf.id ?? generateId();
   const sizeBytes = approxBytes(pdf.data);
   const entry: Entry = {
     ...pdf,

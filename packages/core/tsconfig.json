@@ -1,5 +1,5 @@
 {
-  "exclude": ["Frontend", "bin", "node_modules"],
+  "exclude": ["Frontend", "bin", "node_modules", "vitest.config.ts"],
   "compilerOptions": {
     /* Visit https://aka.ms/tsconfig to read more about this file */
 

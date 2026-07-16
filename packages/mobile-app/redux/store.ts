@@ -120,6 +120,7 @@ const persistConfig: PersistConfig<RootState> = {
     "projects",
     "artifacts",
     "memories",
+    "pdfUpload",
   ],
   migrate: (state: any) => {
     return Promise.resolve(migrateSettings(state));

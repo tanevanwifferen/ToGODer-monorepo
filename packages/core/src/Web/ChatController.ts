@@ -81,6 +81,7 @@ const chatHandler = async (req: Request, res: Response, next: NextFunction) => {
       body.model = getDefaultModel();
       body.artifactIndex = undefined;
       body.pdfCacheId = undefined;
+      body.pdfKey = undefined;
       body.tools = undefined;
     }
 

@@ -38,7 +38,12 @@ import { BillingDecorator } from "../Decorators/BillingDecorator";
 import { keysSchema } from "../zod/requestformemory";
 import { rootpersona } from "../LLM/prompts/rootprompts";
 import { ParsedChatCompletion } from "openai/resources/chat/completions/index";
-import { getPdf } from "../Services/PdfCache";
+import { getPdf, storePdf } from "../Services/PdfCache";
+import {
+  getEncryptedPdf,
+  hasEncryptedPdf,
+} from "../Services/PdfDocStore";
+import { decryptPdfData } from "../Services/PdfCrypto";
 
 let quote = "";
 
@@ -88,7 +93,12 @@ function withSentimentContext(
  * message payload never carries the bytes).
  */
 export function hasPdfArtifact(input: ChatRequest): boolean {
-  if (input.pdfCacheId && getPdf(input.pdfCacheId)) return true;
+  if (input.pdfCacheId) {
+    if (getPdf(input.pdfCacheId)) return true;
+    // Persisted (encrypted) upload kept out-of-band on disk; the key is
+    // provided per request and not needed to know a doc exists.
+    if (hasEncryptedPdf(input.pdfCacheId)) return true;
+  }
   return !!(
     input.artifactIndex &&
     input.artifactIndex.some((a) => a.mimeType === "application/pdf" && a.data)
@@ -106,18 +116,36 @@ export function hasPdfArtifact(input: ChatRequest): boolean {
  * (with `data`) are also handled. The returned array is a new copy; the
  * original prompts (used for signature generation) are left untouched.
  */
-function injectPdfFileParts(
+async function injectPdfFileParts(
   prompts: ChatCompletionMessageParam[],
   input: ChatRequest,
   supportsDocs: boolean,
-): ChatCompletionMessageParam[] {
+): Promise<ChatCompletionMessageParam[]> {
   if (!supportsDocs) return prompts;
 
   const pdfs: { name: string; data: string }[] = [];
 
-  // Preferred: out-of-band cached upload (payload stays small)
+  // Preferred: out-of-band cached upload (payload stays small). Try the
+  // in-memory hot cache first (decrypted copy for the current turn); if it's
+  // cold, fall back to the persisted encrypted doc on disk and decrypt it
+  // with the client-provided key, seeding the hot cache so retries within the
+  // turn don't re-decrypt.
   if (input.pdfCacheId) {
-    const cached = getPdf(input.pdfCacheId);
+    let cached = getPdf(input.pdfCacheId);
+    if (!cached && input.pdfKey) {
+      const enc = await getEncryptedPdf(input.pdfCacheId);
+      if (enc) {
+        const data = decryptPdfData(input.pdfKey, enc.iv, enc.data);
+        if (data) {
+          // Seed the hot cache with the decrypted copy under the same id,
+          // so subsequent retries/regenerations this turn resolve instantly.
+          storePdf(
+            { id: input.pdfCacheId, name: enc.name, mimeType: enc.mimeType, data },
+          );
+          cached = getPdf(input.pdfCacheId);
+        }
+      }
+    }
     if (cached) {
       pdfs.push({ name: input.pdfName || cached.name, data: cached.data });
     }
@@ -170,7 +198,7 @@ export async function buildLlmMessages(
 ): Promise<ChatCompletionMessageParam[]> {
   const base = withSentimentContext(input);
   const supportsDocs = await modelSupportsDocuments(input.model);
-  return injectPdfFileParts(base, input, supportsDocs);
+  return await injectPdfFileParts(base, input, supportsDocs);
 }
 
 export class ConversationApi {
