@@ -106,6 +106,19 @@ model McpServer {
   @@index([userId])
 }
 
+model Event {
+  id        String   @id @default(uuid())
+  timestamp DateTime @default(now())
+  userId    String?
+  eventType String
+  source    String?
+  propsJson String?
+
+  @@index([eventType])
+  @@index([timestamp])
+  @@index([userId])
+}
+
 generator client {
   provider = "prisma-client-js"
 }

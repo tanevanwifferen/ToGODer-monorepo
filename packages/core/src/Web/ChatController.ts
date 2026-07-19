@@ -28,6 +28,7 @@ import { BillingApi } from "../Api/BillingApi";
 import { SseStream } from "./Utils/Sse";
 import { StreamingChatService } from "../Services/StreamingChatService";
 import { SentimentService } from "../Services/SentimentService";
+import { getAnalytics } from "../Analytics/AnalyticsService";
 
 function getAssistantName(): string {
   return process.env.ASSISTANT_NAME ?? "ToGODer";
@@ -61,6 +62,43 @@ const chatHandler = async (req: Request, res: Response, next: NextFunction) => {
     const chatService = new ChatService(body.assistant_name);
     const memoryService = new MemoryService(body.assistant_name);
     const totalMessages = Array.isArray(body.prompts) ? body.prompts.length : 0;
+
+    // ── Analytics: fire events ────────────────────────────────────
+    const analytics = getAnalytics();
+    const userId = user?.id ?? null;
+    const source = 'web';
+
+    // message_sent: every user message
+    analytics.trackEvent('message_sent', { userId, source });
+    analytics.trackEvent('chat_message_received', { userId, source });
+
+    // conversation_started vs conversation_returned: heuristic based on prompt count
+    // A new conversation has only 1-2 messages (system + first user msg)
+    const userMsgCount = Array.isArray(body.prompts)
+      ? body.prompts.filter((p: any) => p.role === 'user').length
+      : 0;
+    if (userMsgCount <= 1) {
+      // Check if user has had a previous conversation
+      if (userId) {
+        const prevConversations = await countUserConversations(userId);
+        if (prevConversations > 0) {
+          analytics.trackEvent('conversation_returned', { userId, source });
+        } else {
+          analytics.trackEvent('conversation_started', {
+            userId,
+            source,
+            props: { firstMessage: getFirstUserMessage(body.prompts) },
+          });
+        }
+      } else {
+        analytics.trackEvent('conversation_started', {
+          userId,
+          source,
+          props: { firstMessage: getFirstUserMessage(body.prompts) },
+        });
+      }
+    }
+
     const paywallMessage =
       "Insufficient balance. Please donate through KoFi with this email address to continue using the service.";
 
@@ -238,6 +276,36 @@ export function GetChatRouter(messageLimiter: RateLimitRequestHandler): Router {
         }
 
         const user = (req as ToGODerRequest).togoder_auth?.user ?? null;
+
+        // ── Analytics: fire events ──────────────────────────────
+        const analytics = getAnalytics();
+        const userId = user?.id ?? null;
+        const source = 'web';
+        analytics.trackEvent('message_sent', { userId, source });
+        analytics.trackEvent('chat_message_received', { userId, source });
+        const streamUserMsgCount = Array.isArray(body.prompts)
+          ? body.prompts.filter((p: any) => p.role === 'user').length
+          : 0;
+        if (streamUserMsgCount <= 1) {
+          if (userId) {
+            const prevConversations = await countUserConversations(userId);
+            if (prevConversations > 0) {
+              analytics.trackEvent('conversation_returned', { userId, source });
+            } else {
+              analytics.trackEvent('conversation_started', {
+                userId,
+                source,
+                props: { firstMessage: getFirstUserMessage(body.prompts) },
+              });
+            }
+          } else {
+            analytics.trackEvent('conversation_started', {
+              userId,
+              source,
+              props: { firstMessage: getFirstUserMessage(body.prompts) },
+            });
+          }
+        }
 
         // Delegate the streaming logic to a service for maintainability
         const streamingService = new StreamingChatService(body.assistant_name);
@@ -477,4 +545,27 @@ export function GetChatRouter(messageLimiter: RateLimitRequestHandler): Router {
   );
 
   return chatRouter;
+}
+
+// ── Analytics helpers ──────────────────────────────────────────────
+
+function getFirstUserMessage(prompts: any[]): string {
+  if (!Array.isArray(prompts)) return '';
+  const first = prompts.find((p: any) => p.role === 'user');
+  if (!first || typeof first.content !== 'string') return '';
+  return first.content.slice(0, 200);
+}
+
+async function countUserConversations(userId: string): Promise<number> {
+  const { getDbContext } = await import('../Entity/Database.js');
+  const db = getDbContext();
+  try {
+    const rows: any[] = await db.$queryRawUnsafe(
+      `SELECT COUNT(*) as cnt FROM Event WHERE eventType = 'conversation_started' AND userId = ?`,
+      userId,
+    );
+    return rows[0]?.cnt ?? 0;
+  } catch {
+    return 0;
+  }
 }
