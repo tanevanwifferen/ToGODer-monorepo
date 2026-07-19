@@ -52,7 +52,7 @@ export default function DrawerLayout() {
             <ProjectSelector />
             <DrawerItemList {...props} />
             <ExternalDrawerLink
-              href="https://github.com/tanevanwifferen/ToGODer"
+              href="https://github.com/tanevanwifferen/togoder-monorepo"
               title="GitHub"
               iconName="link"
             />
