@@ -10,10 +10,10 @@ import { useSelector } from "react-redux";
 import { ThemedText } from "../../components/ThemedText";
 import { ThemedView } from "../../components/ThemedView";
 import { AdminApiClient, MetricsSnapshot } from "../../apiClients/AdminApiClient";
-import { selectIsAuthenticated } from "../../redux/slices/authSlice";
+import { selectIsAdmin } from "../../redux/slices/authSlice";
 
 export default function AdminScreen() {
-  const isAuthenticated = useSelector(selectIsAuthenticated);
+  const isAdmin = useSelector(selectIsAdmin);
   const [metrics, setMetrics] = useState<MetricsSnapshot | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -36,21 +36,21 @@ export default function AdminScreen() {
   }, []);
 
   useEffect(() => {
-    if (isAuthenticated) {
+    if (isAdmin) {
       setLoading(true);
       fetchMetrics();
     } else {
       setLoading(false);
-      setError("You must be logged in to view this page.");
+      setError("You must be an admin to view this page.");
     }
-  }, [isAuthenticated, fetchMetrics]);
+  }, [isAdmin, fetchMetrics]);
 
-  if (!isAuthenticated) {
+  if (!isAdmin) {
     return (
       <ThemedView style={styles.centered}>
         <ThemedText type="subtitle">Admin Panel</ThemedText>
         <ThemedText style={styles.errorText}>
-          You must be logged in to view this page.
+          You must be an admin to view this page.
         </ThemedText>
       </ThemedView>
     );

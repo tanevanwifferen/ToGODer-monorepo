@@ -8,6 +8,17 @@ import { onlyOwner, authenticated, setAuthUser } from './Middleware/auth';
 import { ToGODerRequest } from './Model/ToGODerRequest';
 import { getAnalytics } from '../Analytics/AnalyticsService';
 
+function isAdminUser(email: string): boolean {
+  const raw = process.env.ADMIN_EMAILS || '';
+  const adminEmails = new Set(
+    raw
+      .split(',')
+      .map((e) => e.trim().toLowerCase())
+      .filter(Boolean),
+  );
+  return adminEmails.has(email.toLowerCase());
+}
+
 const updateTokenHandler = async (req: Request, res: Response) => {
   try {
     const token = jwt.sign(
@@ -123,7 +134,7 @@ const signInHandler = async (req: Request, res: Response) => {
         // analytics: login event
         getAnalytics().trackEvent('login', { userId: user.id, source: 'web' });
 
-        res.json({ token: token, userId: user.id, date: toSign.date });
+        res.json({ token: token, userId: user.id, date: toSign.date, isAdmin: isAdminUser(user.email) });
       } else {
         res.status(401).send('Invalid email or password.');
       }
