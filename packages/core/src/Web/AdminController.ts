@@ -68,7 +68,7 @@ export const requireAdmin = async (
 export function GetAdminRouter(): Router {
   const router = Router();
 
-  // GET /admin/metrics — admin-gated metrics dashboard
+  // GET /admin/metrics — admin-gated metrics dashboard (HTML)
   router.get(
     '/admin/metrics',
     authenticated,
@@ -86,6 +86,24 @@ export function GetAdminRouter(): Router {
       } catch (err) {
         console.error('[admin] metrics error:', err);
         res.status(500).send('Internal Server Error');
+      }
+    },
+  );
+
+  // GET /api/admin/metrics — admin-gated metrics as JSON for the React dashboard
+  router.get(
+    '/api/admin/metrics',
+    authenticated,
+    setAuthUser,
+    requireAdmin,
+    async (_req: Request, res: Response) => {
+      try {
+        const analytics = getAnalytics();
+        const metrics = await analytics.getMetrics();
+        res.json(metrics);
+      } catch (err) {
+        console.error('[admin] api metrics error:', err);
+        res.status(500).json({ error: 'Internal Server Error' });
       }
     },
   );

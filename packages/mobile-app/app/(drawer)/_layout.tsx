@@ -11,6 +11,7 @@ import {
   selectDonateOptions,
   selectShowLogin,
 } from "../../redux/slices/globalConfigSlice";
+import { selectIsAuthenticated } from "../../redux/slices/authSlice";
 import { usePasscode } from "../../hooks/usePasscode";
 import { EditPasscodeModal } from "../../components/passcode/PasscodeModal";
 import { LockScreen } from "../../components/passcode/LockScreen";
@@ -21,6 +22,7 @@ export default function DrawerLayout() {
   const colorScheme = useColorScheme();
   const donateOptions = useSelector(selectDonateOptions);
   const showLogin = useSelector(selectShowLogin);
+  const isAuthenticated = useSelector(selectIsAuthenticated);
   const { showPasscodeModal, setShowPasscodeModal, isLocked } = usePasscode();
 
   // Skip passcode check on web platform
@@ -108,6 +110,18 @@ export default function DrawerLayout() {
               <IconSymbol size={28} name="person.fill" color={color} />
             ),
             drawerItemStyle: { display: showLogin ? "flex" : "none" },
+          }}
+        />
+        <Drawer.Screen
+          name="admin"
+          options={{
+            title: "Admin",
+            drawerIcon: ({ color }: { color: string }) => (
+              <IconSymbol size={28} name="chart.bar.fill" color={color} />
+            ),
+            drawerItemStyle: {
+              display: isAuthenticated ? "flex" : "none",
+            },
           }}
         />
         <Drawer.Screen
