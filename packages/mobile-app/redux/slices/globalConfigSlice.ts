@@ -36,55 +36,69 @@ export const selectGlobalConfig = (state: {
 
 export const selectSentimentEnabled = createSelector(
   [selectGlobalConfig],
-  (globalConfig) => globalConfig.sentimentEnabled ?? false
+  (globalConfig) => globalConfig.sentimentEnabled ?? false,
 );
 
 export const selectOldDefaultModel = createSelector(
   [selectGlobalConfig],
-  (globalConfig) => globalConfig.previousDefaultModel
+  (globalConfig) => globalConfig.previousDefaultModel,
 );
 
 export const selectModels = createSelector(
   [selectGlobalConfig],
-  (globalConfig) => globalConfig.models
+  (globalConfig) => globalConfig.models,
+);
+
+/**
+ * Whether a given model slug supports PDF / document input, according to the
+ * last /api/global_config response (discovered dynamically from OpenRouter).
+ * Returns false when the model is unknown.
+ */
+export const selectModelSupportsDocuments = createSelector(
+  [selectModels, (_state: any, model: string) => model],
+  (models, model) =>
+    models.find((m) => m.model === model)?.supportsDocuments ?? false,
 );
 
 export const selectPrompts = createSelector(
   [selectGlobalConfig],
-  (globalConfig) => globalConfig.prompts
+  (globalConfig) => globalConfig.prompts,
 );
 
 export const selectQuote = createSelector(
   [selectGlobalConfig],
-  (globalConfig) => globalConfig.quote
+  (globalConfig) => globalConfig.quote,
 );
 
 export const selectDonateOptions = createSelector(
   [selectGlobalConfig],
-  (globalConfig) => globalConfig.donateOptions
+  (globalConfig) => globalConfig.donateOptions,
 );
 
 export const selectShowLogin = createSelector(
   [selectGlobalConfig],
-  (globalConfig) => globalConfig.showLogin
+  (globalConfig) => globalConfig.showLogin,
 );
 
 export const selectUserOnboarded = createSelector(
   [selectGlobalConfig],
-  (globalConfig) => globalConfig.userOnboarded
+  (globalConfig) => globalConfig.userOnboarded,
 );
 
 export const selectAppFirstLaunch = createSelector(
   [selectGlobalConfig],
-  (globalConfig) => globalConfig.appFirstLaunch
+  (globalConfig) => globalConfig.appFirstLaunch,
 );
 
 export const selectDefaultModel = createSelector(
   [selectGlobalConfig],
   (globalConfig) => {
     // Return the first model in the list as the default, or a hardcoded fallback
-    return globalConfig.models[0]?.model || "meta-llama/llama-3.2-90b-vision-instruct";
-  }
+    return (
+      globalConfig.models[0]?.model ||
+      "meta-llama/llama-3.2-90b-vision-instruct"
+    );
+  },
 );
 
 export default globalConfigSlice.reducer;

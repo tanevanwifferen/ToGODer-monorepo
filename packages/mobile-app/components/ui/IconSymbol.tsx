@@ -22,6 +22,7 @@ const MAPPING = {
   'message.fill': 'message',
   'share': 'share',
   'square.and.arrow.up': 'share',
+  'square.and.arrow.down': 'file-download',
   'folder': 'folder-open',
   'folder.fill': 'folder',
   'doc.text': 'description',
@@ -33,6 +34,7 @@ const MAPPING = {
   'plus.circle.fill': 'add-circle',
   'xmark.circle.fill': 'cancel',
   'checkmark.circle.fill': 'check-circle',
+  'chart.bar.fill': 'bar-chart',
 } as const;
 
 export type IconSymbolName = keyof typeof MAPPING;

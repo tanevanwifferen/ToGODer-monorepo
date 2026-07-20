@@ -36,9 +36,14 @@ import { HealthService } from "./health";
 import { v4 as uuidv4 } from "uuid";
 import { selectIsAuthenticated } from "../redux/slices/authSlice";
 import { selectHasFunds } from "../redux/slices/balanceSlice";
-import { selectDefaultModel } from "../redux/slices/globalConfigSlice";
+import {
+  selectDefaultModel,
+  selectModelSupportsDocuments,
+} from "../redux/slices/globalConfigSlice";
 import { setSentiment } from "../redux/slices/sentimentSlice";
 import { SentimentApiClient } from "../apiClients/SentimentApiClient";
+import { selectPdfAttachment, selectPdfSecret } from "../redux/slices/pdfUploadSlice";
+import { derivePdfKeyBase64 } from "../utils/pdfCrypto";
 
 const MAX_MEMORY_FETCH_LOOPS = 4;
 
@@ -64,6 +69,11 @@ export interface SendMessageStreamOptions {
   tools?: typeof ARTIFACT_TOOL_SCHEMAS;
   toolCallLoopCount?: number;
   signal?: AbortSignal;
+  /** Out-of-band cached PDF reference (uploaded separately; not in history) */
+  pdfCacheId?: string;
+  pdfName?: string;
+  /** Client-derived AES-256-GCM key (base64) for the persisted PDF */
+  pdfKey?: string;
   onChunk?: (content: string) => void;
   onComplete?: (message: ApiChatMessage) => void;
   onError?: (error: string) => void;
@@ -176,14 +186,17 @@ export class MessageService {
           // Analysis jobs are still running server-side (e.g. GPU cold
           // start); the backend keeps collecting them in the background, so
           // check back in a bit.
-          setTimeout(() => this.autoFetchSentiment(chatId, retriesLeft - 1), 45000);
+          setTimeout(
+            () => this.autoFetchSentiment(chatId, retriesLeft - 1),
+            45000,
+          );
         }
       })
       .catch((error) => {
         // Non-fatal background refresh; 402 just means credit ran out.
         console.log(
           "Sentiment auto-refresh skipped:",
-          error instanceof Error ? error.message : error
+          error instanceof Error ? error.message : error,
         );
       })
       .finally(() => {
@@ -226,13 +239,13 @@ export class MessageService {
       if (artifact.parentId && !artifactIds.has(artifact.parentId)) {
         // Parent doesn't exist, move to root
         console.log(
-          `Fixing orphaned artifact "${artifact.name}" - moving to root`
+          `Fixing orphaned artifact "${artifact.name}" - moving to root`,
         );
         store.dispatch(
           updateArtifact({
             id: artifact.id,
             updates: { parentId: null },
-          })
+          }),
         );
       }
     }
@@ -268,12 +281,62 @@ export class MessageService {
       return "/" + parts.join("/");
     };
 
-    return artifacts.map((artifact) => ({
-      path: buildPath(artifact),
-      name: artifact.name,
-      type: artifact.type,
-      mimeType: artifact.type === "file" ? "text/plain" : undefined,
-    }));
+    return artifacts.map((artifact) => {
+      const isPdf = artifact.name.toLowerCase().endsWith(".pdf");
+      return {
+        path: buildPath(artifact),
+        name: artifact.name,
+        type: artifact.type,
+        // PDF artifacts carry their MIME type and base64 content so the
+        // backend can send them as native file content parts to
+        // document-capable models.
+        mimeType:
+          artifact.type === "file"
+            ? isPdf
+              ? "application/pdf"
+              : "text/plain"
+            : undefined,
+        data: artifact.type === "file" && isPdf ? artifact.content : undefined,
+      } as ArtifactIndexItem;
+    });
+  }
+
+  /**
+   * Returns the artifactIndex for a chat, or undefined when the chat has no
+   * project (mirrors the existing "isAuthenticated && chat.projectId" guard).
+   */
+  private resolveArtifactIndex(
+    chatId: string,
+  ): ArtifactIndexItem[] | undefined {
+    const state = store.getState();
+    const isAuthenticated = selectIsAuthenticated(state);
+    const chat = state.chats.chats[chatId];
+    return isAuthenticated && chat?.projectId
+      ? this.buildArtifactIndex(chat.projectId)
+      : undefined;
+  }
+
+  /**
+   * Guard: a PDF may only be sent to a document-capable model. Never silently
+   * drop the attachment — warn the user and abort the send instead. Returns
+   * true when the send is allowed, false when it was blocked.
+   */
+  private guardPdfAttachment(
+    model: string,
+    artifactIndex: ArtifactIndexItem[] | undefined,
+  ): boolean {
+    const hasPdf = !!(
+      artifactIndex &&
+      artifactIndex.some((a) => a.mimeType === "application/pdf" && !!a.data)
+    );
+    if (!hasPdf) return true;
+    if (selectModelSupportsDocuments(store.getState(), model)) return true;
+    Toast.show({
+      type: "error",
+      text1: "PDF not supported",
+      text2: `This model can't read PDFs. Pick a document-capable model (marked 📄) to send a PDF.`,
+    });
+    return false;
   }
 
   /**
@@ -282,7 +345,7 @@ export class MessageService {
    */
   private handleArtifactToolCall(
     toolCall: ArtifactToolCall,
-    projectId: string
+    projectId: string,
   ): {
     message: string;
     artifactId?: string;
@@ -317,7 +380,7 @@ export class MessageService {
 
     // Find parent artifact for a given path
     const findParentForPath = (
-      path: string
+      path: string,
     ): { parentId: string | null; name: string } => {
       const parts = path.split("/").filter(Boolean);
       const name = parts.pop() || "";
@@ -333,7 +396,7 @@ export class MessageService {
 
     // Ensure all parent folders exist for a given path, creating them if needed
     const ensureParentFoldersExist = (
-      path: string
+      path: string,
     ): { parentId: string | null; name: string } => {
       const parts = path.split("/").filter(Boolean);
       const name = parts.pop() || "";
@@ -372,7 +435,7 @@ export class MessageService {
               name: folderName,
               type: "folder",
               parentId: currentParentId,
-            })
+            }),
           );
           createdFolders[currentPath] = newFolderId;
           currentParentId = newFolderId;
@@ -429,7 +492,7 @@ export class MessageService {
                 content: toolCall.arguments.content,
                 name: toolCall.arguments.name || existing.name,
               },
-            })
+            }),
           );
           return {
             message: `Updated artifact "${path}"`,
@@ -450,7 +513,7 @@ export class MessageService {
               type: "file",
               parentId,
               content: toolCall.arguments.content,
-            })
+            }),
           );
           return {
             message: `Created artifact "${path}"`,
@@ -526,13 +589,19 @@ export class MessageService {
           }
           // Prevent circular moves (moving folder into its own descendant)
           if (artifact.type === "folder") {
-            const isDescendant = (parentId: string | null, targetId: string): boolean => {
+            const isDescendant = (
+              parentId: string | null,
+              targetId: string,
+            ): boolean => {
               if (!parentId) return false;
               if (parentId === targetId) return true;
               const parent = artifacts.find((a) => a.id === parentId);
               return parent ? isDescendant(parent.parentId, targetId) : false;
             };
-            if (destArtifact.id === artifact.id || isDescendant(destArtifact.parentId, artifact.id)) {
+            if (
+              destArtifact.id === artifact.id ||
+              isDescendant(destArtifact.parentId, artifact.id)
+            ) {
               return {
                 message: `Cannot move folder "${path}" into itself or its descendant`,
                 artifactPath: path,
@@ -558,27 +627,38 @@ export class MessageService {
         const depth = toolCall.arguments.depth ?? 1;
 
         // Helper to get children at a specific depth
-        const listChildren = (parentId: string | null, currentDepth: number): Array<{name: string; type: string; id: string; path: string}> => {
+        const listChildren = (
+          parentId: string | null,
+          currentDepth: number,
+        ): Array<{ name: string; type: string; id: string; path: string }> => {
           const children = artifacts.filter((a) => a.parentId === parentId);
-          const result: Array<{name: string; type: string; id: string; path: string}> = [];
+          const result: Array<{
+            name: string;
+            type: string;
+            id: string;
+            path: string;
+          }> = [];
 
           for (const child of children) {
-            const childPath = parentId === null
-              ? `/${child.name}`
-              : (() => {
-                  const parts: string[] = [child.name];
-                  let current = child;
-                  while (current.parentId) {
-                    const parent = artifacts.find((a) => a.id === current.parentId);
-                    if (parent) {
-                      parts.unshift(parent.name);
-                      current = parent;
-                    } else {
-                      break;
+            const childPath =
+              parentId === null
+                ? `/${child.name}`
+                : (() => {
+                    const parts: string[] = [child.name];
+                    let current = child;
+                    while (current.parentId) {
+                      const parent = artifacts.find(
+                        (a) => a.id === current.parentId,
+                      );
+                      if (parent) {
+                        parts.unshift(parent.name);
+                        current = parent;
+                      } else {
+                        break;
+                      }
                     }
-                  }
-                  return "/" + parts.join("/");
-                })();
+                    return "/" + parts.join("/");
+                  })();
 
             result.push({
               name: child.name,
@@ -623,9 +703,10 @@ export class MessageService {
         const listing = JSON.stringify(contents, null, 2);
 
         return {
-          message: contents.length > 0
-            ? `Directory listing for "${path}":\n${listing}`
-            : `Directory "${path}" is empty`,
+          message:
+            contents.length > 0
+              ? `Directory listing for "${path}":\n${listing}`
+              : `Directory "${path}" is empty`,
           artifactPath: path,
           isError: false,
           operation: "read" as const,
@@ -705,14 +786,45 @@ export class MessageService {
       const hasFunds = selectHasFunds(updatedState);
 
       // Build artifact index and tools only if authenticated
-      const artifactIndex = (isAuthenticated && chat.projectId)
-        ? this.buildArtifactIndex(chat.projectId)
+      const artifactIndex =
+        isAuthenticated && chat.projectId
+          ? this.buildArtifactIndex(chat.projectId)
+          : undefined;
+      const tools = isAuthenticated
+        ? this.buildTools(chat.projectId)
         : undefined;
-      const tools = isAuthenticated ? this.buildTools(chat.projectId) : undefined;
+
+      // Determine the effective model (auth users pick; logged-out get the
+      // default) and gate PDF attachments before adding the user message.
+      const effectiveModel = isAuthenticated
+        ? updatedState.userSettings.model
+        : selectDefaultModel(updatedState);
+      if (!this.guardPdfAttachment(effectiveModel, artifactIndex)) {
+        onError?.(
+          "This model can't read PDFs. Pick a document-capable model (marked 📄) to send a PDF.",
+        );
+        return;
+      }
 
       // Memory is only available when authenticated and there are funds
       const memoryEnabled = isAuthenticated && hasFunds;
       const memories = memoryEnabled ? chat.memories : [];
+
+      // Out-of-band PDF attachment (uploaded separately; not in history).
+      // Only sent for document-capable models; the upload was already gated.
+      // The attachment PERSISTS across messages: the server keeps the
+      // ciphertext and the client re-derives the key from its secret + the
+      // filename on every send, so no re-upload is needed between turns.
+      const pdfAttachment = selectPdfAttachment(updatedState, chatId);
+      const pdfCacheId = pdfAttachment?.id;
+      const pdfName = pdfAttachment?.name;
+      const pdfKey =
+        pdfAttachment && pdfAttachment.name
+          ? (() => {
+              const secret = selectPdfSecret(store.getState());
+              return secret ? derivePdfKeyBase64(secret, pdfAttachment.name) : undefined;
+            })()
+          : undefined;
 
       // Send the message and get response
       if (useStreaming) {
@@ -724,6 +836,9 @@ export class MessageService {
           memoryLoopLimitReached,
           artifactIndex,
           tools,
+          pdfCacheId,
+          pdfName,
+          pdfKey,
           signal,
           onChunk,
           onComplete,
@@ -739,6 +854,9 @@ export class MessageService {
           memoryLoopLimitReached,
           artifactIndex,
           tools,
+          pdfCacheId,
+          pdfName,
+          pdfKey,
           signal,
           onComplete,
           onError,
@@ -748,6 +866,12 @@ export class MessageService {
       // Update balance after successful send
       const balanceService = BalanceService.getInstance();
       await balanceService.updateBalanceIfAuthenticated();
+
+      // NOTE: the PDF attachment is intentionally NOT cleared here. It must
+      // persist across messages: the user attaches once and the document stays
+      // available for every subsequent turn (server holds the ciphertext; the
+      // client re-derives the key each send). It is cleared only when the user
+      // removes it (usePdfAttachment.removeAttachment) or the chat is deleted.
     } catch (error) {
       this.clearCurrentRequest();
 
@@ -779,7 +903,7 @@ export class MessageService {
    * Sends a message with streaming support
    */
   private async sendMessageWithStreaming(
-    options: SendMessageStreamOptions
+    options: SendMessageStreamOptions,
   ): Promise<void> {
     const {
       chatId,
@@ -791,6 +915,9 @@ export class MessageService {
       tools,
       toolCallLoopCount = 0,
       signal,
+      pdfCacheId,
+      pdfName,
+      pdfKey,
       onChunk,
       onComplete,
       onError,
@@ -851,7 +978,7 @@ export class MessageService {
             chatId,
             messageIndex: assistantIndex,
             content: accumulated,
-          })
+          }),
         );
       }
     };
@@ -907,7 +1034,7 @@ export class MessageService {
             content: "",
             signature: undefined,
           } as ApiChatMessage,
-        })
+        }),
       );
       assistantIndex = preLength;
       placeholderCreated = true;
@@ -940,7 +1067,10 @@ export class MessageService {
         memoryLoopLimitReached,
         artifactIndex,
         tools,
-        signal
+        pdfCacheId,
+        pdfName,
+        pdfKey,
+        signal,
       )) {
         switch (evt.type) {
           case "chunk": {
@@ -964,7 +1094,7 @@ export class MessageService {
                   chatId,
                   messageIndex: assistantIndex,
                   signature: evt.data,
-                })
+                }),
               );
             }
             break;
@@ -974,7 +1104,7 @@ export class MessageService {
             // Server-signed snapshot of the custom instructions used for this
             // response; the slice only appends it when the content changed.
             store.dispatch(
-              appendInstructionSnapshot({ chatId, snapshot: evt.data })
+              appendInstructionSnapshot({ chatId, snapshot: evt.data }),
             );
             break;
           }
@@ -990,19 +1120,22 @@ export class MessageService {
           case "memory_request": {
             const rawKeys = evt.data?.keys ?? [];
             const keys = rawKeys.filter((x: string) =>
-              StorageService.keyIsValid(x)
+              StorageService.keyIsValid(x),
             );
 
             store.dispatch(
               addMemories({
                 id: chatId,
                 memories: keys,
-              })
+              }),
             );
 
-            if (memoryLoopLimitReached || memoryLoopCount >= MAX_MEMORY_FETCH_LOOPS) {
+            if (
+              memoryLoopLimitReached ||
+              memoryLoopCount >= MAX_MEMORY_FETCH_LOOPS
+            ) {
               console.warn(
-                "MessageService: memory request received but fetch limit reached"
+                "MessageService: memory request received but fetch limit reached",
               );
               cancelFlush();
               return;
@@ -1029,6 +1162,9 @@ export class MessageService {
               memoryLoopLimitReached: nextLimitReached,
               artifactIndex: updatedArtifactIndex,
               tools: updatedTools,
+              pdfCacheId,
+              pdfName,
+              pdfKey,
               signal,
               onChunk,
               onComplete,
@@ -1135,7 +1271,10 @@ export class MessageService {
           case "tool_result": {
             // Backend-executed tool result - log for visibility
             const toolResult = evt.data as ToolResultEvent;
-            console.log(`Backend tool result for "${toolResult.name}":`, toolResult.is_error ? "error" : "success");
+            console.log(
+              `Backend tool result for "${toolResult.name}":`,
+              toolResult.is_error ? "error" : "success",
+            );
             break;
           }
 
@@ -1146,7 +1285,7 @@ export class MessageService {
             const errorMsg =
               typeof evt.data === "string"
                 ? evt.data
-                : evt.data?.message ?? "Streaming error occurred";
+                : (evt.data?.message ?? "Streaming error occurred");
 
             console.error("Streaming error:", evt.data);
             onError?.(errorMsg);
@@ -1181,12 +1320,15 @@ export class MessageService {
             chatId,
             messageIndex: assistantIndex,
             tool_calls: assistantToolCalls,
-          })
+          }),
         );
       }
 
       // If there were tool calls, send results back to AI for chaining
-      if (toolCallResults.length > 0 && toolCallLoopCount < MAX_TOOL_CALL_LOOPS) {
+      if (
+        toolCallResults.length > 0 &&
+        toolCallLoopCount < MAX_TOOL_CALL_LOOPS
+      ) {
         // Create proper tool messages for each result. These must come
         // immediately after the assistant message with tool_calls.
         for (const result of toolCallResults) {
@@ -1199,7 +1341,9 @@ export class MessageService {
           };
 
           // Add to chat history
-          store.dispatch(addMessage({ id: chatId, message: toolResultMessage }));
+          store.dispatch(
+            addMessage({ id: chatId, message: toolResultMessage }),
+          );
         }
 
         // Append deferred artifact operation notes AFTER tool_result messages
@@ -1221,7 +1365,9 @@ export class MessageService {
         const updatedTools = this.buildTools(updatedChat.projectId);
 
         // Continue the conversation with tool results
-        console.log(`Tool call loop ${toolCallLoopCount + 1}: sending ${toolCallResults.length} results back to AI`);
+        console.log(
+          `Tool call loop ${toolCallLoopCount + 1}: sending ${toolCallResults.length} results back to AI`,
+        );
 
         await this.sendMessageWithStreaming({
           chatId,
@@ -1232,6 +1378,9 @@ export class MessageService {
           artifactIndex: updatedArtifactIndex,
           tools: updatedTools,
           toolCallLoopCount: toolCallLoopCount + 1,
+          pdfCacheId,
+          pdfName,
+          pdfKey,
           signal,
           onChunk,
           onComplete,
@@ -1293,7 +1442,7 @@ export class MessageService {
    * Sends a message without streaming (fallback)
    */
   private async sendMessageWithoutStreaming(
-    options: Omit<SendMessageStreamOptions, "onChunk">
+    options: Omit<SendMessageStreamOptions, "onChunk">,
   ): Promise<void> {
     const {
       chatId,
@@ -1304,6 +1453,9 @@ export class MessageService {
       artifactIndex,
       tools,
       signal,
+      pdfCacheId,
+      pdfName,
+      pdfKey,
       onComplete,
       onError,
     } = options;
@@ -1366,7 +1518,10 @@ export class MessageService {
         memoryLoopCount,
         memoryLoopLimitReached,
         artifactIndex,
-        tools
+        tools,
+        pdfCacheId,
+        pdfName,
+        pdfKey,
       );
 
       if ("requestForMemory" in response) {
@@ -1377,12 +1532,15 @@ export class MessageService {
           addMemories({
             id: chatId,
             memories: keys,
-          })
+          }),
         );
 
-        if (memoryLoopLimitReached || memoryLoopCount >= MAX_MEMORY_FETCH_LOOPS) {
+        if (
+          memoryLoopLimitReached ||
+          memoryLoopCount >= MAX_MEMORY_FETCH_LOOPS
+        ) {
           console.warn(
-            "MessageService: non-streaming memory request ignored - limit reached"
+            "MessageService: non-streaming memory request ignored - limit reached",
           );
           return;
         }
@@ -1407,6 +1565,9 @@ export class MessageService {
           memoryLoopLimitReached: nextLimitReached,
           artifactIndex: updatedArtifactIndex,
           tools: updatedTools,
+          pdfCacheId,
+          pdfName,
+          pdfKey,
           onComplete,
           onError,
         });
@@ -1437,7 +1598,7 @@ export class MessageService {
           appendInstructionSnapshot({
             chatId,
             snapshot: response.instructionsSnapshot,
-          })
+          }),
         );
       }
 
@@ -1538,10 +1699,38 @@ export class MessageService {
       const memories = memoryEnabled ? chat.memories : [];
 
       // Build artifact index and tools only if authenticated
-      const artifactIndex = (isAuthenticated && chat.projectId)
-        ? this.buildArtifactIndex(chat.projectId)
+      const artifactIndex =
+        isAuthenticated && chat.projectId
+          ? this.buildArtifactIndex(chat.projectId)
+          : undefined;
+      const tools = isAuthenticated
+        ? this.buildTools(chat.projectId)
         : undefined;
-      const tools = isAuthenticated ? this.buildTools(chat.projectId) : undefined;
+
+      // Gate PDF attachments: regenerate must also refuse to send a PDF to a
+      // non-document-capable model.
+      const effectiveModel = isAuthenticated
+        ? state.userSettings.model
+        : selectDefaultModel(state);
+      if (!this.guardPdfAttachment(effectiveModel, artifactIndex)) {
+        onError?.(
+          "This model can't read PDFs. Pick a document-capable model (marked 📄) to send a PDF.",
+        );
+        return;
+      }
+
+      // Persisted PDF attachment (kept across turns). Re-derive the key from
+      // the client secret + filename so the server can decrypt on send.
+      const pdfAttachment = selectPdfAttachment(state, chatId);
+      const pdfCacheId = pdfAttachment?.id;
+      const pdfName = pdfAttachment?.name;
+      const pdfKey =
+        pdfAttachment && pdfAttachment.name
+          ? (() => {
+              const secret = selectPdfSecret(store.getState());
+              return secret ? derivePdfKeyBase64(secret, pdfAttachment.name) : undefined;
+            })()
+          : undefined;
 
       // Send the message and get response
       if (useStreaming) {
@@ -1551,6 +1740,9 @@ export class MessageService {
           memories,
           artifactIndex,
           tools,
+          pdfCacheId,
+          pdfName,
+          pdfKey,
           signal,
           onChunk,
           onComplete,
@@ -1564,6 +1756,9 @@ export class MessageService {
           memories,
           artifactIndex,
           tools,
+          pdfCacheId,
+          pdfName,
+          pdfKey,
           signal,
           onComplete,
           onError,
@@ -1588,7 +1783,9 @@ export class MessageService {
       }
 
       const errorMessage =
-        error instanceof Error ? error.message : "Failed to regenerate response";
+        error instanceof Error
+          ? error.message
+          : "Failed to regenerate response";
       console.error("MessageService.regenerateResponse error:", error);
       onError?.(errorMessage);
       Toast.show({
@@ -1610,7 +1807,7 @@ export class MessageService {
         title,
         messages: [],
         memories: [],
-      })
+      }),
     );
   }
 
@@ -1637,7 +1834,7 @@ export class MessageService {
   public showMessageNotification(
     title: string,
     message: string,
-    type: "success" | "error" | "info" = "info"
+    type: "success" | "error" | "info" = "info",
   ): void {
     Toast.show({
       type,

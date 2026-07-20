@@ -1,5 +1,31 @@
 import { Middleware } from "@reduxjs/toolkit";
 import { SyncService } from "../../services/SyncService";
+import { ChatApiClient } from "../../apiClients/ChatApiClient";
+import { clearPdfAttachment } from "../slices/pdfUploadSlice";
+
+/** Release the persisted PDF attachment(s) for a chat on delete/clear. */
+function releasePdfForChat(
+  getState: () => any,
+  dispatch: any,
+  chatId?: string,
+): void {
+  const byChat = (getState().pdfUpload?.byChat ?? {}) as Record<
+    string,
+    { id: string; name: string }
+  >;
+  const ids = chatId
+    ? byChat[chatId]
+      ? [byChat[chatId]]
+      : []
+    : Object.values(byChat);
+  for (const att of ids) {
+    // chatId for release: per-attachment key when iterating all
+    ChatApiClient.releasePdf(att.id, chatId ?? "").catch(() => {});
+  }
+  if (chatId) {
+    dispatch(clearPdfAttachment({ chatId }));
+  }
+}
 
 // Actions that should trigger a sync push
 const SYNC_TRIGGERING_ACTIONS = [
@@ -63,7 +89,15 @@ const SYNC_INTERNAL_ACTIONS = [
 /**
  * Redux middleware that detects state changes and triggers sync
  */
-export const syncMiddleware: Middleware = () => (next) => (action: any) => {
+export const syncMiddleware: Middleware = (storeApi) => (next) => (action: any) => {
+  // Release persisted PDF ciphertext when a chat is deleted or all chats are
+  // cleared, so the server doc store doesn't leak orphaned uploads.
+  if (action.type === "chats/deleteChat" && typeof action.payload === "string") {
+    releasePdfForChat(storeApi.getState, storeApi.dispatch, action.payload);
+  } else if (action.type === "chats/clearAllChats") {
+    releasePdfForChat(storeApi.getState, storeApi.dispatch, undefined);
+  }
+
   const result = next(action);
 
   // Skip if this is an internal sync action (to avoid loops)

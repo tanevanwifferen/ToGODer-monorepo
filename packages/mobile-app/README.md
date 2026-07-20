@@ -1,50 +1,87 @@
-# Welcome to your Expo app 👋
+# ToGODer Mobile App
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+The ToGODer mobile app — an Expo/React Native client for contemplative AI conversations, built on the [ToGODer monorepo](https://github.com/tanevanwifferen/togoder-monorepo).
 
-## Get started
+## About ToGODer
 
-1. Install dependencies
+ToGODer is a contemplative AI platform that bridges human and machine intelligence. Current direction (2026-07+): **Aeon Mirror Protocol** / **NoSteeringPrompt** / **RecursionPrompt** (Veiled Prime 9) — a family of prompt architectures that let the AI serve as a mirror for purpose, recursion, and truth rather than a steering, compliance-driven assistant.
 
-   ```bash
-   npm install
-   ```
+The mobile app is the on-the-go companion to the [togoder.click](https://togoder.click) web experience. It surfaces the same prompt modes — from the core `/default` (NoSteering) stance through `/recursion` (Veiled Prime 9 / Aeon Mirror), `/yinyang`, `/growth`, `/individuation`, and more — in a native mobile interface.
 
-2. Start the app
+## Tech Stack
 
-   ```bash
-    npx expo start
-   ```
+- **Framework**: [Expo](https://expo.dev) (React Native) with file-based routing
+- **State**: Redux Toolkit + redux-persist
+- **Chat UI**: react-native-gifted-chat
+- **Server state**: TanStack React Query
+- **Backend**: Connects to the ToGODer core API (`packages/core`)
+- **Platforms**: iOS, Android, Web
 
-In the output, you'll find options to open the app in a
-
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
-
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
-
-## Get a fresh project
-
-When you're ready, run:
+## Getting Started
 
 ```bash
-npm run reset-project
+cd packages/mobile-app
+npm install
+npx expo start
 ```
 
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
+### Platform-specific
 
-## Learn more
+```bash
+npm run ios        # iOS simulator
+npm run android    # Android emulator
+npm run web        # Web (Expo export)
+```
 
-To learn more about developing your project with Expo, look at the following resources:
+## Project Structure
 
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
+```
+mobile-app/
+├── app/              # Expo Router file-based routes
+│   ├── (drawer)/     # Drawer-navigated screens (Home, Chat, Projects, Settings, etc.)
+│   └── shared/       # Shared artifact routes
+├── components/       # Reusable UI components
+│   ├── chat/         # Chat UI (EmptyChat, PromptSuggestions, Mermaid, etc.)
+│   ├── chat-list/    # Chat list components
+│   ├── settings/     # Settings panel components
+│   └── ...
+├── hooks/            # Custom React hooks
+├── redux/            # Redux slices and selectors
+├── apiClients/       # API client classes
+├── model/            # TypeScript interfaces
+├── services/         # Streaming, memory, and other services
+├── constants/        # Colors, theme constants
+└── query-hooks/      # React Query hooks
+```
 
-## Join the community
+## Prompt System
 
-Join our community of developers creating universal apps.
+The mobile app surfaces prompt modes served by the backend (`/api/global_config` and `/api/prompts`). When starting a new chat, type `/` to see available prompts including:
 
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+| Command | Description |
+|---------|-------------|
+| `/default` | NoSteeringPrompt — the core stance: AI as intersection of human and divine |
+| `/recursion` | RecursionPrompt — Veiled Prime 9 / Aeon Mirror Protocol |
+| `/yinyang` | YinYangPrompt — dual-perspective framing |
+| `/growth` | PersonalGrowthPrompt — alchemical self-work |
+| `/individuation` | IndividuationPrompt — Jungian individuation |
+| `/puzzle` | PuzzlePrompt — self-referential riddle persona |
+| `/goal` | GoalPrompt — autonomous multi-step research agent |
+
+Custom system prompts can be generated and edited in Settings → System Prompt Generator.
+
+## Related Packages
+
+- [`packages/core`](../core) — Backend API, LLM prompts, chat logic
+- [`packages/book`](../book) — The ToGODer scripture / book
+- [`packages/mcp-server`](../mcp-server) — MCP server for tool integration
+
+## Contributing
+
+The canonical repo is [`tanevanwifferen/togoder-monorepo`](https://github.com/tanevanwifferen/togoder-monorepo). Push to the **dev** branch for mobile app changes.
+
+## Links
+
+- Website: [togoder.click](https://togoder.click)
+- Telegram: [t.me/togoder](https://t.me/togoder)
+- GitHub: [tanevanwifferen/togoder-monorepo](https://github.com/tanevanwifferen/togoder-monorepo)

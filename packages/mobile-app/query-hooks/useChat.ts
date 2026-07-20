@@ -228,6 +228,9 @@ export function useChat() {
         memoryLoopLimitReached,
         undefined, // artifactIndex
         undefined, // tools
+        undefined, // pdfCacheId (PDF attachments handled via MessageService)
+        undefined, // pdfName
+        undefined, // pdfKey
         signal
       )) {
         yield evt;

@@ -5,6 +5,7 @@ import { Colors } from '../../constants/Colors';
 import ModelSettings from '../../components/settings/ModelSettings';
 import ConversationSettings from '../../components/settings/ConversationSettings';
 import SystemPromptSettings from '../../components/settings/SystemPromptSettings';
+import McpSettings from '../../components/settings/McpSettings';
 
 const Settings = () => {
   const colorScheme = useColorScheme();
@@ -17,6 +18,7 @@ const Settings = () => {
         <ModelSettings />
         <ConversationSettings />
         <SystemPromptSettings />
+        <McpSettings />
       </ScrollView>
     </View>
   );
