@@ -152,14 +152,23 @@ struct ShareFolderView: View {
         error = nil
         defer { isSharing = false }
 
-        let request = ShareArtifactRequest(
-            title: title.trimmingCharacters(in: .whitespacesAndNewlines),
-            description: description.isEmpty ? nil : description.trimmingCharacters(in: .whitespacesAndNewlines),
-            content: combinedContent,
-            visibility: visibility
-        )
+        let trimmedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        let content = combinedContent
 
         do {
+            // Step 1: Get a server-issued signature for the combined folder content
+            let signReq = ArtifactSignRequest(title: trimmedTitle, content: content)
+            let signResponse: ArtifactSignResponse = try await apiClient.post("/share/artifact/sign", body: signReq)
+
+            // Step 2: Share the folder content as an artifact
+            let request = ShareArtifactRequest(
+                title: trimmedTitle,
+                description: description.isEmpty ? nil : description.trimmingCharacters(in: .whitespacesAndNewlines),
+                content: content,
+                visibility: visibility,
+                artifactSignature: signResponse.signature
+            )
+
             let shared: SharedArtifact = try await apiClient.post("/share/artifact", body: request)
             shareURL = Configuration.shareBaseURL.appendingPathComponent("artifact/\(shared.id)").absoluteString
         } catch {

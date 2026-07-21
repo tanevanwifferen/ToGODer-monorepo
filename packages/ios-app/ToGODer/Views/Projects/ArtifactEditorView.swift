@@ -5,11 +5,13 @@ struct ArtifactEditorView: View {
 
     @EnvironmentObject var artifactService: ArtifactService
     @EnvironmentObject var chatService: ChatService
+    @EnvironmentObject var authService: AuthService
     @State private var editedName: String = ""
     @State private var editedContent: String = ""
     @State private var hasChanges = false
     @State private var showingDeleteConfirmation = false
     @State private var showingShareSheet = false
+    @State private var showingPayloadPublish = false
     @Environment(\.dismiss) private var dismiss
 
     private var artifact: Artifact? {
@@ -52,8 +54,19 @@ struct ArtifactEditorView: View {
             .toolbar {
                 ToolbarItem(placement: .primaryAction) {
                     HStack(spacing: 16) {
-                        Button {
-                            showingShareSheet = true
+                        Menu {
+                            Button {
+                                showingShareSheet = true
+                            } label: {
+                                Label("Share", systemImage: "square.and.arrow.up")
+                            }
+                            if authService.isAdmin {
+                                Button {
+                                    showingPayloadPublish = true
+                                } label: {
+                                    Label("Publish to Payload", systemImage: "paperplane")
+                                }
+                            }
                         } label: {
                             Image(systemName: "square.and.arrow.up")
                         }

@@ -132,14 +132,22 @@ struct ShareArtifactView: View {
         error = nil
         defer { isSharing = false }
 
-        let request = ShareArtifactRequest(
-            title: title.trimmingCharacters(in: .whitespacesAndNewlines),
-            description: description.isEmpty ? nil : description.trimmingCharacters(in: .whitespacesAndNewlines),
-            content: artifactContent,
-            visibility: visibility
-        )
+        let trimmedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
 
         do {
+            // Step 1: Get a server-issued signature for the artifact content
+            let signReq = ArtifactSignRequest(title: trimmedTitle, content: artifactContent)
+            let signResponse: ArtifactSignResponse = try await apiClient.post("/share/artifact/sign", body: signReq)
+
+            // Step 2: Share the artifact with the signature
+            let request = ShareArtifactRequest(
+                title: trimmedTitle,
+                description: description.isEmpty ? nil : description.trimmingCharacters(in: .whitespacesAndNewlines),
+                content: artifactContent,
+                visibility: visibility,
+                artifactSignature: signResponse.signature
+            )
+
             let shared: SharedArtifact = try await apiClient.post("/share/artifact", body: request)
             shareURL = Configuration.shareBaseURL.appendingPathComponent("artifact/\(shared.id)").absoluteString
         } catch {

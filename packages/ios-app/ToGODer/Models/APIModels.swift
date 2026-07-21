@@ -363,6 +363,16 @@ struct ShareArtifactRequest: Codable {
     var description: String?
     let content: String
     let visibility: String
+    let artifactSignature: String
+}
+
+struct ArtifactSignRequest: Codable {
+    let title: String
+    let content: String
+}
+
+struct ArtifactSignResponse: Codable {
+    let signature: String
 }
 
 struct SharedArtifact: Codable, Identifiable {
