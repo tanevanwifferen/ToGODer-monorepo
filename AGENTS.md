@@ -28,9 +28,15 @@ bd sync               # Sync with git
    git push
    git status  # MUST show "up to date with origin"
    ```
-5. **Clean up** - Clear stashes, prune remote branches
-6. **Verify** - All changes committed AND pushed
-7. **Hand off** - Provide context for next session
+5. **Rebuild and restart** — the running container to reflect your changes:
+   ```bash
+   docker-compose up -d --build
+   ```
+   Verify the service came up healthy (`docker-compose ps`) before
+   reporting done.
+6. **Clean up** - Clear stashes, prune remote branches
+7. **Verify** - All changes committed AND pushed
+8. **Hand off** - Provide context for next session
 
 **CRITICAL RULES:**
 - Work is NOT complete until `git push` succeeds
@@ -75,9 +81,15 @@ bd close <id>         # Complete work
    git push
    git status  # MUST show "up to date with origin"
    ```
-5. **Clean up** - Clear stashes, prune remote branches
-6. **Verify** - All changes committed AND pushed
-7. **Hand off** - Provide context for next session
+5. **Rebuild and restart** — the running container to reflect your changes:
+   ```bash
+   docker-compose up -d --build
+   ```
+   Verify the service came up healthy (`docker-compose ps`) before
+   reporting done.
+6. **Clean up** - Clear stashes, prune remote branches
+7. **Verify** - All changes committed AND pushed
+8. **Hand off** - Provide context for next session
 
 **CRITICAL RULES:**
 - Work is NOT complete until `git push` succeeds

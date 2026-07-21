@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useCallback } from "react";
 import {
   StyleSheet,
   View,
@@ -16,6 +16,7 @@ import {
   moveArtifact,
   Artifact,
 } from "../../redux/slices/artifactsSlice";
+import { selectIsAdmin } from "../../redux/slices/authSlice";
 import { RootState } from "../../redux/store";
 import { ArtifactTree } from "../artifact-tree";
 import { IconSymbol } from "../ui/IconSymbol";
@@ -29,6 +30,7 @@ import { ShareApiClient } from "../../apiClients/ShareApiClient";
 import {
   ShareRequest,
   SharedArtifact,
+  SharedFolder,
   SignedInstructionSnapshot,
 } from "../../model/ShareTypes";
 
@@ -59,9 +61,27 @@ export function ProjectArtifactsTab({ projectId }: ProjectArtifactsTabProps) {
   const [shareModalVisible, setShareModalVisible] = useState(false);
   const [sharingArtifact, setSharingArtifact] = useState<Artifact | null>(null);
   const [sharedArtifact, setSharedArtifact] = useState<SharedArtifact | null>(null);
+  const [sharedFolder, setSharedFolder] = useState<SharedFolder | null>(null);
   const [isSharing, setIsSharing] = useState(false);
 
   const allChats = useSelector((state: RootState) => state.chats.chats);
+  const allArtifacts = useSelector((state: RootState) => state.artifacts.artifacts);
+  const isAdmin = useSelector(selectIsAdmin);
+
+  // Recursively collect all file artifact IDs inside a folder.
+  const collectFileIdsInFolder = useCallback(
+    (folderId: string): string[] => {
+      const children = Object.values(allArtifacts).filter(
+        (a) => a.parentId === folderId && !a.deleted,
+      );
+      return children.flatMap((child) =>
+        child.type === "folder"
+          ? collectFileIdsInFolder(child.id)
+          : [child.id],
+      );
+    },
+    [allArtifacts],
+  );
 
   // Signed custom-instruction snapshots from every chat in this project,
   // merged chronologically with consecutive duplicates dropped. They document
@@ -150,6 +170,7 @@ export function ProjectArtifactsTab({ projectId }: ProjectArtifactsTabProps) {
   const handleShareArtifact = (artifact: Artifact) => {
     setSharingArtifact(artifact);
     setSharedArtifact(null);
+    setSharedFolder(null);
     setShareModalVisible(true);
   };
 
@@ -157,25 +178,77 @@ export function ProjectArtifactsTab({ projectId }: ProjectArtifactsTabProps) {
     if (!sharingArtifact) return;
     setIsSharing(true);
     try {
-      const result = await ShareApiClient.shareArtifact({
-        title: request.title,
-        description: request.description,
-        content: sharingArtifact.content ?? "",
-        visibility: request.visibility,
-        instructionHistory:
-          projectInstructionHistory.length > 0
-            ? projectInstructionHistory
-            : undefined,
-      });
-      setSharedArtifact(result);
-      Toast.show({
-        type: "success",
-        text1: "Artifact shared successfully",
-      });
+      if (sharingArtifact.type === "folder") {
+        // Folder sharing: collect all descendant file artifacts, sign+share
+        // each one, then create a shared folder containing them.
+        const fileIds = collectFileIdsInFolder(sharingArtifact.id);
+        const files = fileIds
+          .map((id) => allArtifacts[id])
+          .filter((a): a is Artifact => !!a && a.type === "file");
+
+        // Sign and share each file artifact
+        const sharedArtifactIds: string[] = [];
+        for (const file of files) {
+          if (!file.content) continue;
+          const { signature } = await ShareApiClient.signArtifact(
+            file.name,
+            file.content,
+          );
+          const shared = await ShareApiClient.shareArtifact({
+            title: file.name,
+            description: undefined,
+            content: file.content,
+            visibility: request.visibility,
+            instructionHistory:
+              projectInstructionHistory.length > 0
+                ? projectInstructionHistory
+                : undefined,
+            artifactSignature: signature,
+          });
+          sharedArtifactIds.push(shared.id);
+        }
+
+        // Create the shared folder
+        const folder = await ShareApiClient.shareFolder({
+          title: request.title,
+          description: request.description,
+          visibility: request.visibility,
+          artifactIds: sharedArtifactIds,
+        });
+        setSharedFolder(folder);
+        Toast.show({
+          type: "success",
+          text1: "Folder shared successfully",
+          text2: `${sharedArtifactIds.length} artifact(s) included`,
+        });
+      } else {
+        // Single artifact sharing with signature gate
+        const content = sharingArtifact.content ?? "";
+        const { signature } = await ShareApiClient.signArtifact(
+          request.title,
+          content,
+        );
+        const result = await ShareApiClient.shareArtifact({
+          title: request.title,
+          description: request.description,
+          content,
+          visibility: request.visibility,
+          instructionHistory:
+            projectInstructionHistory.length > 0
+              ? projectInstructionHistory
+              : undefined,
+          artifactSignature: signature,
+        });
+        setSharedArtifact(result);
+        Toast.show({
+          type: "success",
+          text1: "Artifact shared successfully",
+        });
+      }
     } catch (error) {
       Toast.show({
         type: "error",
-        text1: "Failed to share artifact",
+        text1: `Failed to share ${sharingArtifact.type}`,
         text2: error instanceof Error ? error.message : "Unknown error occurred",
       });
     } finally {
@@ -330,13 +403,37 @@ export function ProjectArtifactsTab({ projectId }: ProjectArtifactsTabProps) {
           setShareModalVisible(false);
           setSharingArtifact(null);
           setSharedArtifact(null);
+          setSharedFolder(null);
         }}
         onShare={handleConfirmShare}
         initialTitle={sharingArtifact?.name ?? ""}
         isLoading={isSharing}
-        sharedId={sharedArtifact?.id}
-        entityLabel="Artifact"
-        pathPrefix="artifact"
+        sharedId={sharedFolder?.id ?? sharedArtifact?.id}
+        entityLabel={
+          sharingArtifact?.type === "folder" ? "Folder" : "Artifact"
+        }
+        pathPrefix={
+          sharingArtifact?.type === "folder" ? "folder" : "artifact"
+        }
+        isAdmin={isAdmin}
+        payloadType={sharingArtifact?.type === "folder" ? "folder" : "artifact"}
+        onPublishToPayload={
+          (sharedFolder?.id ?? sharedArtifact?.id) && sharingArtifact
+            ? async () => {
+                const publishId =
+                  sharedFolder?.id ?? sharedArtifact?.id!;
+                if (sharingArtifact.type === "folder") {
+                  await ShareApiClient.markFolderAsPayload(publishId!);
+                } else {
+                  await ShareApiClient.markArtifactAsPayload(publishId!);
+                }
+                Toast.show({
+                  type: "success",
+                  text1: "Published to Payload",
+                });
+              }
+            : undefined
+        }
       />
     </View>
   );

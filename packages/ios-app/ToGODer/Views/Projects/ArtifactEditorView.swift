@@ -4,10 +4,12 @@ struct ArtifactEditorView: View {
     let artifactId: String
 
     @EnvironmentObject var artifactService: ArtifactService
+    @EnvironmentObject var chatService: ChatService
     @State private var editedName: String = ""
     @State private var editedContent: String = ""
     @State private var hasChanges = false
     @State private var showingDeleteConfirmation = false
+    @State private var showingShareSheet = false
     @Environment(\.dismiss) private var dismiss
 
     private var artifact: Artifact? {
@@ -49,16 +51,38 @@ struct ArtifactEditorView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .primaryAction) {
-                    Button("Save") {
-                        saveChanges()
+                    HStack(spacing: 16) {
+                        Button {
+                            showingShareSheet = true
+                        } label: {
+                            Image(systemName: "square.and.arrow.up")
+                        }
+                        Button("Save") {
+                            saveChanges()
+                        }
+                        .disabled(!hasChanges)
                     }
-                    .disabled(!hasChanges)
                 }
             }
             .onAppear {
                 editedName = artifact.name
                 editedContent = artifact.content ?? ""
                 hasChanges = false
+            }
+            .sheet(isPresented: $showingShareSheet) {
+                ShareArtifactView(
+                    artifactName: artifact.name,
+                    artifactContent: artifact.content ?? "",
+                    apiClient: chatService.apiClient
+                )
+            }
+            .sheet(isPresented: $showingPayloadPublish) {
+                PayloadPublishView(
+                    contentType: .artifact,
+                    contentId: artifact.id,
+                    contentTitle: artifact.name,
+                    apiClient: chatService.apiClient
+                )
             }
             .alert("Delete File?", isPresented: $showingDeleteConfirmation) {
                 Button("Delete", role: .destructive) {

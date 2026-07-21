@@ -5,10 +5,16 @@ struct ArtifactsView: View {
     var parentId: String? = nil
 
     @EnvironmentObject var artifactService: ArtifactService
+    @EnvironmentObject var chatService: ChatService
+    @EnvironmentObject var authService: AuthService
     @State private var showingNewFolder = false
     @State private var showingNewFile = false
     @State private var newItemName = ""
     @State private var artifactToDelete: Artifact?
+    @State private var artifactToShare: Artifact?
+    @State private var artifactToPayload: Artifact?
+    @State private var folderToShare: Artifact?
+    @State private var folderToPayload: Artifact?
 
     private var items: [Artifact] {
         artifactService.childrenOf(parentId, projectId: projectId)
@@ -38,6 +44,25 @@ struct ArtifactsView: View {
                             Label("Delete", systemImage: "trash")
                         }
                     }
+                    .contextMenu {
+                        Button {
+                            folderToShare = artifact
+                        } label: {
+                            Label("Share Folder", systemImage: "square.and.arrow.up")
+                        }
+                        if authService.isAdmin {
+                            Button {
+                                folderToPayload = artifact
+                            } label: {
+                                Label("Publish to Payload", systemImage: "paperplane")
+                            }
+                        }
+                        Button(role: .destructive) {
+                            artifactToDelete = artifact
+                        } label: {
+                            Label("Delete", systemImage: "trash")
+                        }
+                    }
                 } else {
                     NavigationLink {
                         ArtifactEditorView(artifactId: artifact.id)
@@ -46,6 +71,25 @@ struct ArtifactsView: View {
                         Label(artifact.name, systemImage: "doc.text")
                     }
                     .swipeActions(edge: .trailing) {
+                        Button(role: .destructive) {
+                            artifactToDelete = artifact
+                        } label: {
+                            Label("Delete", systemImage: "trash")
+                        }
+                    }
+                    .contextMenu {
+                        Button {
+                            artifactToShare = artifact
+                        } label: {
+                            Label("Share", systemImage: "square.and.arrow.up")
+                        }
+                        if authService.isAdmin {
+                            Button {
+                                artifactToPayload = artifact
+                            } label: {
+                                Label("Publish to Payload", systemImage: "paperplane")
+                            }
+                        }
                         Button(role: .destructive) {
                             artifactToDelete = artifact
                         } label: {
@@ -122,6 +166,38 @@ struct ArtifactsView: View {
             } else {
                 Text("This action cannot be undone.")
             }
+        }
+        .sheet(item: $artifactToShare) { artifact in
+            ShareArtifactView(
+                artifactName: artifact.name,
+                artifactContent: artifact.content ?? "",
+                apiClient: chatService.apiClient
+            )
+        }
+        .sheet(item: $folderToShare) { folder in
+            ShareFolderView(
+                folderName: folder.name,
+                folderId: folder.id,
+                projectId: projectId,
+                artifactService: artifactService,
+                apiClient: chatService.apiClient
+            )
+        }
+        .sheet(item: $artifactToPayload) { artifact in
+            PayloadPublishView(
+                contentType: .artifact,
+                contentId: artifact.id,
+                contentTitle: artifact.name,
+                apiClient: chatService.apiClient
+            )
+        }
+        .sheet(item: $folderToPayload) { folder in
+            PayloadPublishView(
+                contentType: .folder,
+                contentId: folder.id,
+                contentTitle: folder.name,
+                apiClient: chatService.apiClient
+            )
         }
     }
 }

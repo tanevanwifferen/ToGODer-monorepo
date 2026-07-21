@@ -9,9 +9,11 @@ import { useDispatch, useSelector } from 'react-redux';
 import { Colors } from '../../constants/Colors';
 import { useShareConversation } from '../../query-hooks/useSharedConversations';
 import { ShareModal } from '../shared/ShareModal';
+import { ShareApiClient } from '../../apiClients/ShareApiClient';
 import { ApiChatMessage } from '../../model/ChatRequest';
 import { ShareRequest, SignedMessage } from '../../model/ShareTypes';
 import { selectCurrentChat } from '../../redux/slices/chatSelectors';
+import { selectIsAdmin } from '../../redux/slices/authSlice';
 import { recordShare } from '../../redux/slices/chatsSlice';
 import Toast from 'react-native-toast-message';
 import { useAuth } from '../../hooks/useAuth';
@@ -52,6 +54,7 @@ export function ChatHeader({ title = 'Chat', onBack, messages }: ChatHeaderProps
   } = useShareConversation();
 
   const currentChat = useSelector(selectCurrentChat);
+  const isAdmin = useSelector(selectIsAdmin);
   const dispatch = useDispatch();
 
   // Re-publishing never touches earlier instances: each publish is a fresh
@@ -157,6 +160,21 @@ export function ChatHeader({ title = 'Chat', onBack, messages }: ChatHeaderProps
         isLoading={isLoading}
         sharedId={sharedConversation?.id}
         shareHistory={currentChat?.shareHistory}
+        isAdmin={isAdmin}
+        payloadType="chat"
+        onPublishToPayload={
+          sharedConversation?.id
+            ? async () => {
+                await ShareApiClient.markChatAsPayload(
+                  sharedConversation.id,
+                );
+                Toast.show({
+                  type: 'success',
+                  text1: 'Published to Payload',
+                });
+              }
+            : undefined
+        }
       />
     </>
   );

@@ -41,6 +41,10 @@ interface ShareModalProps {
   // Earlier publishes of this item, oldest first. Shown so users can revisit
   // or copy links of previous versions (each publish is its own instance).
   shareHistory?: ShareRecord[];
+  // Admin-only Payload publish support
+  isAdmin?: boolean;
+  payloadType?: 'chat' | 'artifact' | 'folder';
+  onPublishToPayload?: () => Promise<void>;
 }
 
 export function ShareModal({
@@ -54,6 +58,9 @@ export function ShareModal({
   entityLabel = 'Conversation',
   pathPrefix,
   shareHistory = [],
+  isAdmin = false,
+  payloadType,
+  onPublishToPayload,
 }: ShareModalProps) {
   const colorScheme = useColorScheme();
   const theme = Colors[colorScheme ?? 'light'];
@@ -63,6 +70,7 @@ export function ShareModal({
   const [visibility, setVisibility] = useState<ShareVisibility>('PRIVATE');
   const [showCopiedMessage, setShowCopiedMessage] = useState(false);
   const [copiedHistoryId, setCopiedHistoryId] = useState<string | null>(null);
+  const [payloadPublishing, setPayloadPublishing] = useState(false);
 
   useEffect(() => {
     if (visible) {
@@ -270,6 +278,44 @@ export function ShareModal({
                   {showCopiedMessage ? 'Copied!' : 'Tap to copy'}
                 </ThemedText>
               </Pressable>
+            </View>
+          )}
+
+          {/* Admin-only Publish to Payload */}
+          {sharedId && isAdmin && payloadType && (
+            <View style={styles.urlContainer}>
+              <ThemedText style={styles.label}>
+                Publish to Payload (admin)
+              </ThemedText>
+              <TouchableOpacity
+                style={[
+                  styles.payloadButton,
+                  { backgroundColor: theme.tint },
+                ]}
+                onPress={async () => {
+                  if (!onPublishToPayload) return;
+                  setPayloadPublishing(true);
+                  try {
+                    await onPublishToPayload();
+                  } finally {
+                    setPayloadPublishing(false);
+                  }
+                }}
+                disabled={payloadPublishing}
+              >
+                {payloadPublishing ? (
+                  <ActivityIndicator color="white" />
+                ) : (
+                  <ThemedText
+                    style={[
+                      styles.payloadButtonText,
+                      { color: colorScheme === 'light' ? 'white' : theme.text },
+                    ]}
+                  >
+                    Publish to Payload
+                  </ThemedText>
+                )}
+              </TouchableOpacity>
             </View>
           )}
 
@@ -492,6 +538,14 @@ const styles = StyleSheet.create({
   },
   shareButtonText: {
     color: 'white',
+    fontWeight: 'bold',
+  },
+  payloadButton: {
+    padding: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  payloadButtonText: {
     fontWeight: 'bold',
   },
 });

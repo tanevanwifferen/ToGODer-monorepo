@@ -9,6 +9,7 @@ model User {
   id                String           @id @default(uuid())
   sharedChats       SharedChat[]
   sharedArtifacts   SharedArtifact[]
+  sharedFolders     SharedFolder[]
   email             String        @unique
   password          String
   verified          Boolean       @default(false)
@@ -75,6 +76,7 @@ model SharedChat {
   views              Int      @default(0)
   visibility         String   @default("PUBLIC") // Can be "PUBLIC" or "PRIVATE"
   instructionHistory String? // JSON blob of signed {content, timestamp, signature} custom-instruction snapshots
+  publishedToPayload Boolean  @default(false) // Set true when published to Payload (admin action)
 }
 
 // table for shared artifacts (project files shared as standalone documents)
@@ -89,6 +91,36 @@ model SharedArtifact {
   views              Int      @default(0)
   visibility         String   @default("PUBLIC") // Can be "PUBLIC" or "PRIVATE"
   instructionHistory String? // JSON blob of signed {content, timestamp, signature} custom-instruction snapshots
+  artifactSignature  String? // HMAC signature proving the artifact was AI-generated (not hand-written)
+  publishedToPayload Boolean           @default(false) // Set true when published to Payload (admin action)
+  sharedFolderItems   SharedFolderItem[]
+}
+
+// table for shared folders (collections of artifacts shared together)
+model SharedFolder {
+  id                 String            @id @default(uuid())
+  ownerId            String
+  owner              User              @relation(fields: [ownerId], references: [id])
+  title              String
+  description        String?
+  createdAt          DateTime          @default(now())
+  views              Int               @default(0)
+  visibility         String            @default("PUBLIC")
+  items              SharedFolderItem[]
+  publishedToPayload Boolean           @default(false)
+}
+
+// individual item within a shared folder (references a SharedArtifact)
+model SharedFolderItem {
+  id          String        @id @default(uuid())
+  folderId    String
+  folder      SharedFolder  @relation(fields: [folderId], references: [id], onDelete: Cascade)
+  artifactId  String
+  artifact    SharedArtifact @relation(fields: [artifactId], references: [id], onDelete: Cascade)
+  sortOrder   Int           @default(0)
+
+  @@index([folderId])
+  @@index([artifactId])
 }
 
 // table for MCP servers (per-user, HTTP-based MCP server connections)

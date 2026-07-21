@@ -11,6 +11,7 @@ struct ChatView: View {
     @State private var editText = ""
     @State private var showShareSheet = false
     @State private var showVoiceChat = false
+    @State private var showPayloadPublish = false
     @FocusState private var isInputFocused: Bool
 
     private var chat: Chat? {
@@ -51,8 +52,19 @@ struct ChatView: View {
         .toolbar {
             if authService.isAuthenticated, let chat, !chat.activeMessages.isEmpty {
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button {
-                        showShareSheet = true
+                    Menu {
+                        Button {
+                            showShareSheet = true
+                        } label: {
+                            Label("Share", systemImage: "square.and.arrow.up")
+                        }
+                        if authService.isAdmin {
+                            Button {
+                                showPayloadPublish = true
+                            } label: {
+                                Label("Publish to Payload", systemImage: "paperplane")
+                            }
+                        }
                     } label: {
                         Image(systemName: "square.and.arrow.up")
                     }
@@ -63,6 +75,14 @@ struct ChatView: View {
             if let chat {
                 ShareChatView(chat: chat, apiClient: chatService.apiClient)
             }
+        }
+        .sheet(isPresented: $showPayloadPublish) {
+            PayloadPublishView(
+                contentType: .conversation,
+                contentId: chatId,
+                contentTitle: chat?.displayTitle ?? "Conversation",
+                apiClient: chatService.apiClient
+            )
         }
         .fullScreenCover(isPresented: $showVoiceChat) {
             VoiceChatView(chatId: chatId)
