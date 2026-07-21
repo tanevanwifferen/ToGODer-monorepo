@@ -1,5 +1,8 @@
 import Foundation
 
+/// Empty body for POST requests that don't need a payload.
+struct EmptyBody: Codable {}
+
 enum APIError: LocalizedError {
     case invalidURL
     case invalidResponse

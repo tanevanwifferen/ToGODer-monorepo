@@ -73,7 +73,7 @@ struct ChatView: View {
         }
         .sheet(isPresented: $showShareSheet) {
             if let chat {
-                ShareChatView(chat: chat, apiClient: chatService.apiClient)
+                ShareChatView(chat: chat, apiClient: chatService.apiClient, isAdmin: authService.isAdmin)
             }
         }
         .sheet(isPresented: $showPayloadPublish) {

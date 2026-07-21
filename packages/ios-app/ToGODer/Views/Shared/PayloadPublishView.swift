@@ -100,10 +100,17 @@ struct PayloadPublishView: View {
         defer { isPublishing = false }
 
         do {
-            try await apiClient.post(
-                "/payload/publish",
-                body: PublishToPayloadRequest(type: contentType.rawValue, id: contentId)
-            )
+            let path: String
+            switch contentType {
+            case .conversation:
+                path = "/admin/payload/chat/\(contentId)/mark"
+            case .artifact:
+                path = "/admin/payload/artifact/\(contentId)/mark"
+            case .folder:
+                path = "/admin/payload/folder/\(contentId)/mark"
+            }
+            // Fire-and-forget POST to the admin Payload mark endpoint
+            let _: [String: String]? = try await apiClient.post(path, body: EmptyBody())
             published = true
         } catch {
             self.error = error.localizedDescription
