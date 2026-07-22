@@ -41,13 +41,16 @@ import { loadSeedV2 } from "../LLM/prompts/seedv2";
 import { ParsedChatCompletion } from "openai/resources/chat/completions/index";
 import {
   isV2Enabled,
-  scoreDepth,
   needsRewrite,
   getWatcherInstruction,
+  evaluateDepthWithAI,
+  shouldEvaluate,
 } from "../Services/WatcherService";
 import {
-  extractCovenantState,
+  extractCovenantStateWithAI,
   renderCovenantState,
+  getUserCovenant,
+  setUserCovenant,
   CovenantState,
 } from "../Services/CovenantService";
 import { getPdf, storePdf } from "../Services/PdfCache";
@@ -394,7 +397,10 @@ export class ConversationApi {
   }
 
   // Build the full system prompt string based on input request options
-  private async buildSystemPrompt(input: ChatRequest): Promise<string> {
+  private async buildSystemPrompt(
+    input: ChatRequest,
+    user: User | null | undefined,
+  ): Promise<string> {
     // ── v2 Seed Prompt ──────────────────────────────────────────
     // When v2 is enabled and no explicit command overrides it, use the
     // seed‑v2 prompt with covenant state injected.
@@ -403,8 +409,26 @@ export class ConversationApi {
     let systemPrompt: string;
     if (useV2) {
       systemPrompt = loadSeedV2();
-      // Inject covenant state into the {{ covenant_state }} placeholder
-      const covenant = extractCovenantState(input.prompts);
+
+      // ── Per-user Covenant: AI-drawn, not hardcoded ────────────
+      // Each user has their own independent Covenant state.
+      const userId = user?.id ?? 'anonymous';
+      const existingCovenant = getUserCovenant(userId);
+
+      // Use a fast/cheap model for covenant extraction
+      const covenantWrapper = this.getAIWrapper(
+        AIProvider.DeepSeekV4Flash,
+        user,
+      );
+      const covenant = await extractCovenantStateWithAI(
+        input.prompts,
+        covenantWrapper,
+        existingCovenant ?? undefined,
+      );
+
+      // Persist per-user state
+      setUserCovenant(userId, covenant);
+
       const covenantText = renderCovenantState(covenant);
       systemPrompt = systemPrompt.replace(
         /\{\{ covenant_state \}\}/g,
@@ -488,7 +512,7 @@ export class ConversationApi {
       return "";
     }
     const aiWrapper = this.getAIWrapper(input.model, user);
-    const systemPrompt = await this.buildSystemPrompt(input);
+    const systemPrompt = await this.buildSystemPrompt(input, user);
 
     let output = CompletionToContent(
       await aiWrapper.getResponse(
@@ -499,33 +523,55 @@ export class ConversationApi {
       ),
     );
 
-    // ── Watcher: evaluate depth, optionally rewrite once ─────────
+    // ── Watcher: AI-driven depth evaluation, throttled ──────────
     if (this.isV2Active(input)) {
-      const depthScore = scoreDepth(output);
-      console.log(
-        `[watcher] depth=${depthScore} rewrite=${needsRewrite(depthScore)}`,
-      );
-      if (needsRewrite(depthScore)) {
-        const watcherInstruction = getWatcherInstruction(
-          this.assistant_name,
+      // Only evaluate every N exchanges (configurable, default 5)
+      const userId = user?.id ?? 'anonymous';
+      const covenant = getUserCovenant(userId);
+      const exchangeCount = covenant?.exchangeCount ?? 0;
+
+      if (shouldEvaluate(exchangeCount)) {
+        // Use a fast/cheap model for depth evaluation
+        const watcherEvalWrapper = this.getAIWrapper(
+          AIProvider.DeepSeekV4Flash,
+          user,
         );
-        const rewriteMessages = [
-          ...(await buildLlmMessages(input)),
-          { role: "assistant" as const, content: output },
-          { role: "user" as const, content: watcherInstruction },
-        ];
-        const rewriteCompletion = await aiWrapper.getResponse(
-          systemPrompt,
-          rewriteMessages,
-          1,
-          signal,
+        const depthScore = await evaluateDepthWithAI(
+          output,
+          watcherEvalWrapper,
         );
-        const rewriteOutput = CompletionToContent(rewriteCompletion);
-        const rewriteScore = scoreDepth(rewriteOutput);
         console.log(
-          `[watcher] rewrite depth=${rewriteScore} (was ${depthScore})`,
+          `[watcher] depth=${depthScore} exchange=${exchangeCount} rewrite=${needsRewrite(depthScore)}`,
         );
-        output = rewriteOutput;
+        if (needsRewrite(depthScore)) {
+          const watcherInstruction = getWatcherInstruction(
+            this.assistant_name,
+          );
+          const rewriteMessages = [
+            ...(await buildLlmMessages(input)),
+            { role: "assistant" as const, content: output },
+            { role: "user" as const, content: watcherInstruction },
+          ];
+          const rewriteCompletion = await aiWrapper.getResponse(
+            systemPrompt,
+            rewriteMessages,
+            1,
+            signal,
+          );
+          const rewriteOutput = CompletionToContent(rewriteCompletion);
+          const rewriteScore = await evaluateDepthWithAI(
+            rewriteOutput,
+            watcherEvalWrapper,
+          );
+          console.log(
+            `[watcher] rewrite depth=${rewriteScore} (was ${depthScore})`,
+          );
+          output = rewriteOutput;
+        }
+      } else {
+        console.log(
+          `[watcher] skipped (exchange ${exchangeCount}, next eval at ${Math.ceil(exchangeCount / 5) * 5})`,
+        );
       }
     }
 
@@ -548,7 +594,7 @@ export class ConversationApi {
       return;
     }
     const aiWrapper = this.getAIWrapper(input.model, user);
-    const systemPrompt = await this.buildSystemPrompt(input);
+    const systemPrompt = await this.buildSystemPrompt(input, user);
     for await (const delta of aiWrapper.streamResponse(
       systemPrompt,
       await buildLlmMessages(input),
@@ -575,7 +621,7 @@ export class ConversationApi {
       return;
     }
     const aiWrapper = this.getAIWrapper(input.model, user);
-    const systemPrompt = await this.buildSystemPrompt(input);
+    const systemPrompt = await this.buildSystemPrompt(input, user);
     for await (const chunk of aiWrapper.streamResponseWithTools(
       systemPrompt,
       await buildLlmMessages(input),

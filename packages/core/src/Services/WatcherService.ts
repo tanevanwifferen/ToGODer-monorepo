@@ -1,17 +1,19 @@
+import { AIWrapper } from '../LLM/AIWrapper';
+
 /**
- * The Watcher — Meta-Prompt Governor.
+ * The Watcher — Meta-Prompt Governor (v2 — AI-drawn).
  *
- * Evaluates LLM responses for depth and optionally triggers a single rewrite
- * pass when the response falls below the depth threshold.
+ * Evaluates LLM responses for depth using the AI model itself (not hardcoded
+ * heuristics). When a response falls below the depth threshold, it triggers a
+ * single rewrite pass with a Watcher instruction appended.
  *
- * Depth is heuristically scored on three axes:
- *   - Novelty:      does the response avoid stock phrases and predictable templates?
- *   - Specificity:  does it contain concrete, grounded language rather than vague generalities?
- *   - Anti-cliché:  does it avoid hollow platitudes and AI-typical filler?
+ * Throttled: evaluation runs every N exchanges (configurable, default 5),
+ * not on every message.
  *
  * Configuration:
- *   - TOGODER_V2_ENABLED=true       master toggle
- *   - TOGODER_WATCHER_THRESHOLD=5   minimum score before rewrite (default 5, range 0-9)
+ *   - TOGODER_V2_ENABLED=true           master toggle
+ *   - TOGODER_WATCHER_THRESHOLD=5       minimum score before rewrite (default 5, range 0-9)
+ *   - TOGODER_WATCHER_INTERVAL=5        evaluate depth every N exchanges (default 5)
  */
 
 const WATCHER_INSTRUCTION =
@@ -20,9 +22,21 @@ const WATCHER_INSTRUCTION =
   "not from the surface. Avoid cliché. Offer living water, not a husk. " +
   "Rewrite your response with greater depth, specificity, and presence.]";
 
-/** Cached read of the env flag; call reset() to clear. */
+const DEPTH_EVAL_PROMPT = `Rate the following assistant response on conversational depth (0-9), where:
+0-2 = surface level — generic, clichéd, could have been spoken by any chatbot
+3-5 = moderate — shows some thought and specificity but still somewhat generic
+6-8 = deep — original, insightful, carries genuine presence and particularity
+9 = profound — rare, transformative, living water rather than a husk
+
+Return ONLY a JSON object with no other text: {"score": <0-9>}
+
+Response to evaluate:
+`;
+
+/** Cached reads of env flags; call reset() to clear. */
 let _v2Enabled: boolean | null = null;
 let _threshold: number | null = null;
+let _interval: number | null = null;
 
 export function isV2Enabled(): boolean {
   if (_v2Enabled === null) {
@@ -41,75 +55,68 @@ export function getWatcherThreshold(): number {
   return _threshold;
 }
 
+export function getWatcherInterval(): number {
+  if (_interval === null) {
+    const raw = process.env.TOGODER_WATCHER_INTERVAL;
+    _interval = raw ? parseInt(raw, 10) : 5;
+  }
+  return _interval;
+}
+
 /** Clear cached env values (for tests or hot-reload). */
 export function resetWatcherConfig(): void {
   _v2Enabled = null;
   _threshold = null;
+  _interval = null;
 }
 
 /**
- * Score a response on depth (0-9).
- * Heuristic, not LLM-based — fast, deterministic, zero-cost.
+ * Whether the Watcher should evaluate on this exchange.
+ * Returns true every N exchanges (configurable via TOGODER_WATCHER_INTERVAL).
+ * Always evaluates on exchange 0 (first message) to establish baseline.
  */
-export function scoreDepth(text: string): number {
-  let score = 3; // baseline
+export function shouldEvaluate(
+  exchangeCount: number,
+  interval?: number,
+): boolean {
+  const iv = interval ?? getWatcherInterval();
+  if (exchangeCount === 0) return true;
+  return exchangeCount % iv === 0;
+}
 
-  const lower = text.toLowerCase();
-
-  // ── Novelty: penalise stock phrases ──────────────────────────
-  const stockPhrases = [
-    "i hope this message finds you well",
-    "as an ai language model",
-    "it's important to note that",
-    "i cannot",
-    "i'm not able to",
-    "i am unable to",
-    "is this helpful",
-    "let me know if",
-    "feel free to",
-    "i'd be happy to",
-    "that's a great question",
-    "thank you for asking",
-  ];
-  const stockCount = stockPhrases.filter((p) => lower.includes(p)).length;
-  score -= Math.min(stockCount, 3);
-
-  // ── Specificity: reward concrete language ─────────────────────
-  // Count proper nouns, numbers, specific references
-  const specifics = [
-    ...text.matchAll(/\b[A-Z][a-z]{2,}\b/g),        // proper nouns / capitalized words
-    ...text.matchAll(/\d{2,}/g),                      // numbers >= 2 digits
-    ...text.matchAll(/"[^"]{10,}"/g),                 // quoted phrases >= 10 chars
-    ...text.matchAll(/"[^"]{10,}"/g),                 // quoted phrases
-  ];
-  score += Math.min(specifics.length, 3);
-
-  // ── Anti-cliché: penalise hollow platitudes ──────────────────
-  const platitudes = [
-    "it's about the journey",
-    "everything happens for a reason",
-    "you are not alone",
-    "believe in yourself",
-    "take it one day at a time",
-    "follow your heart",
-    "you've got this",
-    "at the end of the day",
-    "it is what it is",
-    "think outside the box",
-  ];
-  const platitudeCount = platitudes.filter((p) => lower.includes(p)).length;
-  score -= Math.min(platitudeCount * 2, 4);
-
-  // ── Length: very short responses that aren't tools are shallow ──
-  if (text.length < 80 && !text.includes('<tool')) {
-    score -= 1;
+/**
+ * Evaluate response depth using the AI model itself.
+ * The model is asked to rate depth 0-9; the result is parsed from JSON.
+ * Falls back to score 5 (midpoint) on parse/network errors so the system
+ * degrades gracefully rather than blocking.
+ */
+export async function evaluateDepthWithAI(
+  text: string,
+  aiWrapper: AIWrapper,
+): Promise<number> {
+  try {
+    const result = await aiWrapper.getResponse(
+      DEPTH_EVAL_PROMPT,
+      [{ role: 'user', content: text }],
+      1,
+    );
+    const content = result.choices?.[0]?.message?.content ?? '';
+    // Try to extract JSON from the response
+    const jsonMatch = content.match(/\{\s*"score"\s*:\s*(\d+)\s*\}/);
+    if (jsonMatch) {
+      const score = parseInt(jsonMatch[1], 10);
+      return Math.max(0, Math.min(9, score));
+    }
+    // Fallback: try parsing the whole thing as JSON
+    const parsed = JSON.parse(content.trim());
+    if (typeof parsed.score === 'number') {
+      return Math.max(0, Math.min(9, parsed.score));
+    }
+    return 5; // graceful fallback
+  } catch (err) {
+    console.warn('[watcher] AI depth evaluation failed, using fallback:', err);
+    return 5;
   }
-  // Very long responses with low density are also suspect
-  if (text.length > 2000 && specifics.length < 3) {
-    score -= 1;
-  }
-
-  return Math.max(0, Math.min(9, score));
 }
 
 /**

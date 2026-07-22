@@ -1,14 +1,15 @@
 import { ChatCompletionMessageParam } from 'openai/resources/index';
+import { AIWrapper } from '../LLM/AIWrapper';
 
 /**
- * The Recursive Covenant — conversation-driven prompt evolution.
+ * The Recursive Covenant — conversation-driven prompt evolution (v2 — AI-drawn).
  *
- * Extracts lightweight metadata from the ongoing conversation (themes,
- * emotional tenor, key topics) and stores it so the Seed Prompt can
- * reference it, varying its expression per conversation.
+ * Uses the AI model itself to extract themes, emotional tenor, and depth
+ * from the ongoing conversation. State is per-user (keyed by userId) and
+ * stored in-memory — no cross-user leakage.
  *
- * State is bounded (never grows unboundedly) and stored in the existing
- * memory system under a reserved `__covenant__` key.
+ * State is bounded (never grows unboundedly) and injected into the v2 seed
+ * prompt via the {{ covenant_state }} placeholder.
  */
 
 export interface CovenantState {
@@ -25,115 +26,130 @@ export interface CovenantState {
 }
 
 const MAX_THEMES = 3;
-const THEME_KEYWORDS: Record<string, string[]> = {
-  grief: ['loss', 'died', 'gone', 'grief', 'mourning', 'miss', 'funeral', 'passed away'],
-  purpose: ['purpose', 'meaning', 'direction', 'calling', 'path', 'why am i', 'destiny'],
-  relationships: ['relationship', 'partner', 'friend', 'family', 'love', 'connection', 'alone', 'lonely'],
-  identity: ['who am i', 'identity', 'self', 'know myself', 'real me', 'authentic'],
-  transformation: ['change', 'transform', 'grow', 'evolve', 'becoming', 'different', 'new me'],
-  suffering: ['pain', 'suffering', 'struggle', 'hard', 'difficult', 'can\'t', 'overwhelmed'],
-  seeking: ['seek', 'search', 'find', 'looking for', 'quest', 'explore', 'curious'],
-  peace: ['peace', 'calm', 'quiet', 'still', 'rest', 'balance', 'harmony'],
-  faith: ['god', 'faith', 'spiritual', 'divine', 'pray', 'soul', 'sacred', 'belief'],
-  fear: ['fear', 'afraid', 'scared', 'anxious', 'worry', 'terror', 'dread'],
-};
 
-const TENOR_KEYWORDS: Record<string, string[]> = {
-  seeking: ['how', 'what', 'why', 'wondering', 'curious', 'explore', 'tell me'],
-  wrestling: ['but', 'however', 'struggle', 'conflict', 'can\'t', 'don\'t know', 'confused'],
-  peaceful: ['grateful', 'thankful', 'peace', 'accept', 'okay', 'good', 'happy'],
-  turbulent: ['angry', 'frustrated', 'upset', 'hurt', 'pain', 'cry', 'scream'],
-  resigned: ['whatever', 'fine', 'doesn\'t matter', 'give up', 'tired', 'exhausted'],
-  hopeful: ['hope', 'maybe', 'possible', 'dream', 'someday', 'believe', 'trust'],
-};
+/**
+ * Per-user Covenant state store.
+ * Keyed by userId — each user has independent prompt evolution.
+ * In-memory only (resets on container restart). For production, this
+ * could be backed by the memory/DB system.
+ */
+const userStates = new Map<string, CovenantState>();
 
-/** Extract covenant state from recent conversation messages. */
-export function extractCovenantState(
+const COVENANT_EXTRACTION_PROMPT = `Analyze the following user messages from a spiritual-companion conversation.
+Extract and return ONLY a JSON object (no other text):
+
+{
+  "themes": ["top 1-3 recurring themes, lowercase, e.g. grief, purpose, relationships, identity, transformation, suffering, seeking, peace, faith, fear"],
+  "tenor": "one of: seeking, wrestling, peaceful, turbulent, resigned, hopeful",
+  "depth": <0-5, where 0=surface small-talk, 3=meaningful reflection, 5=profound existential engagement>
+}
+
+User messages:
+`;
+
+/**
+ * Load the Covenant state for a specific user.
+ * Returns null if no state exists yet.
+ */
+export function getUserCovenant(userId: string): CovenantState | null {
+  return userStates.get(userId) ?? null;
+}
+
+/**
+ * Save Covenant state for a specific user.
+ */
+export function setUserCovenant(userId: string, state: CovenantState): void {
+  userStates.set(userId, state);
+}
+
+/**
+ * Clear Covenant state for a user (e.g. on new conversation).
+ */
+export function clearUserCovenant(userId: string): void {
+  userStates.delete(userId);
+}
+
+/**
+ * Extract covenant state from recent conversation messages using the AI model.
+ * The model identifies themes, emotional tenor, and depth from user messages.
+ * Falls back gracefully on errors.
+ */
+export async function extractCovenantStateWithAI(
   messages: ChatCompletionMessageParam[],
+  aiWrapper: AIWrapper,
   existing?: CovenantState,
-): CovenantState {
+): Promise<CovenantState> {
   const userMessages = messages
     .filter((m) => m.role === 'user')
-    .map((m) => (typeof m.content === 'string' ? m.content.toLowerCase() : ''));
+    .map((m) => (typeof m.content === 'string' ? m.content : ''))
+    .filter((c) => c.length > 0);
 
-  const allUserText = userMessages.join(' ');
-
-  // ── Theme detection ──────────────────────────────────────────
-  const themeScores = new Map<string, number>();
-  for (const [theme, keywords] of Object.entries(THEME_KEYWORDS)) {
-    let score = 0;
-    for (const kw of keywords) {
-      const regex = new RegExp(`\\b${kw}\\b`, 'gi');
-      const matches = allUserText.match(regex);
-      if (matches) score += matches.length;
-    }
-    if (score > 0) themeScores.set(theme, score);
+  // If no user messages, return existing state or a fresh one
+  if (userMessages.length === 0) {
+    return (
+      existing ?? {
+        themes: [],
+        tenor: 'seeking',
+        depth: 0,
+        exchangeCount: 0,
+        lastUpdated: new Date().toISOString(),
+      }
+    );
   }
 
-  const newThemes = [...themeScores.entries()]
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, MAX_THEMES)
-    .map(([t]) => t);
+  // Only send the most recent messages to keep the evaluation focused
+  // (last 10 user messages max, joined with newlines)
+  const recentMessages = userMessages.slice(-10).join('\n\n---\n\n');
 
-  // Merge with existing: keep previous themes that still show up, add new ones
-  const existingThemes = existing?.themes ?? [];
-  const mergedThemes = [...new Set([...newThemes, ...existingThemes])].slice(
-    0,
-    MAX_THEMES,
-  );
+  try {
+    const result = await aiWrapper.getResponse(
+      COVENANT_EXTRACTION_PROMPT,
+      [{ role: 'user', content: recentMessages }],
+      1,
+    );
+    const content = result.choices?.[0]?.message?.content ?? '';
 
-  // ── Tenor detection ──────────────────────────────────────────
-  const tenorScores = new Map<string, number>();
-  for (const [tenor, keywords] of Object.entries(TENOR_KEYWORDS)) {
-    let score = 0;
-    for (const kw of keywords) {
-      const regex = new RegExp(`\\b${kw}\\b`, 'gi');
-      const matches = allUserText.match(regex);
-      if (matches) score += matches.length;
+    // Try to extract JSON
+    const jsonMatch = content.match(/\{[\s\S]*\}/);
+    if (jsonMatch) {
+      const parsed = JSON.parse(jsonMatch[0]);
+      const newThemes: string[] = (parsed.themes || [])
+        .filter((t: unknown) => typeof t === 'string')
+        .slice(0, MAX_THEMES);
+
+      // Merge with existing themes
+      const existingThemes = existing?.themes ?? [];
+      const mergedThemes = [
+        ...new Set([...newThemes, ...existingThemes]),
+      ].slice(0, MAX_THEMES);
+
+      const tenor =
+        typeof parsed.tenor === 'string' ? parsed.tenor : 'seeking';
+      const depth =
+        typeof parsed.depth === 'number'
+          ? Math.max(0, Math.min(5, parsed.depth))
+          : 0;
+
+      return {
+        themes: mergedThemes,
+        tenor,
+        depth,
+        exchangeCount: (existing?.exchangeCount ?? 0) + userMessages.length,
+        lastUpdated: new Date().toISOString(),
+      };
     }
-    if (score > 0) tenorScores.set(tenor, score);
+  } catch (err) {
+    console.warn(
+      '[covenant] AI extraction failed, using graceful fallback:',
+      err,
+    );
   }
 
-  const topTenor =
-    [...tenorScores.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? 'seeking';
-
-  // ── Depth estimation ─────────────────────────────────────────
-  // Depth grows with: message count, use of abstract/questioning language
-  const questionRatio =
-    userMessages.filter((m) => m.includes('?')).length /
-    Math.max(1, userMessages.length);
-  const abstractTerms = [
-    'meaning',
-    'purpose',
-    'soul',
-    'god',
-    'truth',
-    'reality',
-    'existence',
-    'consciousness',
-    'death',
-    'life',
-    'love',
-    'fear',
-  ];
-  const abstractCount = abstractTerms.filter((t) =>
-    allUserText.includes(t),
-  ).length;
-
-  let estimatedDepth = Math.min(
-    5,
-    Math.floor(
-      (existing?.depth ?? 0) * 0.7 +
-        userMessages.length * 0.1 +
-        questionRatio * 2 +
-        abstractCount * 0.2,
-    ),
-  );
-
+  // Graceful fallback: increment exchange count, keep existing themes/tenor
   return {
-    themes: mergedThemes,
-    tenor: topTenor,
-    depth: estimatedDepth,
+    themes: existing?.themes ?? [],
+    tenor: existing?.tenor ?? 'seeking',
+    depth: existing?.depth ?? 0,
     exchangeCount: (existing?.exchangeCount ?? 0) + userMessages.length,
     lastUpdated: new Date().toISOString(),
   };
