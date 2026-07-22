@@ -37,7 +37,19 @@ import { User } from "@prisma/client";
 import { BillingDecorator } from "../Decorators/BillingDecorator";
 import { keysSchema } from "../zod/requestformemory";
 import { rootpersona } from "../LLM/prompts/rootprompts";
+import { loadSeedV2 } from "../LLM/prompts/seedv2";
 import { ParsedChatCompletion } from "openai/resources/chat/completions/index";
+import {
+  isV2Enabled,
+  scoreDepth,
+  needsRewrite,
+  getWatcherInstruction,
+} from "../Services/WatcherService";
+import {
+  extractCovenantState,
+  renderCovenantState,
+  CovenantState,
+} from "../Services/CovenantService";
 import { getPdf, storePdf } from "../Services/PdfCache";
 import {
   getEncryptedPdf,
@@ -375,14 +387,36 @@ export class ConversationApi {
     return await aiWrapper.getResponse(systemPrompt, input, 1, signal);
   }
 
+  /** Whether v2 is active for this request (flag on, no override). */
+  private isV2Active(input: ChatRequest): boolean {
+    const command = resolvePromptListItem(input.prompts);
+    return isV2Enabled() && !input.customSystemPrompt && !command;
+  }
+
   // Build the full system prompt string based on input request options
   private async buildSystemPrompt(input: ChatRequest): Promise<string> {
-    let systemPrompt =
-      input.customSystemPrompt ?? PromptList["/default"].prompt;
+    // ── v2 Seed Prompt ──────────────────────────────────────────
+    // When v2 is enabled and no explicit command overrides it, use the
+    // seed‑v2 prompt with covenant state injected.
+    const useV2 = this.isV2Active(input);
 
-    const command = resolvePromptListItem(input.prompts);
-    if (command) {
-      systemPrompt = command.prompt;
+    let systemPrompt: string;
+    if (useV2) {
+      systemPrompt = loadSeedV2();
+      // Inject covenant state into the {{ covenant_state }} placeholder
+      const covenant = extractCovenantState(input.prompts);
+      const covenantText = renderCovenantState(covenant);
+      systemPrompt = systemPrompt.replace(
+        /\{\{ covenant_state \}\}/g,
+        covenantText,
+      );
+    } else {
+      const command = resolvePromptListItem(input.prompts);
+      systemPrompt =
+        input.customSystemPrompt ?? PromptList["/default"].prompt;
+      if (command) {
+        systemPrompt = command.prompt;
+      }
     }
 
     if (input.persona && String(input.persona).length > 0) {
@@ -456,7 +490,7 @@ export class ConversationApi {
     const aiWrapper = this.getAIWrapper(input.model, user);
     const systemPrompt = await this.buildSystemPrompt(input);
 
-    const output = CompletionToContent(
+    let output = CompletionToContent(
       await aiWrapper.getResponse(
         systemPrompt,
         await buildLlmMessages(input),
@@ -464,6 +498,37 @@ export class ConversationApi {
         signal,
       ),
     );
+
+    // ── Watcher: evaluate depth, optionally rewrite once ─────────
+    if (this.isV2Active(input)) {
+      const depthScore = scoreDepth(output);
+      console.log(
+        `[watcher] depth=${depthScore} rewrite=${needsRewrite(depthScore)}`,
+      );
+      if (needsRewrite(depthScore)) {
+        const watcherInstruction = getWatcherInstruction(
+          this.assistant_name,
+        );
+        const rewriteMessages = [
+          ...(await buildLlmMessages(input)),
+          { role: "assistant" as const, content: output },
+          { role: "user" as const, content: watcherInstruction },
+        ];
+        const rewriteCompletion = await aiWrapper.getResponse(
+          systemPrompt,
+          rewriteMessages,
+          1,
+          signal,
+        );
+        const rewriteOutput = CompletionToContent(rewriteCompletion);
+        const rewriteScore = scoreDepth(rewriteOutput);
+        console.log(
+          `[watcher] rewrite depth=${rewriteScore} (was ${depthScore})`,
+        );
+        output = rewriteOutput;
+      }
+    }
+
     return output;
   }
 
