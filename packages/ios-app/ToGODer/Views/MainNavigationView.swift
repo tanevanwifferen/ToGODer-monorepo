@@ -33,6 +33,11 @@ struct MainNavigationView: View {
                     .environmentObject(chatService)
             }
         }
+        .sheet(item: $appState.deepLinkSharedArtifactId) { id in
+            NavigationStack {
+                DeepLinkSharedArtifactSheet(artifactId: id)
+            }
+        }
     }
 
     private func open(chatId: String) {
@@ -163,7 +168,13 @@ struct MainNavigationView: View {
                 NavigationLink {
                     SharedConversationsView()
                 } label: {
-                    Label("Shared", systemImage: "person.2")
+                    Label("Shared Chats", systemImage: "person.2")
+                }
+
+                NavigationLink {
+                    SharedArtifactsListView()
+                } label: {
+                    Label("Shared Artifacts", systemImage: "doc.text")
                 }
 
                 NavigationLink {
@@ -329,6 +340,50 @@ struct EmptyChatView: View {
             )
             chatService.selectChat(chatId)
             isLoadingExperience = false
+        }
+    }
+}
+
+struct DeepLinkSharedArtifactSheet: View {
+    let artifactId: String
+    @EnvironmentObject var appState: AppState
+    @Environment(\.dismiss) private var dismiss
+    @State private var sharedArtifact: SharedArtifact?
+    @State private var isLoading = true
+    @State private var error: String?
+
+    var body: some View {
+        Group {
+            if isLoading {
+                ProgressView("Loading shared artifact...")
+            } else if let sharedArtifact {
+                SharedArtifactDetailView(sharedArtifact: sharedArtifact)
+            } else if let error {
+                ContentUnavailableView(
+                    "Could not load artifact",
+                    systemImage: "exclamationmark.triangle",
+                    description: Text(error)
+                )
+            }
+        }
+        .toolbar {
+            ToolbarItem(placement: .cancellationAction) {
+                Button("Done") { dismiss() }
+            }
+        }
+        .task {
+            await loadArtifact()
+        }
+    }
+
+    private func loadArtifact() async {
+        isLoading = true
+        defer { isLoading = false }
+        do {
+            let artifact: SharedArtifact = try await appState.chatService.apiClient.get("/share/artifact/\(artifactId)")
+            sharedArtifact = artifact
+        } catch {
+            self.error = error.localizedDescription
         }
     }
 }

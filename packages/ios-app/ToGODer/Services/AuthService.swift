@@ -8,6 +8,7 @@ final class AuthService: ObservableObject {
     @Published var email: String?
     @Published var isLoading = false
     @Published var error: String?
+    @Published var isAdmin = false
 
     private let apiClient: APIClient
     private let storage: StorageService
@@ -54,6 +55,7 @@ final class AuthService: ObservableObject {
             storage.userEmail = email
             self.email = email
             self.password = password
+            self.isAdmin = response.isAdmin == true
             AuthKeychain.save(password)
             isAuthenticated = true
             startTokenRefresh(userId: response.userId)
@@ -154,6 +156,7 @@ final class AuthService: ObservableObject {
         password = nil
         AuthKeychain.delete()
         email = nil
+        isAdmin = false
         isAuthenticated = false
     }
 

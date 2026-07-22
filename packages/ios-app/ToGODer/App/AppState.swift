@@ -6,6 +6,7 @@ final class AppState: ObservableObject {
     @Published var isFirstLaunch: Bool
     @Published var isOnboarded: Bool
     @Published var deepLinkSharedChatId: String?
+    @Published var deepLinkSharedArtifactId: String?
 
     let authService: AuthService
     let chatService: ChatService
@@ -109,11 +110,35 @@ final class AppState: ObservableObject {
     }
 
     func handleDeepLink(_ url: URL) {
+        // togoder://shared/artifact/{id}
+        if url.scheme == "togoder", url.host == "shared",
+           url.pathComponents.count >= 3,
+           url.pathComponents[1] == "artifact" {
+            let id = url.pathComponents[2]
+            if !id.isEmpty {
+                deepLinkSharedArtifactId = id
+            }
+            return
+        }
+
         // togoder://shared/{id}
         if url.scheme == "togoder", url.host == "shared" {
             let id = url.pathComponents.dropFirst().first
             if let id, !id.isEmpty {
                 deepLinkSharedChatId = id
+            }
+            return
+        }
+
+        // https://dev.togoder.click/shared/artifact/{id}
+        if url.scheme == "https",
+           url.host == Configuration.shareBaseURL.host,
+           url.pathComponents.count >= 4,
+           url.pathComponents[1] == "shared",
+           url.pathComponents[2] == "artifact" {
+            let id = url.pathComponents[3]
+            if !id.isEmpty {
+                deepLinkSharedArtifactId = id
             }
             return
         }

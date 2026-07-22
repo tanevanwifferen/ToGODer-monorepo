@@ -9,6 +9,8 @@ import {
   ShareArtifactRequest,
   SharedArtifact,
   SharedConversation,
+  SharedFolder,
+  ShareFolderRequest,
   ListSharedConversationsResponse,
 } from '../model/ShareTypes';
 
@@ -82,5 +84,70 @@ export class ShareApiClient {
    */
   static async deleteSharedArtifact(id: string): Promise<void> {
     return ApiClient.delete(`/share/artifact/${id}`);
+  }
+
+  /**
+   * Generates a server-issued HMAC signature for artifact content.
+   * This proves the artifact is AI-generated, not hand-authored.
+   * Required before calling shareArtifact.
+   */
+  static async signArtifact(
+    title: string,
+    content: string,
+  ): Promise<{ signature: string }> {
+    return ApiClient.post<{ signature: string }>('/share/artifact/sign', {
+      title,
+      content,
+    });
+  }
+
+  // ── Folder sharing ──────────────────────────────────────────────
+
+  /**
+   * Creates a new shared folder containing artifacts.
+   * Requires authentication.
+   */
+  static async shareFolder(
+    request: ShareFolderRequest,
+  ): Promise<SharedFolder> {
+    return ApiClient.post<SharedFolder>('/share/folder', request);
+  }
+
+  /**
+   * Retrieves a specific shared folder by ID.
+   * Public endpoint.
+   */
+  static async getSharedFolder(id: string): Promise<SharedFolder> {
+    return ApiClient.get<SharedFolder>(`/share/folder/${id}`);
+  }
+
+  /**
+   * Deletes a shared folder. Owner only.
+   */
+  static async deleteSharedFolder(id: string): Promise<void> {
+    return ApiClient.delete(`/share/folder/${id}`);
+  }
+
+  // ── Admin Payload publishing ────────────────────────────────────
+
+  /**
+   * Marks a shared chat as published to Payload (admin only).
+   */
+  static async markChatAsPayload(id: string): Promise<void> {
+    return ApiClient.post(`/admin/payload/chat/${id}/mark`);
+  }
+
+  /**
+   * Marks a shared artifact as published to Payload (admin only).
+   */
+  static async markArtifactAsPayload(id: string): Promise<void> {
+    return ApiClient.post(`/admin/payload/artifact/${id}/mark`);
+  }
+
+  /**
+   * Marks a shared folder as published to Payload (admin only).
+   */
+  static async markFolderAsPayload(id: string): Promise<void> {
+    return ApiClient.post(`/admin/payload/folder/${id}/mark`);
   }
 }

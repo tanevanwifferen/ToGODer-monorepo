@@ -10,6 +10,7 @@ struct SignInRequest: Codable {
 struct SignInResponse: Codable {
     let token: String
     let userId: String
+    let isAdmin: Bool?
 }
 
 struct SignUpRequest: Codable {
@@ -353,6 +354,43 @@ struct SharedChat: Codable, Identifiable {
 struct SharedChatOwner: Codable {
     let id: String
     let email: String?
+}
+
+// MARK: - Artifact Sharing
+
+struct ShareArtifactRequest: Codable {
+    let title: String
+    var description: String?
+    let content: String
+    let visibility: String
+    let artifactSignature: String
+}
+
+struct ArtifactSignRequest: Codable {
+    let title: String
+    let content: String
+}
+
+struct ArtifactSignResponse: Codable {
+    let signature: String
+}
+
+struct SharedArtifact: Codable, Identifiable {
+    let id: String
+    let ownerId: String
+    let title: String
+    var description: String?
+    let content: String
+    let createdAt: String
+    let views: Int?
+    let visibility: String?
+}
+
+// MARK: - Payload
+
+struct PublishToPayloadRequest: Codable {
+    let type: String
+    let id: String
 }
 
 // MARK: - Sync

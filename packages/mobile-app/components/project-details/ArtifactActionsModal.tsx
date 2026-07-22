@@ -50,10 +50,9 @@ export function ArtifactActionsModal({
 
   if (!artifact) return null;
 
-  // Only files have shareable content
-  const actions = ACTIONS.filter(
-    (action) => action.id !== "share" || artifact.type === "file"
-  );
+  // Files and folders can both be shared; folder sharing shares the
+  // folder's collected artifacts as a group
+  const actions = ACTIONS;
 
   const handleAction = (actionId: string) => {
     onClose();
