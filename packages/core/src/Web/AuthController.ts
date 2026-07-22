@@ -6,6 +6,18 @@ import { z } from 'zod';
 import { Mailer } from '../Email/mailer';
 import { onlyOwner, authenticated, setAuthUser } from './Middleware/auth';
 import { ToGODerRequest } from './Model/ToGODerRequest';
+import { getAnalytics } from '../Analytics/AnalyticsService';
+
+function isAdminUser(email: string): boolean {
+  const raw = process.env.ADMIN_EMAILS || '';
+  const adminEmails = new Set(
+    raw
+      .split(',')
+      .map((e) => e.trim().toLowerCase())
+      .filter(Boolean),
+  );
+  return adminEmails.has(email.toLowerCase());
+}
 
 const updateTokenHandler = async (req: Request, res: Response) => {
   try {
@@ -119,7 +131,10 @@ const signInHandler = async (req: Request, res: Response) => {
         const toSign = { id: user.id, date: new Date().getTime() };
         const token = jwt.sign(toSign, process.env.JWT_SECRET!);
 
-        res.json({ token: token, userId: user.id, date: toSign.date });
+        // analytics: login event
+        getAnalytics().trackEvent('login', { userId: user.id, source: 'web' });
+
+        res.json({ token: token, userId: user.id, date: toSign.date, isAdmin: isAdminUser(user.email) });
       } else {
         res.status(401).send('Invalid email or password.');
       }
@@ -157,6 +172,10 @@ const signUpHandler = async (req: Request, res: Response) => {
     };
 
     const createdUser = await db.user.create({ data: newUser });
+
+    // analytics: account_created event
+    getAnalytics().trackEvent('account_created', { userId: createdUser.id, source: 'web' });
+
     // TODO: Send verification email
     new Mailer().sendVerificationEmail(
       req.body.email,

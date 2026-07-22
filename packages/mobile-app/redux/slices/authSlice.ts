@@ -11,6 +11,7 @@ export interface AuthState {
   email: string | null;
   password: string | null;
   lastTokenRefresh: number | null;
+  isAdmin: boolean;
 }
 
 const initialState: AuthState = {
@@ -19,6 +20,7 @@ const initialState: AuthState = {
   email: null,
   password: null,
   lastTokenRefresh: null,
+  isAdmin: false,
 };
 
 const authSlice = createSlice({
@@ -36,6 +38,7 @@ const authSlice = createSlice({
       state.password = null;
       state.userId = null;
       state.lastTokenRefresh = null;
+      state.isAdmin = false;
     },
     updateTokenRefreshTime: (state) => {
       state.lastTokenRefresh = Date.now();
@@ -74,6 +77,11 @@ export const selectToken = createSelector(
 export const selectUserId = createSelector(
   (state: { auth: AuthState }) => state.auth,
   (auth) => auth.userId
+);
+
+export const selectIsAdmin = createSelector(
+  (state: { auth: AuthState }) => state.auth,
+  (auth) => auth.isAdmin === true
 );
 
 export default authSlice.reducer;

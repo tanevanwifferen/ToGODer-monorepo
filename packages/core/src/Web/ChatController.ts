@@ -1,37 +1,43 @@
-import { Request, Response, NextFunction, Router } from 'express';
+import { Request, Response, NextFunction, Router } from "express";
 import {
   validateChatCompletionMessageArray,
   validateTitleMessage,
-} from './Validators';
-import { RateLimitRequestHandler } from 'express-rate-limit';
-import { PromptList } from '../LLM/prompts/promptlist';
+} from "./Validators";
+import { RateLimitRequestHandler } from "express-rate-limit";
+import { PromptList } from "../LLM/prompts/promptlist";
 import {
   ChatRequest,
   ChatRequestCommunicationStyle,
   ExperienceRequest,
-} from '../Model/ChatRequest';
-import { AIProvider, getDefaultModel } from '../LLM/Model/AIProvider';
-import { setAuthUser } from './Middleware/auth';
-import { ToGODerRequest } from './Model/ToGODerRequest';
-import { ChatService } from '../Services/ChatService';
+} from "../Model/ChatRequest";
+import {
+  AIProvider,
+  getDefaultModel,
+  modelSupportsDocuments,
+} from "../LLM/Model/AIProvider";
+import { hasPdfArtifact } from "../Api/ConversationApi";
+import { setAuthUser } from "./Middleware/auth";
+import { ToGODerRequest } from "./Model/ToGODerRequest";
+import { ChatService } from "../Services/ChatService";
 import {
   MemoryService,
   MAX_MEMORY_FETCH_LOOPS,
-} from '../Services/MemoryService';
-import { SystemPromptGenerationService } from '../Services/SystemPromptGenerationService';
-import { BillingApi } from '../Api/BillingApi';
-import { SseStream } from './Utils/Sse';
-import { StreamingChatService } from '../Services/StreamingChatService';
-import { SentimentService } from '../Services/SentimentService';
+} from "../Services/MemoryService";
+import { SystemPromptGenerationService } from "../Services/SystemPromptGenerationService";
+import { BillingApi } from "../Api/BillingApi";
+import { SseStream } from "./Utils/Sse";
+import { StreamingChatService } from "../Services/StreamingChatService";
+import { SentimentService } from "../Services/SentimentService";
+import { getAnalytics } from "../Analytics/AnalyticsService";
 
 function getAssistantName(): string {
-  return process.env.ASSISTANT_NAME ?? 'ToGODer';
+  return process.env.ASSISTANT_NAME ?? "ToGODer";
 }
 
 const chatHandler = async (req: Request, res: Response, next: NextFunction) => {
   try {
     let body: ChatRequest = req.body;
-    if (!('prompts' in req.body)) {
+    if (!("prompts" in req.body)) {
       body = {
         model: getDefaultModel(),
         humanPrompt: false,
@@ -45,7 +51,7 @@ const chatHandler = async (req: Request, res: Response, next: NextFunction) => {
         assistant_name: getAssistantName(),
       };
     }
-    if (body.assistant_name == null || body.assistant_name == '') {
+    if (body.assistant_name == null || body.assistant_name == "") {
       body.assistant_name = getAssistantName();
     }
     if (body.libraryIntegrationEnabled == null) {
@@ -56,13 +62,50 @@ const chatHandler = async (req: Request, res: Response, next: NextFunction) => {
     const chatService = new ChatService(body.assistant_name);
     const memoryService = new MemoryService(body.assistant_name);
     const totalMessages = Array.isArray(body.prompts) ? body.prompts.length : 0;
+
+    // ── Analytics: fire events ────────────────────────────────────
+    const analytics = getAnalytics();
+    const userId = user?.id ?? null;
+    const source = 'web';
+
+    // message_sent: every user message
+    analytics.trackEvent('message_sent', { userId, source });
+    analytics.trackEvent('chat_message_received', { userId, source });
+
+    // conversation_started vs conversation_returned: heuristic based on prompt count
+    // A new conversation has only 1-2 messages (system + first user msg)
+    const userMsgCount = Array.isArray(body.prompts)
+      ? body.prompts.filter((p: any) => p.role === 'user').length
+      : 0;
+    if (userMsgCount <= 1) {
+      // Check if user has had a previous conversation
+      if (userId) {
+        const prevConversations = await countUserConversations(userId);
+        if (prevConversations > 0) {
+          analytics.trackEvent('conversation_returned', { userId, source });
+        } else {
+          analytics.trackEvent('conversation_started', {
+            userId,
+            source,
+            props: { firstMessage: getFirstUserMessage(body.prompts) },
+          });
+        }
+      } else {
+        analytics.trackEvent('conversation_started', {
+          userId,
+          source,
+          props: { firstMessage: getFirstUserMessage(body.prompts) },
+        });
+      }
+    }
+
     const paywallMessage =
-      'Insufficient balance. Please donate through KoFi with this email address to continue using the service.';
+      "Insufficient balance. Please donate through KoFi with this email address to continue using the service.";
 
     const respondWithPaywall = () => {
       const signature = chatService.generateSignature([
         ...body.prompts,
-        { content: paywallMessage, role: 'assistant' },
+        { content: paywallMessage, role: "assistant" },
       ]);
       res.json({
         signature,
@@ -75,7 +118,19 @@ const chatHandler = async (req: Request, res: Response, next: NextFunction) => {
     if (!user) {
       body.model = getDefaultModel();
       body.artifactIndex = undefined;
+      body.pdfCacheId = undefined;
+      body.pdfKey = undefined;
       body.tools = undefined;
+    }
+
+    // Guard: a PDF may only be sent to a document-capable model. Never
+    // silently drop the attachment.
+    if (hasPdfArtifact(body) && !(await modelSupportsDocuments(body.model))) {
+      res.status(400).json({
+        error:
+          "The selected model does not support PDF documents. Please choose a document-capable model (marked 📄) to send a PDF.",
+      });
+      return;
     }
 
     const isDefaultModel = body.model === getDefaultModel();
@@ -128,7 +183,7 @@ const chatHandler = async (req: Request, res: Response, next: NextFunction) => {
     if (user && (await sentimentService.isEligible(user))) {
       sentiment = await sentimentService.analyzeConversation(
         body.prompts,
-        user
+        user,
       );
       if (sentiment) {
         body.sentimentContext = sentimentService.buildContextBlock(sentiment);
@@ -138,7 +193,7 @@ const chatHandler = async (req: Request, res: Response, next: NextFunction) => {
     const response = await chatService.getChatResponse(body, user);
     const signature = chatService.generateSignature([
       ...body.prompts,
-      { content: response, role: 'assistant' },
+      { content: response, role: "assistant" },
     ]);
 
     // Signed snapshot of the custom instructions used for this response, so
@@ -151,7 +206,7 @@ const chatHandler = async (req: Request, res: Response, next: NextFunction) => {
         timestamp,
         signature: chatService.generateInstructionsSignature(
           body.customSystemPrompt,
-          timestamp
+          timestamp,
         ),
       };
     }
@@ -172,21 +227,21 @@ export function GetChatRouter(messageLimiter: RateLimitRequestHandler): Router {
   const chatRouter = Router();
   // Route handlers
   chatRouter.post(
-    '/api/chat',
+    "/api/chat",
     messageLimiter,
     validateChatCompletionMessageArray,
     setAuthUser,
-    chatHandler
+    chatHandler,
   );
 
   // Streaming chat endpoint (SSE). Streams assistant output as chunks and ends with a signature + done.
   chatRouter.post(
-    '/api/chat/stream',
+    "/api/chat/stream",
     messageLimiter,
     validateChatCompletionMessageArray,
     setAuthUser,
     async (req: Request, res: Response, next: NextFunction) => {
-      res.setHeader('X-Accel-Buffering', 'no');
+      res.setHeader("X-Accel-Buffering", "no");
       const sse = new SseStream(res);
 
       // Create AbortController to cancel streaming when client disconnects
@@ -194,12 +249,12 @@ export function GetChatRouter(messageLimiter: RateLimitRequestHandler): Router {
       const onClientDisconnect = () => {
         abortController.abort();
       };
-      res.on('close', onClientDisconnect);
+      res.on("close", onClientDisconnect);
 
       try {
         // Normalize body to ChatRequest like the non-streaming endpoint
         let body: ChatRequest = req.body;
-        if (!('prompts' in req.body)) {
+        if (!("prompts" in req.body)) {
           body = {
             model: getDefaultModel(),
             humanPrompt: false,
@@ -222,51 +277,81 @@ export function GetChatRouter(messageLimiter: RateLimitRequestHandler): Router {
 
         const user = (req as ToGODerRequest).togoder_auth?.user ?? null;
 
+        // ── Analytics: fire events ──────────────────────────────
+        const analytics = getAnalytics();
+        const userId = user?.id ?? null;
+        const source = 'web';
+        analytics.trackEvent('message_sent', { userId, source });
+        analytics.trackEvent('chat_message_received', { userId, source });
+        const streamUserMsgCount = Array.isArray(body.prompts)
+          ? body.prompts.filter((p: any) => p.role === 'user').length
+          : 0;
+        if (streamUserMsgCount <= 1) {
+          if (userId) {
+            const prevConversations = await countUserConversations(userId);
+            if (prevConversations > 0) {
+              analytics.trackEvent('conversation_returned', { userId, source });
+            } else {
+              analytics.trackEvent('conversation_started', {
+                userId,
+                source,
+                props: { firstMessage: getFirstUserMessage(body.prompts) },
+              });
+            }
+          } else {
+            analytics.trackEvent('conversation_started', {
+              userId,
+              source,
+              props: { firstMessage: getFirstUserMessage(body.prompts) },
+            });
+          }
+        }
+
         // Delegate the streaming logic to a service for maintainability
         const streamingService = new StreamingChatService(body.assistant_name);
 
         for await (const evt of streamingService.streamChat(
           body,
           user,
-          abortController.signal
+          abortController.signal,
         )) {
           switch (evt.type) {
-            case 'chunk':
-              sse.event('chunk', evt.data);
-              sse.comment('keep-alive');
+            case "chunk":
+              sse.event("chunk", evt.data);
+              sse.comment("keep-alive");
               break;
-            case 'memory_request':
-              sse.event('memory_request', evt.data);
+            case "memory_request":
+              sse.event("memory_request", evt.data);
               break;
-            case 'signature':
-              sse.event('signature', evt.data);
+            case "signature":
+              sse.event("signature", evt.data);
               break;
-            case 'instructions':
-              sse.event('instructions', evt.data);
+            case "instructions":
+              sse.event("instructions", evt.data);
               break;
-            case 'sentiment':
-              sse.event('sentiment', evt.data);
-              sse.comment('keep-alive');
+            case "sentiment":
+              sse.event("sentiment", evt.data);
+              sse.comment("keep-alive");
               break;
-            case 'tool_call':
-              sse.event('tool_call', evt.data);
+            case "tool_call":
+              sse.event("tool_call", evt.data);
               break;
-            case 'tool_status':
-              sse.event('tool_status', evt.data);
-              sse.comment('keep-alive');
+            case "tool_status":
+              sse.event("tool_status", evt.data);
+              sse.comment("keep-alive");
               break;
-            case 'error':
-              sse.event('error', evt.data);
+            case "error":
+              sse.event("error", evt.data);
               break;
-            case 'done':
-              sse.event('done', null);
+            case "done":
+              sse.event("done", null);
               sse.done();
               return;
           }
         }
 
         // Safety: Ensure stream is closed
-        sse.event('done', null);
+        sse.event("done", null);
         sse.done();
       } catch (error: any) {
         // Stream error to client, then end
@@ -274,7 +359,7 @@ export function GetChatRouter(messageLimiter: RateLimitRequestHandler): Router {
 
         // Check if this is an abort error from client disconnect
         const isAbortError =
-          error?.name === 'AbortError' || abortController.signal.aborted;
+          error?.name === "AbortError" || abortController.signal.aborted;
         if (isAbortError) {
           // Client disconnected - this is expected, no need to log or send error
           return;
@@ -283,35 +368,35 @@ export function GetChatRouter(messageLimiter: RateLimitRequestHandler): Router {
         try {
           if (!res.headersSent) {
             // If headers haven't been sent yet, we can still use SSE
-            sse.event('error', { message: error?.message ?? 'Unknown error' });
-            sse.event('done', null);
+            sse.event("error", { message: error?.message ?? "Unknown error" });
+            sse.event("done", null);
             sse.done();
           } else {
             // Headers already sent, just log the error
             console.error(
-              'Error during SSE streaming (headers already sent):',
-              error
+              "Error during SSE streaming (headers already sent):",
+              error,
             );
           }
         } catch (sseError) {
           // If SSE operations fail, just log
-          console.error('Failed to send error via SSE:', sseError);
+          console.error("Failed to send error via SSE:", sseError);
         }
         // Do NOT call next(error) - it would try to send another response
       } finally {
         // Clean up the disconnect listener
-        res.off('close', onClientDisconnect);
+        res.off("close", onClientDisconnect);
       }
-    }
+    },
   );
   chatRouter.post(
-    '/api/experience',
+    "/api/experience",
     messageLimiter,
     setAuthUser,
     async (req: Request, res: Response, next: NextFunction) => {
       try {
         let body: ExperienceRequest = req.body;
-        if (body.assistant_name == null || body.assistant_name == '') {
+        if (body.assistant_name == null || body.assistant_name == "") {
           body.assistant_name = getAssistantName();
         }
 
@@ -323,31 +408,31 @@ export function GetChatRouter(messageLimiter: RateLimitRequestHandler): Router {
       } catch (error) {
         next(error);
       }
-    }
+    },
   );
 
   chatRouter.post(
-    '/api/title',
+    "/api/title",
     messageLimiter,
     validateTitleMessage,
     setAuthUser,
     async (req: Request, res: Response, next: NextFunction) => {
       try {
-        const chatService = new ChatService('');
+        const chatService = new ChatService("");
         const user = (req as ToGODerRequest).togoder_auth?.user ?? null;
         const response = await chatService.getTitle(
           req.body.content,
           getDefaultModel(),
-          user
+          user,
         );
         res.json({ content: response });
       } catch (error) {
         next(error);
       }
-    }
+    },
   );
 
-  chatRouter.get('/api/prompts', (req, res) => {
+  chatRouter.get("/api/prompts", (req, res) => {
     let toreturn = {};
     for (let key of Object.keys(PromptList)) {
       if (PromptList[key].display) {
@@ -360,20 +445,20 @@ export function GetChatRouter(messageLimiter: RateLimitRequestHandler): Router {
     res.send(toreturn);
   });
 
-  chatRouter.get('/api/quote', (req, res) => {
-    const chatService = new ChatService('');
+  chatRouter.get("/api/quote", (req, res) => {
+    const chatService = new ChatService("");
     res.json({ quote: chatService.getQuote() });
   });
 
   // Endpoint for asynchronous memory updates
   chatRouter.post(
-    '/api/chat/memory-update',
+    "/api/chat/memory-update",
     messageLimiter,
     setAuthUser,
     async (req: Request, res: Response, next: NextFunction) => {
       try {
         let body: ChatRequest = req.body;
-        if (body.assistant_name == null || body.assistant_name == '') {
+        if (body.assistant_name == null || body.assistant_name == "") {
           body.assistant_name = getAssistantName();
         }
 
@@ -386,7 +471,7 @@ export function GetChatRouter(messageLimiter: RateLimitRequestHandler): Router {
             body.configurableData,
             body.staticData?.date ?? new Date().toISOString(),
             body.model,
-            user
+            user,
           );
 
           res.json({ updateData });
@@ -396,12 +481,12 @@ export function GetChatRouter(messageLimiter: RateLimitRequestHandler): Router {
       } catch (error) {
         next(error);
       }
-    }
+    },
   );
 
   // Endpoint for auto-generating personalized system prompts
   chatRouter.post(
-    '/api/generate-system-prompt',
+    "/api/generate-system-prompt",
     messageLimiter,
     setAuthUser,
     async (req: Request, res: Response, next: NextFunction) => {
@@ -410,13 +495,13 @@ export function GetChatRouter(messageLimiter: RateLimitRequestHandler): Router {
 
         if (!user) {
           res.status(401).json({
-            error: 'Authentication required for system prompt generation',
+            error: "Authentication required for system prompt generation",
           });
           return;
         }
 
         let body: ChatRequest = req.body;
-        if (body.assistant_name == null || body.assistant_name == '') {
+        if (body.assistant_name == null || body.assistant_name == "") {
           body.assistant_name = getAssistantName();
         }
 
@@ -432,13 +517,13 @@ export function GetChatRouter(messageLimiter: RateLimitRequestHandler): Router {
         }
 
         const systemPromptService = new SystemPromptGenerationService(
-          body.assistant_name
+          body.assistant_name,
         );
 
         const result =
           await systemPromptService.generatePersonalizedSystemPrompt(
             body,
-            user
+            user,
           );
 
         if (result.requestForMemory) {
@@ -456,8 +541,31 @@ export function GetChatRouter(messageLimiter: RateLimitRequestHandler): Router {
       } catch (error) {
         next(error);
       }
-    }
+    },
   );
 
   return chatRouter;
+}
+
+// ── Analytics helpers ──────────────────────────────────────────────
+
+function getFirstUserMessage(prompts: any[]): string {
+  if (!Array.isArray(prompts)) return '';
+  const first = prompts.find((p: any) => p.role === 'user');
+  if (!first || typeof first.content !== 'string') return '';
+  return first.content.slice(0, 200);
+}
+
+async function countUserConversations(userId: string): Promise<number> {
+  const { getDbContext } = await import('../Entity/Database.js');
+  const db = getDbContext();
+  try {
+    const rows: any[] = await db.$queryRawUnsafe(
+      `SELECT COUNT(*) as cnt FROM Event WHERE eventType = 'conversation_started' AND userId = ?`,
+      userId,
+    );
+    return rows[0]?.cnt ?? 0;
+  } catch {
+    return 0;
+  }
 }

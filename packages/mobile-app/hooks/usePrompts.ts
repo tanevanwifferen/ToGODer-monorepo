@@ -4,6 +4,20 @@ import { selectPrompts } from '../redux/slices/globalConfigSlice';
 import { selectCustomSystemPrompt } from '../redux/slices/systemPromptSlice';
 import { IMessage } from 'react-native-gifted-chat';
 
+/**
+ * Standalone hook for prompt suggestions in new chats.
+ *
+ * Surfaces all prompt modes served by the backend (/api/global_config or
+ * /api/prompts), including:
+ * - /default   → NoSteeringPrompt (core stance)
+ * - /recursion → RecursionPrompt (Veiled Prime 9 / Aeon Mirror Protocol)
+ * - /yinyang   → YinYangPrompt (dual-perspective, display:false by default)
+ * - /growth    → PersonalGrowthPrompt
+ * - etc.
+ *
+ * Note: The Chat component currently uses useMessageInput instead, which
+ * duplicates this logic. This hook remains available for direct integration.
+ */
 export const usePrompts = (messages: IMessage[], inputText: string, onInputTextChange: (text: string) => void) => {
   const [showPrompts, setShowPrompts] = useState(false);
   const prompts = useSelector(selectPrompts);

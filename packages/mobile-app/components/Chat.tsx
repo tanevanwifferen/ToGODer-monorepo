@@ -23,6 +23,7 @@ import { useChatActions } from "../hooks/useChatActions";
 import { useGiftedMessages, ExtendedIMessage } from "../hooks/useGiftedMessages";
 import { useLibraryIntegration } from "../hooks/useLibraryIntegration";
 import { useAutoSentiment } from "../hooks/useAutoSentiment";
+import { usePdfAttachment, pickPdfFileWeb } from "../hooks/usePdfAttachment";
 import Toast from "react-native-toast-message";
 import { ThemedText } from "./ThemedText";
 import { useExperienceContext } from "./providers/ExperienceProvider";
@@ -106,6 +107,11 @@ export function Chat({ chatId, onBack }: ChatProps) {
   // Get library integration state and handler
   const { libraryIntegrationEnabled, handleLibraryIntegrationToggle } = useLibraryIntegration();
 
+  // Out-of-band PDF attachment: uploads to the backend cache (not in
+  // conversation history) and shows a chip in the composer. Gated to
+  // document-capable models.
+  const pdf = usePdfAttachment(chatId);
+
   // Handle edit message action from long press menu.
   // Gifted message _id is the message's index in apiMessages.
   const handleEditMessage = useCallback(
@@ -178,6 +184,14 @@ export function Chat({ chatId, onBack }: ChatProps) {
       onSelectPrompt={handleSelectPrompt}
       isGenerating={typing}
       onCancel={cancelRequest}
+      modelSupportsPdfs={pdf.modelSupportsPdfs}
+      pdfAttachment={pdf.attachment}
+      onPickPdf={async () => {
+        const file = await pickPdfFileWeb();
+        if (file) pdf.attachFile(file);
+      }}
+      onRemovePdf={() => pdf.removeAttachment()}
+      onDropFile={(file: File) => pdf.attachFile(file)}
     />
   );
 

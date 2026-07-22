@@ -20,6 +20,8 @@ import projectsReducer, { ProjectsState } from "./slices/projectsSlice";
 import artifactsReducer, { ArtifactsState } from "./slices/artifactsSlice";
 import memoriesReducer, { MemoriesState } from "./slices/memoriesSlice";
 import sentimentReducer, { SentimentState } from "./slices/sentimentSlice";
+import mcpReducer, { McpState } from "./slices/mcpSlice";
+import pdfUploadReducer, { PdfUploadState } from "./slices/pdfUploadSlice";
 import { personalDataMiddleware } from "./middleware/personalDataMiddleware";
 import { syncMiddleware } from "./middleware/syncMiddleware";
 import { GlobalConfig } from "../model/GlobalConfig";
@@ -44,6 +46,8 @@ export interface RootState {
   artifacts: ArtifactsState;
   memories: MemoriesState;
   sentiment: SentimentState;
+  mcp: McpState;
+  pdfUpload: PdfUploadState;
 }
 
 const rootReducer = combineReducers({
@@ -61,6 +65,8 @@ const rootReducer = combineReducers({
   artifacts: artifactsReducer,
   memories: memoriesReducer,
   sentiment: sentimentReducer,
+  mcp: mcpReducer,
+  pdfUpload: pdfUploadReducer,
 });
 
 // Migration function to transfer settings from chats slice to userSettings slice
@@ -114,6 +120,7 @@ const persistConfig: PersistConfig<RootState> = {
     "projects",
     "artifacts",
     "memories",
+    "pdfUpload",
   ],
   migrate: (state: any) => {
     return Promise.resolve(migrateSettings(state));

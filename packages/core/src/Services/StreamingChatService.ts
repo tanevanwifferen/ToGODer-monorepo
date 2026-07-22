@@ -1,18 +1,24 @@
-import { ChatRequest } from '../Model/ChatRequest';
-import { User } from '@prisma/client';
-import { ChatService } from './ChatService';
-import { MemoryService, MAX_MEMORY_FETCH_LOOPS } from './MemoryService';
-import { BillingApi } from '../Api/BillingApi';
-import { ConversationApi } from '../Api/ConversationApi';
-import { AIProvider, getDefaultModel } from '../LLM/Model/AIProvider';
-import { StreamChunk } from '../LLM/AIWrapper';
-import { ToolRegistry } from '../Tools/ToolRegistry';
-import { SentimentService, SentimentSummary } from './SentimentService';
-import { resolvePromptListItem } from '../LLM/prompts/promptlist';
+import { ChatRequest } from "../Model/ChatRequest";
+import { User, McpServer } from "@prisma/client";
+import { ChatService } from "./ChatService";
+import { MemoryService, MAX_MEMORY_FETCH_LOOPS } from "./MemoryService";
+import { BillingApi } from "../Api/BillingApi";
+import { ConversationApi, hasPdfArtifact } from "../Api/ConversationApi";
+import {
+  AIProvider,
+  getDefaultModel,
+  modelSupportsDocuments,
+} from "../LLM/Model/AIProvider";
+import { StreamChunk } from "../LLM/AIWrapper";
+import { ToolRegistry } from "../Tools/ToolRegistry";
+import { getMcpClientManager } from "../Tools/McpClientManager";
+import { getDbContext } from "../Entity/Database";
+import { SentimentService, SentimentSummary } from "./SentimentService";
+import { resolvePromptListItem } from "../LLM/prompts/promptlist";
 import {
   ChatCompletionMessageParam,
   ChatCompletionTool,
-} from 'openai/resources/index';
+} from "openai/resources/index";
 
 /** Maximum number of backend tool execution iterations before stopping */
 const MAX_TOOL_LOOP_ITERATIONS = 10;
@@ -34,18 +40,20 @@ const MAX_AGENTIC_LOOP_ITERATIONS = 50;
  * failing with "unexpected tool_use_id found in tool_result blocks".
  */
 function sanitizeToolMessages(
-  prompts: ChatCompletionMessageParam[]
+  prompts: ChatCompletionMessageParam[],
 ): ChatCompletionMessageParam[] {
   const out: ChatCompletionMessageParam[] = [];
 
   for (let i = 0; i < prompts.length; i++) {
     const msg = prompts[i];
 
-    if (msg.role === 'tool') {
+    if (msg.role === "tool") {
       const toolCallId = (msg as any).tool_call_id as string | undefined;
       const prev = out.length > 0 ? out[out.length - 1] : null;
       const prevToolCalls =
-        prev && prev.role === 'assistant' && Array.isArray((prev as any).tool_calls)
+        prev &&
+        prev.role === "assistant" &&
+        Array.isArray((prev as any).tool_calls)
           ? ((prev as any).tool_calls as Array<{ id: string }>)
           : null;
       const hasMatch =
@@ -60,14 +68,14 @@ function sanitizeToolMessages(
       continue;
     }
 
-    if (msg.role === 'assistant' && Array.isArray((msg as any).tool_calls)) {
+    if (msg.role === "assistant" && Array.isArray((msg as any).tool_calls)) {
       // Collect the tool_call_ids that actually have results immediately
       // following this assistant message.
       const toolCalls = (msg as any).tool_calls as Array<{ id: string }>;
       const followingIds = new Set<string>();
       for (let j = i + 1; j < prompts.length; j++) {
         const next = prompts[j];
-        if (next.role !== 'tool') break;
+        if (next.role !== "tool") break;
         const id = (next as any).tool_call_id as string | undefined;
         if (id) followingIds.add(id);
       }
@@ -76,7 +84,7 @@ function sanitizeToolMessages(
         // All tool_calls are orphans; strip the tool_calls field. Keep the
         // message if it has text content, otherwise drop it entirely.
         const content = (msg as any).content;
-        if (typeof content === 'string' && content.length > 0) {
+        if (typeof content === "string" && content.length > 0) {
           const { tool_calls: _ignored, ...rest } = msg as any;
           out.push(rest as ChatCompletionMessageParam);
         }
@@ -110,12 +118,12 @@ function sanitizeToolMessages(
  * untouched so signatures keep matching the client's stored history.
  */
 function trimTrailingAssistantMessages(
-  prompts: ChatCompletionMessageParam[]
+  prompts: ChatCompletionMessageParam[],
 ): ChatCompletionMessageParam[] {
   let end = prompts.length;
   while (
     end > 0 &&
-    prompts[end - 1].role === 'assistant' &&
+    prompts[end - 1].role === "assistant" &&
     !Array.isArray((prompts[end - 1] as any).tool_calls)
   ) {
     end--;
@@ -141,7 +149,7 @@ export interface ToolCallData {
 export interface ToolStatusData {
   id: string;
   name: string;
-  status: 'generating' | 'running' | 'done';
+  status: "generating" | "running" | "done";
   isError?: boolean;
 }
 
@@ -160,15 +168,15 @@ export interface InstructionsSnapshotData {
  * Events emitted during streaming. Consumers can map these to SSE frames or other transports.
  */
 export type StreamEvent =
-  | { type: 'memory_request'; data: { keys: string[] } }
-  | { type: 'chunk'; data: { delta: string } }
-  | { type: 'tool_call'; data: ToolCallData }
-  | { type: 'tool_status'; data: ToolStatusData }
-  | { type: 'signature'; data: { signature: string } }
-  | { type: 'instructions'; data: InstructionsSnapshotData }
-  | { type: 'sentiment'; data: SentimentSummary }
-  | { type: 'error'; data: { message: string } }
-  | { type: 'done'; data?: null };
+  | { type: "memory_request"; data: { keys: string[] } }
+  | { type: "chunk"; data: { delta: string } }
+  | { type: "tool_call"; data: ToolCallData }
+  | { type: "tool_status"; data: ToolStatusData }
+  | { type: "signature"; data: { signature: string } }
+  | { type: "instructions"; data: InstructionsSnapshotData }
+  | { type: "sentiment"; data: SentimentSummary }
+  | { type: "error"; data: { message: string } }
+  | { type: "done"; data?: null };
 
 /**
  * Encapsulates the streaming chat logic so controllers remain thin.
@@ -202,7 +210,7 @@ export class StreamingChatService {
   async *streamChat(
     body: ChatRequest,
     user: User | null,
-    signal?: AbortSignal
+    signal?: AbortSignal,
   ): AsyncGenerator<StreamEvent, void, void> {
     if (Array.isArray(body.prompts)) {
       body.prompts = sanitizeToolMessages(body.prompts);
@@ -214,13 +222,13 @@ export class StreamingChatService {
     if (body.customSystemPrompt) {
       const timestamp = Date.now();
       yield {
-        type: 'instructions',
+        type: "instructions",
         data: {
           content: body.customSystemPrompt,
           timestamp,
           signature: this.chatService.generateInstructionsSignature(
             body.customSystemPrompt,
-            timestamp
+            timestamp,
           ),
         },
       };
@@ -237,13 +245,29 @@ export class StreamingChatService {
 
     const totalMessages = Array.isArray(body.prompts) ? body.prompts.length : 0;
     const paywallMessage =
-      'Insufficient balance. Please donate through KoFi with this email address to continue using the service.';
+      "Insufficient balance. Please donate through KoFi with this email address to continue using the service.";
 
     // Logged-out users get the default model and no premium features
     if (!user) {
       body.model = getDefaultModel();
       body.artifactIndex = undefined;
+      body.pdfCacheId = undefined;
+      body.pdfKey = undefined;
       body.tools = undefined;
+    }
+
+    // Guard: a PDF may only be sent to a document-capable model. Never
+    // silently drop the attachment — warn the user instead.
+    if (hasPdfArtifact(body) && !(await modelSupportsDocuments(body.model))) {
+      yield {
+        type: "error",
+        data: {
+          message:
+            "The selected model does not support PDF documents. Please choose a document-capable model (marked 📄) to send a PDF.",
+        },
+      };
+      yield { type: "done" };
+      return;
     }
 
     // Skip paywall when using the default model — it's free for everyone.
@@ -251,13 +275,13 @@ export class StreamingChatService {
 
     if (totalMessages >= 10 && !isDefaultModel) {
       if (!user) {
-        yield { type: 'chunk', data: { delta: paywallMessage } };
+        yield { type: "chunk", data: { delta: paywallMessage } };
         const signature = this.chatService.generateSignature([
           ...body.prompts,
-          { content: paywallMessage, role: 'assistant' },
+          { content: paywallMessage, role: "assistant" },
         ]);
-        yield { type: 'signature', data: { signature } };
-        yield { type: 'done' };
+        yield { type: "signature", data: { signature } };
+        yield { type: "done" };
         return;
       }
 
@@ -270,13 +294,13 @@ export class StreamingChatService {
 
       const balance = await this.billingApi.GetTotalBalance(user.email);
       if (balance.lessThanOrEqualTo(0)) {
-        yield { type: 'chunk', data: { delta: paywallMessage } };
+        yield { type: "chunk", data: { delta: paywallMessage } };
         const signature = this.chatService.generateSignature([
           ...body.prompts,
-          { content: paywallMessage, role: 'assistant' },
+          { content: paywallMessage, role: "assistant" },
         ]);
-        yield { type: 'signature', data: { signature } };
-        yield { type: 'done' };
+        yield { type: "signature", data: { signature } };
+        yield { type: "done" };
         return;
       }
     }
@@ -289,11 +313,11 @@ export class StreamingChatService {
     if (user && (await sentimentService.isEligible(user))) {
       const sentiment = await sentimentService.analyzeConversation(
         body.prompts,
-        user
+        user,
       );
       if (sentiment) {
         body.sentimentContext = sentimentService.buildContextBlock(sentiment);
-        yield { type: 'sentiment', data: sentiment };
+        yield { type: "sentiment", data: sentiment };
       }
     }
 
@@ -307,11 +331,11 @@ export class StreamingChatService {
     ) {
       const requestForMemory = await this.memoryService.requestMemories(
         body,
-        user
+        user,
       );
       if (requestForMemory.keys.length > 0) {
-        yield { type: 'memory_request', data: requestForMemory };
-        yield { type: 'done' };
+        yield { type: "memory_request", data: requestForMemory };
+        yield { type: "done" };
         return;
       }
     }
@@ -338,9 +362,9 @@ export class StreamingChatService {
   private async *streamSimple(
     body: ChatRequest,
     user: User | null,
-    signal?: AbortSignal
+    signal?: AbortSignal,
   ): AsyncGenerator<StreamEvent, void, void> {
-    let full = '';
+    let full = "";
     const requestBody: ChatRequest = {
       ...body,
       prompts: trimTrailingAssistantMessages(body.prompts),
@@ -348,20 +372,20 @@ export class StreamingChatService {
     for await (const delta of this.conversationApi.streamResponse(
       requestBody,
       user,
-      signal
+      signal,
     )) {
       if (delta && delta.length > 0) {
         full += delta;
-        yield { type: 'chunk', data: { delta } };
+        yield { type: "chunk", data: { delta } };
       }
     }
 
     const signature = this.chatService.generateSignature([
       ...body.prompts,
-      { content: full, role: 'assistant' },
+      { content: full, role: "assistant" },
     ]);
-    yield { type: 'signature', data: { signature } };
-    yield { type: 'done' };
+    yield { type: "signature", data: { signature } };
+    yield { type: "done" };
   }
 
   /**
@@ -378,19 +402,53 @@ export class StreamingChatService {
     body: ChatRequest,
     user: User | null,
     signal?: AbortSignal,
-    maxIterations: number = MAX_TOOL_LOOP_ITERATIONS
+    maxIterations: number = MAX_TOOL_LOOP_ITERATIONS,
   ): AsyncGenerator<StreamEvent, void, void> {
     const registry = ToolRegistry.getInstance();
 
     // Merge backend tool definitions with frontend-provided tools
     const mergedTools = this.mergeTools(body.tools ?? [], registry, body);
 
+    // Per-request MCP tool integration (authenticated users only). Load the
+    // user's enabled MCP servers, fetch their OpenAI-style tool defs from the
+    // MCP client manager, and merge them in. MCP tool names are namespaced
+    // (mcp__<server>__<tool>__<hash>) so they cannot collide with backend or
+    // frontend tools. Any error here is treated as zero MCP tools — chat must
+    // never break because an MCP server is unreachable. Everything here is a
+    // local const scoped to this request (no global state).
+    const mcpToolNames = new Set<string>();
+    let mcpServers: McpServer[] = [];
+    if (user) {
+      try {
+        mcpServers = await getDbContext().mcpServer.findMany({
+          where: { userId: user.id, enabled: true },
+        });
+        if (mcpServers.length > 0) {
+          const mcpTools = await getMcpClientManager().getToolsForUser(
+            user,
+            mcpServers,
+          );
+          for (const t of mcpTools) {
+            if (t.type === "function") mcpToolNames.add(t.function.name);
+          }
+          mergedTools.push(...mcpTools);
+        }
+      } catch (err) {
+        console.warn(
+          "[tool-loop] MCP tool loading failed; proceeding with zero MCP tools",
+          err,
+        );
+        mcpToolNames.clear();
+      }
+    }
+
     // Work with a mutable copy of prompts that we extend with tool results.
     // Trailing assistant messages are trimmed so the request never ends with
     // an assistant message (rejected as prefill by Anthropic models).
-    const prompts: ChatCompletionMessageParam[] =
-      trimTrailingAssistantMessages(body.prompts);
-    let full = '';
+    const prompts: ChatCompletionMessageParam[] = trimTrailingAssistantMessages(
+      body.prompts,
+    );
+    let full = "";
 
     for (let iteration = 0; iteration < maxIterations; iteration++) {
       // Create a request copy with current prompts and merged tools
@@ -404,7 +462,7 @@ export class StreamingChatService {
       const iterationResult = yield* this.streamOneIteration(
         iterationBody,
         user,
-        signal
+        signal,
       );
 
       full += iterationResult.text;
@@ -412,16 +470,18 @@ export class StreamingChatService {
       // Content-free diagnostics: which tools were offered and what the
       // model called, so tool-loop stalls are visible in the logs.
       console.log(
-        '[tool-loop]',
+        "[tool-loop]",
         JSON.stringify({
           iteration,
           model: body.model,
           tools_offered: mergedTools
-            .filter((t) => t.type === 'function')
+            .filter((t) => t.type === "function")
             .map((t) => t.function.name),
+          mcp_tools_offered:
+            mcpToolNames.size > 0 ? Array.from(mcpToolNames) : undefined,
           tool_calls: iterationResult.toolCalls.map((tc) => tc.name),
           text_length: iterationResult.text.length,
-        })
+        }),
       );
 
       // If no tool calls at all, we're done
@@ -431,42 +491,57 @@ export class StreamingChatService {
         // user instead of ending the stream in silence.
         if (iterationResult.text.length === 0) {
           const notice =
-            '\n\n*The model stopped its reply unexpectedly (likely a ' +
-            'provider safety filter). Please try again or rephrase.*';
+            "\n\n*The model stopped its reply unexpectedly (likely a " +
+            "provider safety filter). Please try again or rephrase.*";
           full += notice;
-          yield { type: 'chunk', data: { delta: notice } };
+          yield { type: "chunk", data: { delta: notice } };
         }
         break;
       }
 
-      // Separate backend, frontend, and unknown tool calls. A frontend tool
-      // is one the client actually declared in body.tools — anything else
-      // that isn't backend-registered is a hallucinated tool name, which we
-      // must answer server-side with an error tool_result (forwarding it to
-      // the client would leave a dangling tool_use nobody responds to).
+      // Separate backend, frontend, MCP, and unknown tool calls. A frontend
+      // tool is one the client actually declared in body.tools. An MCP tool is
+      // one we offered this request whose namespaced name (mcp__...) is in the
+      // per-request MCP dispatch set. Anything else that isn't backend-
+      // registered is a hallucinated tool name, which we must answer
+      // server-side with an error tool_result (forwarding it to the client
+      // would leave a dangling tool_use nobody responds to).
       const frontendToolNames = new Set(
         (body.tools ?? [])
-          .filter((t) => t.type === 'function')
-          .map((t) => t.function.name)
+          .filter((t) => t.type === "function")
+          .map((t) => t.function.name),
       );
+      const isMcpCall = (tc: { name: string }) =>
+        tc.name.startsWith("mcp__") && mcpToolNames.has(tc.name);
       const backendCalls = iterationResult.toolCalls.filter((tc) =>
-        registry.has(tc.name)
+        registry.has(tc.name),
       );
+      const mcpCalls = iterationResult.toolCalls.filter((tc) => isMcpCall(tc));
       const frontendCalls = iterationResult.toolCalls.filter(
-        (tc) => !registry.has(tc.name) && frontendToolNames.has(tc.name)
+        (tc) =>
+          !registry.has(tc.name) &&
+          !isMcpCall(tc) &&
+          frontendToolNames.has(tc.name),
       );
       const unknownCalls = iterationResult.toolCalls.filter(
-        (tc) => !registry.has(tc.name) && !frontendToolNames.has(tc.name)
+        (tc) =>
+          !registry.has(tc.name) &&
+          !isMcpCall(tc) &&
+          !frontendToolNames.has(tc.name),
       );
 
       // Yield frontend tool calls to the client
       for (const tc of frontendCalls) {
-        yield { type: 'tool_call', data: tc };
+        yield { type: "tool_call", data: tc };
       }
 
       // If nothing to handle server-side, stop looping (remaining are
       // frontend-only and the client will continue the conversation)
-      const serverHandledCalls = [...backendCalls, ...unknownCalls];
+      const serverHandledCalls = [
+        ...backendCalls,
+        ...mcpCalls,
+        ...unknownCalls,
+      ];
       if (serverHandledCalls.length === 0) {
         break;
       }
@@ -474,7 +549,7 @@ export class StreamingChatService {
       // Build assistant message with tool_calls for the conversation history
       const assistantToolCalls = serverHandledCalls.map((tc) => ({
         id: tc.id,
-        type: 'function' as const,
+        type: "function" as const,
         function: {
           name: tc.name,
           arguments: JSON.stringify(tc.arguments),
@@ -482,7 +557,7 @@ export class StreamingChatService {
       }));
 
       prompts.push({
-        role: 'assistant',
+        role: "assistant",
         content: iterationResult.text || null,
         tool_calls: assistantToolCalls,
       });
@@ -493,8 +568,8 @@ export class StreamingChatService {
         if (!tool) continue;
 
         yield {
-          type: 'tool_status',
-          data: { id: tc.id, name: tc.name, status: 'running' },
+          type: "tool_status",
+          data: { id: tc.id, name: tc.name, status: "running" },
         };
 
         let result: string;
@@ -511,39 +586,79 @@ export class StreamingChatService {
         }
 
         yield {
-          type: 'tool_status',
-          data: { id: tc.id, name: tc.name, status: 'done', isError },
+          type: "tool_status",
+          data: { id: tc.id, name: tc.name, status: "done", isError },
         };
 
         prompts.push({
-          role: 'tool',
+          role: "tool",
           tool_call_id: tc.id,
           content: result,
         });
+      }
+
+      // Execute MCP tools (server-side, like backend tools) and add results
+      // to the conversation. The manager re-validates the URL via the SSRF
+      // guard and may throw on block/unreachable/error — surface that as an
+      // error tool_result so the model can recover and answer in text.
+      if (mcpCalls.length > 0) {
+        const mgr = getMcpClientManager();
+        for (const tc of mcpCalls) {
+          yield {
+            type: "tool_status",
+            data: { id: tc.id, name: tc.name, status: "running" },
+          };
+
+          let result: string;
+          let isError = false;
+          try {
+            result = await mgr.callTool(
+              user!,
+              mcpServers,
+              tc.name,
+              tc.arguments,
+            );
+          } catch (err: any) {
+            result = `Error executing MCP tool ${tc.name}: ${err?.message ?? String(err)}`;
+            isError = true;
+            console.error(`MCP tool execution error (${tc.name}):`, err);
+          }
+
+          yield {
+            type: "tool_status",
+            data: { id: tc.id, name: tc.name, status: "done", isError },
+          };
+
+          prompts.push({
+            role: "tool",
+            tool_call_id: tc.id,
+            content: result,
+          });
+        }
       }
 
       // Answer hallucinated tool calls with an error result so the model can
       // recover and respond in text instead of the stream dying silently.
       if (unknownCalls.length > 0) {
         const availableNames = mergedTools
-          .filter((t) => t.type === 'function')
+          .filter((t) => t.type === "function")
           .map((t) => t.function.name)
-          .join(', ');
+          .join(", ");
         for (const tc of unknownCalls) {
           console.warn(`LLM called unknown tool "${tc.name}"`);
           yield {
-            type: 'tool_status',
-            data: { id: tc.id, name: tc.name, status: 'done', isError: true },
+            type: "tool_status",
+            data: { id: tc.id, name: tc.name, status: "done", isError: true },
           };
           prompts.push({
-            role: 'tool',
+            role: "tool",
             tool_call_id: tc.id,
             content:
               `Error: tool "${tc.name}" does not exist. ` +
               (availableNames
                 ? `Available tools: ${availableNames}. `
-                : 'No tools are available. ') +
-              'Answer the user directly instead.',
+                : "No tools are available. ") +
+              "Answer the user directly instead.",
           });
         }
       }
@@ -554,10 +669,10 @@ export class StreamingChatService {
     // Emit signature and done
     const signature = this.chatService.generateSignature([
       ...body.prompts,
-      { content: full, role: 'assistant' },
+      { content: full, role: "assistant" },
     ]);
-    yield { type: 'signature', data: { signature } };
-    yield { type: 'done' };
+    yield { type: "signature", data: { signature } };
+    yield { type: "done" };
   }
 
   /**
@@ -567,37 +682,37 @@ export class StreamingChatService {
   private async *streamOneIteration(
     body: ChatRequest,
     user: User | null,
-    signal?: AbortSignal
+    signal?: AbortSignal,
   ): AsyncGenerator<
     StreamEvent,
     { text: string; toolCalls: ToolCallData[] },
     void
   > {
-    let text = '';
+    let text = "";
     const toolCalls: ToolCallData[] = [];
 
     for await (const chunk of this.conversationApi.streamResponseWithTools(
       body,
       user,
-      signal
+      signal,
     )) {
-      if (chunk.type === 'text') {
+      if (chunk.type === "text") {
         if (chunk.content && chunk.content.length > 0) {
           text += chunk.content;
-          yield { type: 'chunk', data: { delta: chunk.content } };
+          yield { type: "chunk", data: { delta: chunk.content } };
         }
-      } else if (chunk.type === 'tool_call_start') {
+      } else if (chunk.type === "tool_call_start") {
         // Let the client show activity while the arguments stream in
         yield {
-          type: 'tool_status',
-          data: { id: chunk.id, name: chunk.name, status: 'generating' },
+          type: "tool_status",
+          data: { id: chunk.id, name: chunk.name, status: "generating" },
         };
-      } else if (chunk.type === 'tool_call') {
+      } else if (chunk.type === "tool_call") {
         let args: Record<string, any> = {};
         try {
           args = chunk.arguments ? JSON.parse(chunk.arguments) : {};
         } catch (e) {
-          console.error('Failed to parse tool call arguments:', e);
+          console.error("Failed to parse tool call arguments:", e);
           args = { raw: chunk.arguments };
         }
         toolCalls.push({
@@ -618,16 +733,16 @@ export class StreamingChatService {
   private mergeTools(
     frontendTools: ChatCompletionTool[],
     registry: ToolRegistry,
-    request: ChatRequest
+    request: ChatRequest,
   ): ChatCompletionTool[] {
     const backendDefs = registry.getDefinitionsForRequest(request);
     const backendNames = new Set(
-      backendDefs.map((d) => (d.type === 'function' ? d.function.name : ''))
+      backendDefs.map((d) => (d.type === "function" ? d.function.name : "")),
     );
 
     // Filter out frontend tools that conflict with backend tool names
     const filteredFrontend = frontendTools.filter(
-      (t) => t.type !== 'function' || !backendNames.has(t.function.name)
+      (t) => t.type !== "function" || !backendNames.has(t.function.name),
     );
 
     return [...backendDefs, ...filteredFrontend];

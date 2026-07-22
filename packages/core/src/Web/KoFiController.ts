@@ -4,6 +4,7 @@ import { DonationData } from '@ko-fi/types';
 import { getDbContext } from '../Entity/Database';
 import { Decimal } from '@prisma/client/runtime/binary';
 import { donationTag } from '../Api/BillingApi';
+import { getAnalytics } from '../Analytics/AnalyticsService';
 
 export function setupKoFi(app: Express) {
   kofi(app, {
@@ -18,6 +19,19 @@ export function setupKoFi(app: Express) {
               : donation.email,
           timestamp: new Date(),
           message: donation.message ?? null,
+        },
+      });
+
+      // analytics: donation_made event
+      const isDonationTag =
+        donation.message.toLowerCase() === donationTag;
+      getAnalytics().trackEvent('donation_made', {
+        userId: isDonationTag ? null : donation.email,
+        source: 'kofi',
+        props: {
+          amount: donation.amount,
+          currency: donation.currency,
+          isAnonymous: isDonationTag,
         },
       });
     },

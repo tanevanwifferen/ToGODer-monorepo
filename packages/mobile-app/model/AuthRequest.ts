@@ -15,6 +15,7 @@ export interface ResetPasswordRequest {
 export interface AuthResponse {
   token: string;
   userId: string;
+  isAdmin?: boolean;
 }
 
 export interface BillingResponse {

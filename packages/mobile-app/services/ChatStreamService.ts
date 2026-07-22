@@ -245,6 +245,9 @@ export class ChatStreamService {
         options.memoryLoopLimitReached,
         options.artifactIndex,
         options.tools,
+        undefined, // pdfCacheId (PDF attachments handled via MessageService)
+        undefined, // pdfName
+        undefined, // pdfKey
         this.abortController.signal
       );
 
