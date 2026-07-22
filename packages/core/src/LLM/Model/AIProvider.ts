@@ -273,10 +273,10 @@ export function ListModels(): AIProvider[] {
     return modelCache;
   }
   modelCache = [
+    AIProvider.DeepSeekV4Pro,
     AIProvider.Ministral,
     AIProvider.DeepSeekV3,
     AIProvider.DeepSeekV32,
-    AIProvider.DeepSeekV4Pro,
     AIProvider.DeepSeekV4Flash,
     AIProvider.gpt5,
     AIProvider.gpt51Chat,
