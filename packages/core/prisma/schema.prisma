@@ -14,6 +14,7 @@ model User {
   password          String
   verified          Boolean       @default(false)
   verificationToken String        @default(uuid())
+  tokenVersion      Int           @default(0)
   createdAt         DateTime      @default(now())
   dataSync          UserDataSync?
   mcpServers        McpServer[]

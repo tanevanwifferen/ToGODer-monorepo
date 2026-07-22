@@ -286,8 +286,8 @@ export class AnalyticsService {
     const deltas: number[] = [];
     for (const r of rows) {
       const delta =
-        (new Date(r.first_message).getTime() -
-          new Date(r.first_event).getTime()) /
+        (new Date(Number(r.first_message)).getTime() -
+          new Date(Number(r.first_event)).getTime()) /
         1000;
       if (delta >= 0) deltas.push(delta);
     }
