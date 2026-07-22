@@ -18,9 +18,14 @@ export const setAuthUser = async (
     };
     if (req.headers.authorization) {
       const token = req.headers.authorization.split(' ')[1];
-      const { id } = jwt.verify(token, process.env.JWT_SECRET!) as JwtPayload;
+      const { id, tokenVersion } = jwt.verify(token, process.env.JWT_SECRET!) as JwtPayload & { tokenVersion?: number };
       const db = getDbContext();
-      auth.user = await db.user.findUnique({ where: { id } });
+      const user = await db.user.findUnique({ where: { id } });
+      // Only attach user if token version matches (old tokens without
+      // tokenVersion default to 0).
+      if (user && user.tokenVersion === (tokenVersion ?? 0)) {
+        auth.user = user;
+      }
     }
     Object.defineProperty(req, 'togoder_auth', {
       value: auth,
@@ -54,6 +59,39 @@ export const authenticated = (
   }
 };
 
+export const authenticatedAsync = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
+  try {
+    if (!req.headers.authorization) return res.status(401).json('Unauthorized');
+
+    const token = req.headers.authorization.split(' ')[1];
+    const { id, date, tokenVersion } = jwt.verify(token, process.env.JWT_SECRET!) as {
+      id: string;
+      date: number;
+      tokenVersion?: number;
+    };
+
+    if (date < new Date().getTime() - 1000 * 60 * 60 * 24) {
+      return res.status(401).json('Token expired');
+    }
+
+    // Check that the token version matches the current user's version.
+    // Old tokens without tokenVersion default to 0.
+    const db = getDbContext();
+    const user = await db.user.findUnique({ where: { id } });
+    if (!user || user.tokenVersion !== (tokenVersion ?? 0)) {
+      return res.status(401).json({ logout: true });
+    }
+
+    next();
+  } catch {
+    res.status(401).json({ logout: true });
+  }
+};
+
 export const onlyOwner = async (
   req: Request,
   res: Response,
@@ -63,17 +101,28 @@ export const onlyOwner = async (
     if (!req.headers.authorization) return res.status(401).json('Unauthorized');
 
     const token = req.headers.authorization.split(' ')[1];
-    const decodedToken = <{ id: string; date: number }>(
-      jwt.verify(token, process.env.JWT_SECRET!)
-    );
+    const decodedToken = jwt.verify(token, process.env.JWT_SECRET!) as {
+      id: string;
+      date: number;
+      tokenVersion?: number;
+    };
+
+    // Verify the token belongs to the user and hasn't expired
     if (
-      decodedToken.id === req.body.userId &&
-      decodedToken.date > new Date().getTime() - 1000 * 60 * 60 * 24
+      decodedToken.id !== req.body.userId ||
+      decodedToken.date < new Date().getTime() - 1000 * 60 * 60 * 24
     ) {
-      next();
-    } else {
-      res.status(401).json('nope');
+      return res.status(401).json('nope');
     }
+
+    // Check token version matches current user version
+    const db = getDbContext();
+    const user = await db.user.findUnique({ where: { id: decodedToken.id } });
+    if (!user || user.tokenVersion !== (decodedToken.tokenVersion ?? 0)) {
+      return res.status(401).json('nope');
+    }
+
+    next();
   } catch {
     res.status(401).json('Unauthorized');
   }

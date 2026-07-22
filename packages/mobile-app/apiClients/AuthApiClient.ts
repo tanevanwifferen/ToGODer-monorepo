@@ -48,4 +48,8 @@ export class AuthApiClient {
       confirmPassword: newPassword
     });
   }
+
+  static async logout(): Promise<void> {
+    return ApiClient.post<void>('/auth/logout');
+  }
 }

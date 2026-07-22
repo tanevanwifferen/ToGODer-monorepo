@@ -77,7 +77,7 @@ const migrateSettings = (state: any) => {
 
     // Migrate settings from chats to userSettings
     const migratedSettings = {
-      model: chatsState.model || "meta-llama/llama-3.2-90b-vision-instruct",
+      model: chatsState.model || "mistralai/ministral-8b-2512",
       communicationStyle: chatsState.communicationStyle ?? 2,
       language: chatsState.language || "",
       assistant_name: chatsState.assistant_name || "ToGODer",
