@@ -49,6 +49,7 @@ export interface ShareArtifactRequest {
   content: string;
   visibility: ShareVisibility;
   instructionHistory?: SignedInstructionSnapshot[];
+  artifactSignature?: string;
 }
 
 // Full shared artifact data
@@ -101,6 +102,45 @@ export function parseInstructionHistory(
 export interface ListSharedConversationsResponse {
   chats: SharedConversation[];
   total: number;
+}
+
+// Request body for sharing a folder
+
+export interface ShareFolderRequest {
+  title: string;
+  description?: string;
+  visibility: ShareVisibility;
+  artifactIds: string[];
+}
+
+// An item within a shared folder (references a SharedArtifact)
+export interface SharedFolderItem {
+  id: string;
+  folderId: string;
+  artifactId: string;
+  sortOrder: number;
+  artifact: SharedArtifact;
+}
+
+// Full shared folder data
+export interface SharedFolder {
+  id: string;
+  ownerId: string;
+  title: string;
+  description?: string;
+  createdAt: string;
+  views: number;
+  visibility: ShareVisibility;
+  owner: SharedConversationOwner;
+  items: SharedFolderItem[];
+  publishedToPayload?: boolean;
+}
+
+// Payload content response (from GET /api/admin/payload)
+export interface PayloadContent {
+  chats: SharedConversation[];
+  artifacts: SharedArtifact[];
+  folders: SharedFolder[];
 }
 
 // Type for infinite query data structure

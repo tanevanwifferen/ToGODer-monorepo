@@ -3,6 +3,7 @@ import SwiftUI
 struct ShareChatView: View {
     let chat: Chat
     let apiClient: APIClient
+    let isAdmin: Bool
 
     @Environment(\.dismiss) private var dismiss
     @State private var title: String
@@ -12,10 +13,14 @@ struct ShareChatView: View {
     @State private var shareURL: String?
     @State private var error: String?
     @State private var copied = false
+    @State private var sharedChatId: String?
+    @State private var isPublishingToPayload = false
+    @State private var payloadPublished = false
 
-    init(chat: Chat, apiClient: APIClient) {
+    init(chat: Chat, apiClient: APIClient, isAdmin: Bool) {
         self.chat = chat
         self.apiClient = apiClient
+        self.isAdmin = isAdmin
         _title = State(initialValue: chat.displayTitle)
     }
 
@@ -101,23 +106,52 @@ struct ShareChatView: View {
     // MARK: - Shared Result
 
     private func sharedSection(url: String) -> some View {
-        Section("Share Link") {
-            VStack(alignment: .leading, spacing: 12) {
-                Text(url)
-                    .font(.callout.monospaced())
-                    .textSelection(.enabled)
+        Group {
+            Section("Share Link") {
+                VStack(alignment: .leading, spacing: 12) {
+                    Text(url)
+                        .font(.callout.monospaced())
+                        .textSelection(.enabled)
 
-                Button {
-                    UIPasteboard.general.string = url
-                    copied = true
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
-                        copied = false
+                    Button {
+                        UIPasteboard.general.string = url
+                        copied = true
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                            copied = false
+                        }
+                    } label: {
+                        Label(copied ? "Copied!" : "Copy Link", systemImage: copied ? "checkmark" : "doc.on.doc")
+                            .frame(maxWidth: .infinity)
                     }
-                } label: {
-                    Label(copied ? "Copied!" : "Copy Link", systemImage: copied ? "checkmark" : "doc.on.doc")
-                        .frame(maxWidth: .infinity)
+                    .buttonStyle(.borderedProminent)
                 }
-                .buttonStyle(.borderedProminent)
+            }
+
+            // Admin-only: Publish to Payload after sharing
+            if isAdmin, let chatId = sharedChatId {
+                Section("Publish to Payload") {
+                    if payloadPublished {
+                        Label("Published to Payload!", systemImage: "checkmark.circle")
+                            .foregroundStyle(.green)
+                    } else {
+                        Button {
+                            Task { await publishToPayload(chatId: chatId) }
+                        } label: {
+                            if isPublishingToPayload {
+                                HStack {
+                                    ProgressView()
+                                        .controlSize(.small)
+                                    Text("Publishing...")
+                                }
+                            } else {
+                                Label("Publish to Payload", systemImage: "paperplane")
+                                    .frame(maxWidth: .infinity)
+                            }
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .disabled(isPublishingToPayload)
+                    }
+                }
             }
         }
     }
@@ -145,7 +179,22 @@ struct ShareChatView: View {
 
         do {
             let sharedChat: SharedChat = try await apiClient.post("/share", body: request)
+            sharedChatId = sharedChat.id
             shareURL = Configuration.shareBaseURL.appendingPathComponent(sharedChat.id).absoluteString
+        } catch {
+            self.error = error.localizedDescription
+        }
+    }
+
+    private func publishToPayload(chatId: String) async {
+        isPublishingToPayload = true
+        defer { isPublishingToPayload = false }
+        do {
+            let _: [String: String]? = try await apiClient.post(
+                "/admin/payload/chat/\(chatId)/mark",
+                body: EmptyBody()
+            )
+            payloadPublished = true
         } catch {
             self.error = error.localizedDescription
         }

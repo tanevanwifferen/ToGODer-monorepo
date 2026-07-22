@@ -77,7 +77,7 @@ export class AnalyticsService {
       `SELECT COUNT(DISTINCT userId) as cnt FROM Event WHERE timestamp >= ? AND userId IS NOT NULL`,
       since.toISOString(),
     );
-    return rows[0]?.cnt ?? 0;
+    return Number(rows[0]?.cnt ?? 0);
   }
 
   async dau(): Promise<number> {

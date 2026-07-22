@@ -3,6 +3,17 @@ import { authenticated, setAuthUser } from './Middleware/auth';
 import { ToGODerRequest } from './Model/ToGODerRequest';
 import { getAnalytics } from '../Analytics/AnalyticsService';
 
+// ── BigInt JSON serialization ──────────────────────────────────────
+// Some SQLite drivers (e.g. better-sqlite3 via Prisma) return COUNT
+// results as BigInt. JSON.stringify throws on BigInt, so we supply a
+// default toJSON that converts to Number.
+// eslint-disable-next-line no-extend-native
+if (typeof BigInt !== 'undefined' && (BigInt.prototype as any).toJSON === undefined) {
+  (BigInt.prototype as any).toJSON = function (this: bigint) {
+    return Number(this);
+  };
+}
+
 // ── Admin guard ────────────────────────────────────────────────────
 // Reads ADMIN_EMAILS from env (comma-separated). Only users whose email
 // is in that list may access /admin/* routes. No DB column needed.
@@ -100,7 +111,13 @@ export function GetAdminRouter(): Router {
       try {
         const analytics = getAnalytics();
         const metrics = await analytics.getMetrics();
-        res.json(metrics);
+        // BigInt-safe JSON response (belt-and-suspenders with the
+        // BigInt.prototype.toJSON polyfill above)
+        const json = JSON.stringify(metrics, (_key, value) =>
+          typeof value === 'bigint' ? Number(value) : value,
+        );
+        res.setHeader('Content-Type', 'application/json; charset=utf-8');
+        res.send(json);
       } catch (err) {
         console.error('[admin] api metrics error:', err);
         res.status(500).json({ error: 'Internal Server Error' });
