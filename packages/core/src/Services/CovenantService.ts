@@ -23,6 +23,12 @@ export interface CovenantState {
   exchangeCount: number;
   /** Timestamp of last update (ISO) */
   lastUpdated: string;
+  /**
+   * Pending watcher instruction from a background depth evaluation.
+   * Set asynchronously by the watcher after `getResponse()` returns.
+   * Consumed on the NEXT request's system prompt build, then cleared.
+   */
+  pendingWatcherInstruction?: string;
 }
 
 const MAX_THEMES = 3;
@@ -189,6 +195,14 @@ export function renderCovenantState(state: CovenantState | null): string {
   }
 
   parts.push(`${state.exchangeCount} exchanges have shaped this moment.`);
+
+  // Inject pending watcher instruction from background evaluation, then clear.
+  // This primes the model to go deeper on the current turn after a shallow
+  // response was detected asynchronously in the previous exchange.
+  if (state.pendingWatcherInstruction) {
+    parts.push(`\n\n${state.pendingWatcherInstruction}`);
+    state.pendingWatcherInstruction = undefined;
+  }
 
   return parts.join(' ');
 }

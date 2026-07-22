@@ -63,7 +63,8 @@ app.use(
 // Rate limiter to prevent abuse
 const messageLimiter = rateLimit({
   windowMs: 60 * 1000, // 1 minute
-  max: 12, // The first one is the initial request so we (4 + 1)
+  max: 30, // Shared across all endpoints — streaming + memory + sync + chat add up fast
+  skipFailedRequests: true, // Don't penalise 401/402 responses
   message: "Too many requests from this IP, please try again later.",
   standardHeaders: true,
   legacyHeaders: false,

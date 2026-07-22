@@ -1,4 +1,5 @@
 import { AIWrapper } from '../LLM/AIWrapper';
+import { CovenantState, getUserCovenant, setUserCovenant } from './CovenantService';
 
 /**
  * The Watcher — Meta-Prompt Governor (v2 — AI-drawn).
@@ -125,6 +126,67 @@ export async function evaluateDepthWithAI(
  */
 export function getWatcherInstruction(assistantName: string): string {
   return WATCHER_INSTRUCTION.replace(/{{ name }}/g, assistantName);
+}
+
+/**
+ * Fire-and-forget background watcher: evaluates response depth and optionally
+ * rewrites, storing any instruction in the Covenant for the next request.
+ *
+ * Call WITHOUT await — the user gets the original response immediately.
+ * The rewrite instruction (if any) surfaces in the NEXT turn's system prompt.
+ */
+export function runWatcherBackground(
+  userId: string,
+  assistantName: string,
+  output: string,
+  systemPrompt: string,
+  messages: any[],
+  evalWrapper: AIWrapper,
+  rewriteWrapper: AIWrapper,
+): void {
+  // Fire-and-forget — never block the response
+  (async () => {
+    try {
+      const depthScore = await evaluateDepthWithAI(output, evalWrapper);
+      console.log(
+        `[watcher:bg] depth=${depthScore} rewrite=${needsRewrite(depthScore)}`,
+      );
+
+      if (!needsRewrite(depthScore)) return;
+
+      const watcherInstruction = getWatcherInstruction(assistantName);
+      const rewriteMessages = [
+        ...messages,
+        { role: 'assistant' as const, content: output },
+        { role: 'user' as const, content: watcherInstruction },
+      ];
+      const rewriteCompletion = await rewriteWrapper.getResponse(
+        systemPrompt,
+        rewriteMessages,
+        1,
+      );
+      const rewriteOutput =
+        rewriteCompletion.choices?.[0]?.message?.content ?? '';
+      const rewriteScore = await evaluateDepthWithAI(
+        rewriteOutput,
+        evalWrapper,
+      );
+      console.log(
+        `[watcher:bg] rewrite depth=${rewriteScore} (was ${depthScore})`,
+      );
+
+      // Store the rewrite instruction in the Covenant for the next turn.
+      // The original response already went to the user; this primes the model
+      // to go deeper on the NEXT exchange.
+      const covenant = getUserCovenant(userId);
+      if (covenant) {
+        covenant.pendingWatcherInstruction = `The Watcher observed your previous response was shallow (depth ${depthScore}/9). The rewrite scored ${rewriteScore}/9. Descend deeper this time — speak from the well, not the surface.`;
+        setUserCovenant(userId, covenant);
+      }
+    } catch (err) {
+      console.warn('[watcher:bg] background evaluation failed:', err);
+    }
+  })();
 }
 
 /**

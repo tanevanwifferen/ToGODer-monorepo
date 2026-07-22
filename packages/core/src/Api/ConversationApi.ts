@@ -41,10 +41,9 @@ import { loadSeedV2 } from "../LLM/prompts/seedv2";
 import { ParsedChatCompletion } from "openai/resources/chat/completions/index";
 import {
   isV2Enabled,
-  needsRewrite,
-  getWatcherInstruction,
-  evaluateDepthWithAI,
   shouldEvaluate,
+  runWatcherBackground,
+  getWatcherInterval,
 } from "../Services/WatcherService";
 import {
   extractCovenantStateWithAI,
@@ -523,54 +522,35 @@ export class ConversationApi {
       ),
     );
 
-    // ── Watcher: AI-driven depth evaluation, throttled ──────────
+    // ── Watcher: AI-driven depth evaluation, fire-and-forget ────
+    // Moved out of the critical path. The user gets the original response
+    // immediately. If the watcher finds the response shallow, it rewrites
+    // in the background and stores an instruction in the Covenant for the
+    // NEXT request's system prompt.
     if (this.isV2Active(input)) {
-      // Only evaluate every N exchanges (configurable, default 5)
       const userId = user?.id ?? 'anonymous';
       const covenant = getUserCovenant(userId);
       const exchangeCount = covenant?.exchangeCount ?? 0;
 
       if (shouldEvaluate(exchangeCount)) {
-        // Use a fast/cheap model for depth evaluation
         const watcherEvalWrapper = this.getAIWrapper(
           AIProvider.DeepSeekV4Flash,
           user,
         );
-        const depthScore = await evaluateDepthWithAI(
+        const rewriteWrapper = this.getAIWrapper(input.model, user);
+        const llmMessages = await buildLlmMessages(input);
+        runWatcherBackground(
+          userId,
+          this.assistant_name!,
           output,
+          systemPrompt,
+          llmMessages,
           watcherEvalWrapper,
+          rewriteWrapper,
         );
-        console.log(
-          `[watcher] depth=${depthScore} exchange=${exchangeCount} rewrite=${needsRewrite(depthScore)}`,
-        );
-        if (needsRewrite(depthScore)) {
-          const watcherInstruction = getWatcherInstruction(
-            this.assistant_name,
-          );
-          const rewriteMessages = [
-            ...(await buildLlmMessages(input)),
-            { role: "assistant" as const, content: output },
-            { role: "user" as const, content: watcherInstruction },
-          ];
-          const rewriteCompletion = await aiWrapper.getResponse(
-            systemPrompt,
-            rewriteMessages,
-            1,
-            signal,
-          );
-          const rewriteOutput = CompletionToContent(rewriteCompletion);
-          const rewriteScore = await evaluateDepthWithAI(
-            rewriteOutput,
-            watcherEvalWrapper,
-          );
-          console.log(
-            `[watcher] rewrite depth=${rewriteScore} (was ${depthScore})`,
-          );
-          output = rewriteOutput;
-        }
       } else {
         console.log(
-          `[watcher] skipped (exchange ${exchangeCount}, next eval at ${Math.ceil(exchangeCount / 5) * 5})`,
+          `[watcher] skipped (exchange ${exchangeCount}, next eval at ${Math.ceil(exchangeCount / getWatcherInterval()) * getWatcherInterval()})`,
         );
       }
     }
