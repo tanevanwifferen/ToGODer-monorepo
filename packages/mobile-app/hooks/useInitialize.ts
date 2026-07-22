@@ -1,7 +1,6 @@
 import { useCallback, useEffect } from "react";
 import { GlobalApiClient } from "../apiClients/GlobalApiClient";
 import {
-  selectDefaultModel,
   selectOldDefaultModel,
   setGlobalConfig,
 } from "../redux/slices/globalConfigSlice";
@@ -19,19 +18,20 @@ export function useInitialize() {
       const globalConfig = await GlobalApiClient.getGlobalConfig();
       store.dispatch(setGlobalConfig(globalConfig));
       const oldDefaultModel = selectOldDefaultModel(store.getState());
-      const defaultModel = selectDefaultModel(store.getState());
       const currentModel = store.getState().userSettings.model;
-      // Only update the model if the server default changed AND the user
-      // hasn't explicitly chosen a different model (i.e. they're still on
-      // the old default).
+      const isAuthenticated = Boolean(store.getState().auth.token);
+
+      // Only migrate authenticated users from the old (guest) default to
+      // DeepSeek V4 Pro. Non-authenticated users keep the guest default
+      // (Ministral, the first model returned by the server).
       if (
-        defaultModel !== oldDefaultModel &&
-        defaultModel !== "" &&
+        isAuthenticated &&
+        oldDefaultModel &&
         (!currentModel || currentModel === oldDefaultModel)
       ) {
         store.dispatch(
           updateSettings({
-            model: defaultModel,
+            model: "deepseek/deepseek-v4-pro",
           })
         );
       }

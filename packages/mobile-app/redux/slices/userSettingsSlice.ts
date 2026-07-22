@@ -40,7 +40,7 @@ export interface UserSettingsState {
 
 const initialState: UserSettingsState = {
   // Conversation defaults
-  model: "meta-llama/llama-3.2-90b-vision-instruct",
+  model: "mistralai/ministral-8b-2512",
   communicationStyle: ChatRequestCommunicationStyle.AdaptToConversant,
   language: "",
   assistant_name: "ToGODer",

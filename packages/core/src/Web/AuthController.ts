@@ -4,7 +4,7 @@ import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
 import { z } from 'zod';
 import { Mailer } from '../Email/mailer';
-import { onlyOwner, authenticated, setAuthUser } from './Middleware/auth';
+import { onlyOwner, authenticated, setAuthUser, authenticatedAsync } from './Middleware/auth';
 import { ToGODerRequest } from './Model/ToGODerRequest';
 import { getAnalytics } from '../Analytics/AnalyticsService';
 
@@ -21,8 +21,13 @@ function isAdminUser(email: string): boolean {
 
 const updateTokenHandler = async (req: Request, res: Response) => {
   try {
+    const db = getDbContext();
+    const user = await db.user.findUnique({ where: { id: req.body.userId } });
+    if (!user) {
+      return res.status(404).send('User not found');
+    }
     const token = jwt.sign(
-      { id: req.body.userId, date: new Date().getTime() },
+      { id: req.body.userId, date: new Date().getTime(), tokenVersion: user.tokenVersion },
       process.env.JWT_SECRET!
     );
     res.json({ token: token });
@@ -128,7 +133,7 @@ const signInHandler = async (req: Request, res: Response) => {
         user.password
       );
       if (authenticated) {
-        const toSign = { id: user.id, date: new Date().getTime() };
+        const toSign = { id: user.id, date: new Date().getTime(), tokenVersion: user.tokenVersion };
         const token = jwt.sign(toSign, process.env.JWT_SECRET!);
 
         // analytics: login event
@@ -139,6 +144,29 @@ const signInHandler = async (req: Request, res: Response) => {
         res.status(401).send('Invalid email or password.');
       }
     }
+  } catch (err) {
+    console.log(err);
+    res.status(500).send('Something went wrong');
+  }
+};
+
+const logoutHandler = async (req: Request, res: Response) => {
+  try {
+    const authHeader = req.headers.authorization;
+    if (!authHeader) {
+      return res.status(401).send('No token provided');
+    }
+    const token = authHeader.split(' ')[1];
+    const { id } = jwt.verify(token, process.env.JWT_SECRET!) as { id: string };
+
+    const db = getDbContext();
+    // Increment tokenVersion to invalidate all existing tokens for this user
+    await db.user.update({
+      where: { id },
+      data: { tokenVersion: { increment: 1 } },
+    });
+
+    res.status(200).send('Logged out');
   } catch (err) {
     console.log(err);
     res.status(500).send('Something went wrong');
@@ -253,6 +281,8 @@ export function GetAuthRouter() {
   authRouter.post('/api/auth/signUp', signUpHandler);
 
   authRouter.post('/api/auth/changePassword', authenticated, setAuthUser, changePasswordHandler);
+
+  authRouter.post('/api/auth/logout', authenticatedAsync, logoutHandler);
 
   return authRouter;
 }
