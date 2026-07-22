@@ -5,15 +5,20 @@ import {
   ActivityIndicator,
   RefreshControl,
   StyleSheet,
+  useColorScheme,
 } from "react-native";
 import { useSelector } from "react-redux";
 import { ThemedText } from "../../components/ThemedText";
 import { ThemedView } from "../../components/ThemedView";
 import { AdminApiClient, MetricsSnapshot } from "../../apiClients/AdminApiClient";
 import { selectIsAdmin } from "../../redux/slices/authSlice";
+import { Colors } from "../../constants/Colors";
 
 export default function AdminScreen() {
   const isAdmin = useSelector(selectIsAdmin);
+  const colorScheme = useColorScheme();
+  const colors = Colors[colorScheme ?? "light"];
+  const isDark = colorScheme === "dark";
   const [metrics, setMetrics] = useState<MetricsSnapshot | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -87,9 +92,9 @@ export default function AdminScreen() {
     >
       {/* ── Header cards: DAU / WAU / MAU ── */}
       <View style={styles.cardRow}>
-        <MetricCard label="DAU" value={metrics.dau} />
-        <MetricCard label="WAU" value={metrics.wau} />
-        <MetricCard label="MAU" value={metrics.mau} />
+        <MetricCard label="DAU" value={metrics.dau} isDark={isDark} />
+        <MetricCard label="WAU" value={metrics.wau} isDark={isDark} />
+        <MetricCard label="MAU" value={metrics.mau} isDark={isDark} />
       </View>
 
       {/* ── Today stats ── */}
@@ -97,21 +102,31 @@ export default function AdminScreen() {
         <MetricCard
           label="New Today"
           value={metrics.todayNewConversations}
+          isDark={isDark}
         />
         <MetricCard
           label="Returning Today"
           value={metrics.todayReturningConversations}
+          isDark={isDark}
         />
         <MetricCard
           label="Subscribers"
           value={metrics.subscriptionCount}
+          isDark={isDark}
         />
       </View>
 
       {/* ── TTFM ── */}
       {metrics.timeToFirstMessageMedian != null && (
-        <View style={styles.card}>
-          <ThemedText style={styles.cardLabel}>
+        <View
+          style={[
+            styles.card,
+            isDark && { backgroundColor: "#1e2030", shadowOpacity: 0.15 },
+          ]}
+        >
+          <ThemedText
+            style={[styles.cardLabel, isDark && { color: "#9BA1A6" }]}
+          >
             TIME TO FIRST MESSAGE (MEDIAN)
           </ThemedText>
           <ThemedText style={styles.bigNum}>
@@ -121,14 +136,28 @@ export default function AdminScreen() {
       )}
 
       {/* ── Funnel ── */}
-      <View style={styles.card}>
-        <ThemedText style={styles.cardLabel}>FUNNEL</ThemedText>
+      <View
+        style={[
+          styles.card,
+          isDark && { backgroundColor: "#1e2030", shadowOpacity: 0.15 },
+        ]}
+      >
+        <ThemedText
+          style={[styles.cardLabel, isDark && { color: "#9BA1A6" }]}
+        >
+          FUNNEL
+        </ThemedText>
         {metrics.funnel.map((f) => (
           <View key={f.stage} style={styles.funnelRow}>
             <ThemedText style={styles.funnelLabel} numberOfLines={1}>
               {f.stage}
             </ThemedText>
-            <View style={styles.funnelBarContainer}>
+            <View
+              style={[
+                styles.funnelBarContainer,
+                isDark && { backgroundColor: "#2d2d3f" },
+              ]}
+            >
               <View
                 style={[
                   styles.funnelBar,
@@ -138,20 +167,35 @@ export default function AdminScreen() {
                 ]}
               />
             </View>
-            <ThemedText style={styles.funnelCount}>{f.count}</ThemedText>
+            <ThemedText
+              style={[styles.funnelCount, isDark && { color: "#9BA1A6" }]}
+            >
+              {f.count}
+            </ThemedText>
           </View>
         ))}
         {metrics.funnel.length === 0 && (
-          <ThemedText style={styles.muted}>No data yet</ThemedText>
+          <ThemedText style={[styles.muted, isDark && { color: "#9BA1A6" }]}>
+            No data yet
+          </ThemedText>
         )}
       </View>
 
       {/* ── Top Questions ── */}
-      <View style={styles.card}>
-        <ThemedText style={styles.cardLabel}>TOP QUESTIONS</ThemedText>
+      <View
+        style={[
+          styles.card,
+          isDark && { backgroundColor: "#1e2030", shadowOpacity: 0.15 },
+        ]}
+      >
+        <ThemedText
+          style={[styles.cardLabel, isDark && { color: "#9BA1A6" }]}
+        >
+          TOP QUESTIONS
+        </ThemedText>
         {metrics.topQuestions.length > 0 ? (
           <View style={styles.table}>
-            <TableHeader cols={["#", "Question", "Count"]} />
+            <TableHeader cols={["#", "Question", "Count"]} isDark={isDark} />
             {metrics.topQuestions.map((q, i) => (
               <TableRow
                 key={i}
@@ -160,35 +204,65 @@ export default function AdminScreen() {
                   q.question,
                   String(q.count),
                 ]}
+                isDark={isDark}
               />
             ))}
           </View>
         ) : (
-          <ThemedText style={styles.muted}>No data yet</ThemedText>
+          <ThemedText style={[styles.muted, isDark && { color: "#9BA1A6" }]}>
+            No data yet
+          </ThemedText>
         )}
       </View>
 
       {/* ── Daily Active ── */}
-      <View style={styles.card}>
-        <ThemedText style={styles.cardLabel}>DAILY ACTIVE USERS</ThemedText>
+      <View
+        style={[
+          styles.card,
+          isDark && { backgroundColor: "#1e2030", shadowOpacity: 0.15 },
+        ]}
+      >
+        <ThemedText
+          style={[styles.cardLabel, isDark && { color: "#9BA1A6" }]}
+        >
+          DAILY ACTIVE USERS
+        </ThemedText>
         {metrics.dailyActive.length > 0 ? (
           <View style={styles.table}>
-            <TableHeader cols={["Date", "Users"]} />
+            <TableHeader cols={["Date", "Users"]} isDark={isDark} />
             {metrics.dailyActive.map((d) => (
-              <TableRow key={d.date} cols={[d.date, String(d.count)]} />
+              <TableRow
+                key={d.date}
+                cols={[d.date, String(d.count)]}
+                isDark={isDark}
+              />
             ))}
           </View>
         ) : (
-          <ThemedText style={styles.muted}>No data yet</ThemedText>
+          <ThemedText style={[styles.muted, isDark && { color: "#9BA1A6" }]}>
+            No data yet
+          </ThemedText>
         )}
       </View>
 
       {/* ── Cohort Retention ── */}
-      <View style={styles.card}>
-        <ThemedText style={styles.cardLabel}>COHORT RETENTION</ThemedText>
+      <View
+        style={[
+          styles.card,
+          isDark && { backgroundColor: "#1e2030", shadowOpacity: 0.15 },
+        ]}
+      >
+        <ThemedText
+          style={[styles.cardLabel, isDark && { color: "#9BA1A6" }]}
+        >
+          COHORT RETENTION
+        </ThemedText>
         {cohort.length > 0 ? (
           <View style={styles.table}>
-            <TableHeader cols={["Cohort Week", "W+1", "W+2", "W+4"]} />
+            <TableHeader
+              cols={["Cohort Week", "W+1", "W+2", "W+4"]}
+              isDark={isDark}
+            />
             {cohort.map((c) => (
               <TableRow
                 key={c.cohortWeek}
@@ -198,11 +272,14 @@ export default function AdminScreen() {
                   `${c.w2}%`,
                   `${c.w4}%`,
                 ]}
+                isDark={isDark}
               />
             ))}
           </View>
         ) : (
-          <ThemedText style={styles.muted}>No data yet</ThemedText>
+          <ThemedText style={[styles.muted, isDark && { color: "#9BA1A6" }]}>
+            No data yet
+          </ThemedText>
         )}
       </View>
     </ScrollView>
@@ -211,22 +288,39 @@ export default function AdminScreen() {
 
 // ── Sub-components ──────────────────────────────────────────────────
 
-function MetricCard({ label, value }: { label: string; value: number }) {
+function MetricCard({ label, value, isDark }: { label: string; value: number; isDark: boolean }) {
   return (
-    <View style={styles.metricCard}>
-      <ThemedText style={styles.metricLabel}>{label}</ThemedText>
+    <View
+      style={[
+        styles.metricCard,
+        isDark && { backgroundColor: "#1e2030", shadowOpacity: 0.15 },
+      ]}
+    >
+      <ThemedText style={[styles.metricLabel, isDark && { color: "#9BA1A6" }]}>
+        {label}
+      </ThemedText>
       <ThemedText style={styles.bigNum}>{value}</ThemedText>
     </View>
   );
 }
 
-function TableHeader({ cols }: { cols: string[] }) {
+function TableHeader({
+  cols,
+  isDark,
+}: {
+  cols: string[];
+  isDark: boolean;
+}) {
   return (
     <View style={styles.tableRow}>
       {cols.map((c, i) => (
         <ThemedText
           key={i}
-          style={[styles.tableHeaderCell, { flex: i === 1 && cols.length > 2 ? 2 : 1 }]}
+          style={[
+            styles.tableHeaderCell,
+            isDark && { color: "#9BA1A6" },
+            { flex: i === 1 && cols.length > 2 ? 2 : 1 },
+          ]}
           numberOfLines={1}
         >
           {c}
@@ -236,13 +330,22 @@ function TableHeader({ cols }: { cols: string[] }) {
   );
 }
 
-function TableRow({ cols }: { cols: string[] }) {
+function TableRow({
+  cols,
+  isDark,
+}: {
+  cols: string[];
+  isDark: boolean;
+}) {
   return (
-    <View style={[styles.tableRow, styles.tableRowBorder]}>
+    <View style={[styles.tableRow, styles.tableRowBorder, isDark && { borderTopColor: "#2d2d3f" }]}>
       {cols.map((c, i) => (
         <ThemedText
           key={i}
-          style={[styles.tableCell, { flex: i === 1 && cols.length > 2 ? 2 : 1 }]}
+          style={[
+            styles.tableCell,
+            { flex: i === 1 && cols.length > 2 ? 2 : 1 },
+          ]}
           numberOfLines={i === 1 && cols.length > 2 ? 2 : 1}
         >
           {c}
