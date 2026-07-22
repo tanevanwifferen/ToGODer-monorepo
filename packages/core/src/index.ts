@@ -1,5 +1,6 @@
 import express, { NextFunction, Request, Response } from "express";
 import cors from "cors";
+import cookieParser from "cookie-parser";
 import path from "path";
 import rateLimit from "express-rate-limit";
 import { GetChatRouter } from "./Web/ChatController";
@@ -26,10 +27,12 @@ import {
   setupRealtimeVoiceWebSocket,
 } from "./Web/RealtimeVoiceController";
 import { GetAdminRouter } from "./Web/AdminController";
+import { GetReferralRouter } from "./Web/ReferralController";
 import { createServer } from "http";
 import WebSocket from "ws";
 import { registerLibraryTool } from "./Tools/LibraryTool";
 import { registerArxivTools } from "./Tools/ArxivTool";
+import { registerMemoryTools } from "./Tools/MemoryTool";
 
 const app = express();
 const port = process.env.PORT || 3000;
@@ -75,6 +78,8 @@ const messageLimiter = rateLimit({
 
 app.use(express.json({ limit: "50mb" }));
 
+app.use(cookieParser());
+
 app.use(
   express.urlencoded({
     extended: true,
@@ -96,6 +101,7 @@ const sentimentRouter = GetSentimentRouter(messageLimiter);
 const mcpRouter = GetMcpRouter(messageLimiter);
 const pdfUploadRouter = GetPdfUploadRouter();
 const adminRouter = GetAdminRouter();
+const referralRouter = GetReferralRouter();
 
 app.use(chatRouter);
 app.use(authRouter);
@@ -108,6 +114,7 @@ app.use(sentimentRouter);
 app.use(mcpRouter);
 app.use(pdfUploadRouter);
 app.use(adminRouter);
+app.use(referralRouter);
 
 const donateOptions: { address: string }[] = JSON.parse(
   process.env.DONATE_OPTIONS || "[]",
@@ -192,3 +199,4 @@ server.listen(port, () => {
 setupRunners();
 registerLibraryTool();
 registerArxivTools();
+registerMemoryTools();
