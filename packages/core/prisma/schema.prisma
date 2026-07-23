@@ -18,6 +18,10 @@ model User {
   createdAt         DateTime      @default(now())
   dataSync          UserDataSync?
   mcpServers        McpServer[]
+  referralCode      String?       @unique
+  creditsBalance    Decimal       @default(0)
+  referralsMade     Referral[]    @relation("ReferralReferrer")
+  referralsReceived Referral[]    @relation("ReferralReferred")
 }
 
 model UserDataSync {
@@ -150,6 +154,21 @@ model Event {
   @@index([eventType])
   @@index([timestamp])
   @@index([userId])
+}
+
+model Referral {
+  id              String   @id @default(uuid())
+  createdAt       DateTime @default(now())
+  referrerCode    String
+  referrerUserId  String
+  referrer        User     @relation("ReferralReferrer", fields: [referrerUserId], references: [id])
+  referredUserId  String   @unique
+  referred        User     @relation("ReferralReferred", fields: [referredUserId], references: [id])
+  level           Int      @default(1) // 1 = direct, 2 = second-level
+  credited        Boolean  @default(false) // whether commission was already credited
+
+  @@index([referrerUserId])
+  @@index([referrerCode])
 }
 
 generator client {

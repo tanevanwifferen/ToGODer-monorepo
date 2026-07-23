@@ -7,6 +7,7 @@ import { Mailer } from '../Email/mailer';
 import { onlyOwner, authenticated, setAuthUser, authenticatedAsync } from './Middleware/auth';
 import { ToGODerRequest } from './Model/ToGODerRequest';
 import { getAnalytics } from '../Analytics/AnalyticsService';
+import { ensureReferralCode, recordReferral } from '../Services/ReferralService';
 
 function isAdminUser(email: string): boolean {
   const raw = process.env.ADMIN_EMAILS || '';
@@ -136,6 +137,9 @@ const signInHandler = async (req: Request, res: Response) => {
         const toSign = { id: user.id, date: new Date().getTime(), tokenVersion: user.tokenVersion };
         const token = jwt.sign(toSign, process.env.JWT_SECRET!);
 
+        // Ensure existing users get a referral code (backfill)
+        await ensureReferralCode(user.id);
+
         // analytics: login event
         getAnalytics().trackEvent('login', { userId: user.id, source: 'web' });
 
@@ -200,6 +204,20 @@ const signUpHandler = async (req: Request, res: Response) => {
     };
 
     const createdUser = await db.user.create({ data: newUser });
+
+    // Generate referral code for this user
+    await ensureReferralCode(createdUser.id);
+
+    // If referral cookie is present, record the referral
+    const referrerCode = req.cookies?.referrer_code;
+    if (referrerCode) {
+      await recordReferral(referrerCode, createdUser.id);
+      getAnalytics().trackEvent('referral_signup', {
+        userId: createdUser.id,
+        source: 'web',
+        props: { referrerCode },
+      });
+    }
 
     // analytics: account_created event
     getAnalytics().trackEvent('account_created', { userId: createdUser.id, source: 'web' });
