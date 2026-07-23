@@ -63,6 +63,9 @@ COPY --from=build-backend /app/packages/core/bin packages/core/bin
 # Copy frontend static files into the path Express expects (../Frontend relative to bin/)
 COPY --from=build-frontend /app/packages/mobile-app/dist packages/core/Frontend
 
+# Copy v2 seed prompt (read at runtime by seedv2.ts)
+COPY prompts ./prompts
+
 # Create data directory
 RUN mkdir -p /app/data && chown -R node:node /app
 

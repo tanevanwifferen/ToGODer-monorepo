@@ -256,6 +256,8 @@ export type StreamEvent =
   | { type: "signature"; data: string }
   | { type: "instructions"; data: InstructionsSnapshotEvent }
   | { type: "memory_request"; data: { keys: string[] } }
+  | { type: "memory_write"; data: { key: string; value: string } }
+  | { type: "memory_delete"; data: { key: string } }
   | { type: "tool_call"; data: ArtifactToolCall }
   | { type: "tool_status"; data: ToolStatusEvent }
   | { type: "tool_result"; data: ToolResultEvent }
@@ -560,6 +562,18 @@ export class ChatApiClient {
                   data: data as { keys: string[] },
                 };
                 break;
+              case "memory_write":
+                yield {
+                  type: "memory_write",
+                  data: data as { key: string; value: string },
+                };
+                break;
+              case "memory_delete":
+                yield {
+                  type: "memory_delete",
+                  data: data as { key: string },
+                };
+                break;
               case "tool_call":
                 yield {
                   type: "tool_call",
@@ -781,6 +795,18 @@ export class ChatApiClient {
               yield {
                 type: "memory_request",
                 data: data as { keys: string[] },
+              };
+              break;
+            case "memory_write":
+              yield {
+                type: "memory_write",
+                data: data as { key: string; value: string },
+              };
+              break;
+            case "memory_delete":
+              yield {
+                type: "memory_delete",
+                data: data as { key: string },
               };
               break;
             case "tool_call":

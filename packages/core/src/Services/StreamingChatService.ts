@@ -11,6 +11,7 @@ import {
 } from "../LLM/Model/AIProvider";
 import { StreamChunk } from "../LLM/AIWrapper";
 import { ToolRegistry } from "../Tools/ToolRegistry";
+import { drainMemoryOps } from "../Tools/MemoryTool";
 import { getMcpClientManager } from "../Tools/McpClientManager";
 import { getDbContext } from "../Entity/Database";
 import { SentimentService, SentimentSummary } from "./SentimentService";
@@ -169,6 +170,8 @@ export interface InstructionsSnapshotData {
  */
 export type StreamEvent =
   | { type: "memory_request"; data: { keys: string[] } }
+  | { type: "memory_write"; data: { key: string; value: string } }
+  | { type: "memory_delete"; data: { key: string } }
   | { type: "chunk"; data: { delta: string } }
   | { type: "tool_call"; data: ToolCallData }
   | { type: "tool_status"; data: ToolStatusData }
@@ -589,6 +592,21 @@ export class StreamingChatService {
           type: "tool_status",
           data: { id: tc.id, name: tc.name, status: "done", isError },
         };
+
+        // Drain pending client-side memory operations (write/delete)
+        for (const op of drainMemoryOps(body)) {
+          if (op.type === "write") {
+            yield {
+              type: "memory_write",
+              data: { key: op.key, value: op.value! },
+            };
+          } else if (op.type === "delete") {
+            yield {
+              type: "memory_delete",
+              data: { key: op.key },
+            };
+          }
+        }
 
         prompts.push({
           role: "tool",

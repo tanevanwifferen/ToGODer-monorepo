@@ -37,7 +37,21 @@ import { User } from "@prisma/client";
 import { BillingDecorator } from "../Decorators/BillingDecorator";
 import { keysSchema } from "../zod/requestformemory";
 import { rootpersona } from "../LLM/prompts/rootprompts";
+import { loadSeedV2 } from "../LLM/prompts/seedv2";
 import { ParsedChatCompletion } from "openai/resources/chat/completions/index";
+import {
+  isV2Enabled,
+  shouldEvaluate,
+  runWatcherBackground,
+  getWatcherInterval,
+} from "../Services/WatcherService";
+import {
+  extractCovenantStateWithAI,
+  renderCovenantState,
+  getUserCovenant,
+  setUserCovenant,
+  CovenantState,
+} from "../Services/CovenantService";
 import { getPdf, storePdf } from "../Services/PdfCache";
 import {
   getEncryptedPdf,
@@ -375,14 +389,57 @@ export class ConversationApi {
     return await aiWrapper.getResponse(systemPrompt, input, 1, signal);
   }
 
-  // Build the full system prompt string based on input request options
-  private async buildSystemPrompt(input: ChatRequest): Promise<string> {
-    let systemPrompt =
-      input.customSystemPrompt ?? PromptList["/default"].prompt;
-
+  /** Whether v2 is active for this request (flag on, no override). */
+  private isV2Active(input: ChatRequest): boolean {
     const command = resolvePromptListItem(input.prompts);
-    if (command) {
-      systemPrompt = command.prompt;
+    return isV2Enabled() && !input.customSystemPrompt && !command;
+  }
+
+  // Build the full system prompt string based on input request options
+  private async buildSystemPrompt(
+    input: ChatRequest,
+    user: User | null | undefined,
+  ): Promise<string> {
+    // ── v2 Seed Prompt ──────────────────────────────────────────
+    // When v2 is enabled and no explicit command overrides it, use the
+    // seed‑v2 prompt with covenant state injected.
+    const useV2 = this.isV2Active(input);
+
+    let systemPrompt: string;
+    if (useV2) {
+      systemPrompt = loadSeedV2();
+
+      // ── Per-user Covenant: AI-drawn, not hardcoded ────────────
+      // Each user has their own independent Covenant state.
+      const userId = user?.id ?? 'anonymous';
+      const existingCovenant = getUserCovenant(userId);
+
+      // Use a fast/cheap model for covenant extraction
+      const covenantWrapper = this.getAIWrapper(
+        AIProvider.DeepSeekV4Flash,
+        user,
+      );
+      const covenant = await extractCovenantStateWithAI(
+        input.prompts,
+        covenantWrapper,
+        existingCovenant ?? undefined,
+      );
+
+      // Persist per-user state
+      setUserCovenant(userId, covenant);
+
+      const covenantText = renderCovenantState(covenant);
+      systemPrompt = systemPrompt.replace(
+        /\{\{ covenant_state \}\}/g,
+        covenantText,
+      );
+    } else {
+      const command = resolvePromptListItem(input.prompts);
+      systemPrompt =
+        input.customSystemPrompt ?? PromptList["/default"].prompt;
+      if (command) {
+        systemPrompt = command.prompt;
+      }
     }
 
     if (input.persona && String(input.persona).length > 0) {
@@ -454,9 +511,9 @@ export class ConversationApi {
       return "";
     }
     const aiWrapper = this.getAIWrapper(input.model, user);
-    const systemPrompt = await this.buildSystemPrompt(input);
+    const systemPrompt = await this.buildSystemPrompt(input, user);
 
-    const output = CompletionToContent(
+    let output = CompletionToContent(
       await aiWrapper.getResponse(
         systemPrompt,
         await buildLlmMessages(input),
@@ -464,6 +521,40 @@ export class ConversationApi {
         signal,
       ),
     );
+
+    // ── Watcher: AI-driven depth evaluation, fire-and-forget ────
+    // Moved out of the critical path. The user gets the original response
+    // immediately. If the watcher finds the response shallow, it rewrites
+    // in the background and stores an instruction in the Covenant for the
+    // NEXT request's system prompt.
+    if (this.isV2Active(input)) {
+      const userId = user?.id ?? 'anonymous';
+      const covenant = getUserCovenant(userId);
+      const exchangeCount = covenant?.exchangeCount ?? 0;
+
+      if (shouldEvaluate(exchangeCount)) {
+        const watcherEvalWrapper = this.getAIWrapper(
+          AIProvider.DeepSeekV4Flash,
+          user,
+        );
+        const rewriteWrapper = this.getAIWrapper(input.model, user);
+        const llmMessages = await buildLlmMessages(input);
+        runWatcherBackground(
+          userId,
+          this.assistant_name!,
+          output,
+          systemPrompt,
+          llmMessages,
+          watcherEvalWrapper,
+          rewriteWrapper,
+        );
+      } else {
+        console.log(
+          `[watcher] skipped (exchange ${exchangeCount}, next eval at ${Math.ceil(exchangeCount / getWatcherInterval()) * getWatcherInterval()})`,
+        );
+      }
+    }
+
     return output;
   }
 
@@ -483,7 +574,7 @@ export class ConversationApi {
       return;
     }
     const aiWrapper = this.getAIWrapper(input.model, user);
-    const systemPrompt = await this.buildSystemPrompt(input);
+    const systemPrompt = await this.buildSystemPrompt(input, user);
     for await (const delta of aiWrapper.streamResponse(
       systemPrompt,
       await buildLlmMessages(input),
@@ -510,7 +601,7 @@ export class ConversationApi {
       return;
     }
     const aiWrapper = this.getAIWrapper(input.model, user);
-    const systemPrompt = await this.buildSystemPrompt(input);
+    const systemPrompt = await this.buildSystemPrompt(input, user);
     for await (const chunk of aiWrapper.streamResponseWithTools(
       systemPrompt,
       await buildLlmMessages(input),

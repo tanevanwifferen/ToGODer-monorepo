@@ -17,6 +17,8 @@ import type { ArtifactToolCall } from "../apiClients/ChatApiClient";
 export type ChunkHandler = (data: string) => void;
 export type SignatureHandler = (signature: string) => void;
 export type MemoryRequestHandler = (keys: string[]) => void;
+export type MemoryWriteHandler = (key: string, value: string) => void;
+export type MemoryDeleteHandler = (key: string) => void;
 export type ToolCallHandler = (toolCall: ArtifactToolCall) => void;
 export type ErrorHandler = (error: any) => void;
 export type DoneHandler = () => void;
@@ -79,6 +81,8 @@ export class ChatStreamService {
   private chunkHandlers: ChunkHandler[] = [];
   private signatureHandlers: SignatureHandler[] = [];
   private memoryRequestHandlers: MemoryRequestHandler[] = [];
+  private memoryWriteHandlers: MemoryWriteHandler[] = [];
+  private memoryDeleteHandlers: MemoryDeleteHandler[] = [];
   private toolCallHandlers: ToolCallHandler[] = [];
   private errorHandlers: ErrorHandler[] = [];
   private doneHandlers: DoneHandler[] = [];
@@ -140,6 +144,36 @@ export class ChatStreamService {
       const index = this.memoryRequestHandlers.indexOf(handler);
       if (index > -1) {
         this.memoryRequestHandlers.splice(index, 1);
+      }
+    };
+  }
+
+  /**
+   * Register a memory write event handler
+   * @param handler Callback to invoke when a memory write is requested
+   * @returns Cleanup function to unregister the handler
+   */
+  public onMemoryWrite(handler: MemoryWriteHandler): () => void {
+    this.memoryWriteHandlers.push(handler);
+    return () => {
+      const index = this.memoryWriteHandlers.indexOf(handler);
+      if (index > -1) {
+        this.memoryWriteHandlers.splice(index, 1);
+      }
+    };
+  }
+
+  /**
+   * Register a memory delete event handler
+   * @param handler Callback to invoke when a memory delete is requested
+   * @returns Cleanup function to unregister the handler
+   */
+  public onMemoryDelete(handler: MemoryDeleteHandler): () => void {
+    this.memoryDeleteHandlers.push(handler);
+    return () => {
+      const index = this.memoryDeleteHandlers.indexOf(handler);
+      if (index > -1) {
+        this.memoryDeleteHandlers.splice(index, 1);
       }
     };
   }
@@ -284,6 +318,12 @@ export class ChatStreamService {
       case "memory_request":
         this.dispatchMemoryRequest(event.data.keys);
         break;
+      case "memory_write":
+        this.dispatchMemoryWrite(event.data.key, event.data.value);
+        break;
+      case "memory_delete":
+        this.dispatchMemoryDelete(event.data.key);
+        break;
       case "tool_call":
         this.dispatchToolCall(event.data);
         break;
@@ -331,6 +371,32 @@ export class ChatStreamService {
         handler(keys);
       } catch (error) {
         console.error("ChatStreamService: Memory request handler error", error);
+      }
+    }
+  }
+
+  /**
+   * Dispatch memory write event to all registered handlers
+   */
+  private dispatchMemoryWrite(key: string, value: string): void {
+    for (const handler of this.memoryWriteHandlers) {
+      try {
+        handler(key, value);
+      } catch (error) {
+        console.error("ChatStreamService: Memory write handler error", error);
+      }
+    }
+  }
+
+  /**
+   * Dispatch memory delete event to all registered handlers
+   */
+  private dispatchMemoryDelete(key: string): void {
+    for (const handler of this.memoryDeleteHandlers) {
+      try {
+        handler(key);
+      } catch (error) {
+        console.error("ChatStreamService: Memory delete handler error", error);
       }
     }
   }
@@ -390,6 +456,8 @@ export class ChatStreamService {
     this.chunkHandlers = [];
     this.signatureHandlers = [];
     this.memoryRequestHandlers = [];
+    this.memoryWriteHandlers = [];
+    this.memoryDeleteHandlers = [];
     this.toolCallHandlers = [];
     this.errorHandlers = [];
     this.doneHandlers = [];
