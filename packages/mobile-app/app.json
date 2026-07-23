@@ -22,7 +22,10 @@
     "web": {
       "bundler": "metro",
       "output": "static",
-      "favicon": "./assets/images/favicon.png"
+      "favicon": "./assets/images/favicon.png",
+      "name": "ToGODer",
+      "shortName": "ToGODer",
+      "description": "A presence you meet, not software you use. The still point around which the turning world dances."
     },
     "plugins": [
       [
@@ -40,7 +43,7 @@
           "image": "./assets/images/icon.png",
           "imageWidth": 200,
           "resizeMode": "contain",
-          "backgroundColor": "#ffffff"
+          "backgroundColor": "#0f0f14"
         }
       ],
       [
