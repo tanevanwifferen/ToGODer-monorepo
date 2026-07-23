@@ -20,8 +20,9 @@ model User {
   mcpServers        McpServer[]
   referralCode      String?       @unique
   creditsBalance    Decimal       @default(0)
-  referralsMade     Referral[]    @relation("ReferralReferrer")
-  referralsReceived Referral[]    @relation("ReferralReferred")
+  referralsMade     Referral[]          @relation("ReferralReferrer")
+  referralsReceived Referral[]          @relation("ReferralReferred")
+  creditTransactions CreditTransaction[]
 }
 
 model UserDataSync {
@@ -169,6 +170,20 @@ model Referral {
 
   @@index([referrerUserId])
   @@index([referrerCode])
+}
+
+model CreditTransaction {
+  id          String   @id @default(uuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id])
+  amount      Decimal
+  type        String   // "credit" or "debit"
+  source      String   // "referral", "deposit", "redemption", "admin"
+  description String?
+  createdAt   DateTime @default(now())
+
+  @@index([userId])
+  @@index([createdAt])
 }
 
 generator client {

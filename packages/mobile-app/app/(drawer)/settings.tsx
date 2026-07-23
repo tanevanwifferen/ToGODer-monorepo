@@ -6,6 +6,8 @@ import ModelSettings from '../../components/settings/ModelSettings';
 import ConversationSettings from '../../components/settings/ConversationSettings';
 import SystemPromptSettings from '../../components/settings/SystemPromptSettings';
 import McpSettings from '../../components/settings/McpSettings';
+import ReferralSettings from '../../components/settings/ReferralSettings';
+import CreditsHistory from '../../components/settings/CreditsHistory';
 
 const Settings = () => {
   const colorScheme = useColorScheme();
@@ -19,6 +21,8 @@ const Settings = () => {
         <ConversationSettings />
         <SystemPromptSettings />
         <McpSettings />
+        <ReferralSettings />
+        <CreditsHistory />
       </ScrollView>
     </View>
   );

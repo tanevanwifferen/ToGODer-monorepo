@@ -6,6 +6,7 @@ import { getAnalytics } from '../Analytics/AnalyticsService';
 import {
   resolveReferralCode,
   getReferralStats,
+  ensureReferralCode,
 } from '../Services/ReferralService';
 import { getDbContext } from '../Entity/Database';
 
@@ -42,6 +43,70 @@ export function GetReferralRouter(): Router {
     });
     res.redirect('/');
   });
+
+  // GET /api/referral/code — return the user's referral code + link
+  router.get(
+    '/api/referral/code',
+    authenticated,
+    setAuthUser,
+    async (req: Request, res: Response) => {
+      const togoderReq = req as ToGODerRequest;
+      const user = togoderReq.togoder_auth?.user;
+
+      if (!user) {
+        return res.status(401).json({ error: 'Unauthorized' });
+      }
+
+      const code = await ensureReferralCode(user.id);
+      const hostUrl = process.env.HOST_URL || 'https://togoder.click';
+
+      res.json({
+        referralCode: code,
+        referralLink: `${hostUrl}/ref/${code}`,
+        creditsBalance: user.creditsBalance,
+      });
+    },
+  );
+
+  // GET /api/credits/transactions — paginated credit transaction history
+  router.get(
+    '/api/credits/transactions',
+    authenticated,
+    setAuthUser,
+    async (req: Request, res: Response) => {
+      const togoderReq = req as ToGODerRequest;
+      const user = togoderReq.togoder_auth?.user;
+
+      if (!user) {
+        return res.status(401).json({ error: 'Unauthorized' });
+      }
+
+      const db = getDbContext();
+      const page = Math.max(1, parseInt(req.query.page as string) || 1);
+      const limit = Math.min(100, Math.max(1, parseInt(req.query.limit as string) || 20));
+      const offset = (page - 1) * limit;
+
+      const [transactions, total] = await Promise.all([
+        db.creditTransaction.findMany({
+          where: { userId: user.id },
+          orderBy: { createdAt: 'desc' },
+          skip: offset,
+          take: limit,
+        }),
+        db.creditTransaction.count({
+          where: { userId: user.id },
+        }),
+      ]);
+
+      res.json({
+        transactions,
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit),
+      });
+    },
+  );
 
   // GET /api/redeem — placeholder for redemption store
   router.get(
