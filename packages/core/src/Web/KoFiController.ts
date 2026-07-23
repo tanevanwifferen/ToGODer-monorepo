@@ -5,6 +5,7 @@ import { getDbContext } from '../Entity/Database';
 import { Decimal } from '@prisma/client/runtime/binary';
 import { donationTag } from '../Api/BillingApi';
 import { getAnalytics } from '../Analytics/AnalyticsService';
+import { creditReferralCommissions } from '../Services/ReferralService';
 
 export function setupKoFi(app: Express) {
   kofi(app, {
@@ -34,6 +35,28 @@ export function setupKoFi(app: Express) {
           isAnonymous: isDonationTag,
         },
       });
+
+      // Referral commissions: if the donor is a registered user with a referral,
+      // compute and credit the 5/2/3 split
+      if (!isDonationTag) {
+        const donor = await db.user.findUnique({ where: { email: donation.email } });
+        if (donor) {
+          const amount = new Decimal(donation.amount);
+          const result = await creditReferralCommissions(donor.id, amount);
+          if (result.l1.greaterThan(0) || result.l2.greaterThan(0)) {
+            getAnalytics().trackEvent('referral_conversion', {
+              userId: donor.id,
+              source: 'kofi',
+              props: {
+                amount: donation.amount,
+                platformCut: result.platform.toString(),
+                l1Cut: result.l1.toString(),
+                l2Cut: result.l2.toString(),
+              },
+            });
+          }
+        }
+      }
     },
     verificationToken: process.env.KOFI_WEBHOOK_TOKEN!,
   });

@@ -13,7 +13,10 @@ export type AnalyticsEventType =
   | 'quiz_completed'
   | 'funnel_quiz_to_chat'
   | 'supporter_signup'
-  | 'donation_made';
+  | 'donation_made'
+  | 'referral_link_clicked'
+  | 'referral_signup'
+  | 'referral_conversion';
 
 export interface TrackOptions {
   userId?: string | null;
