@@ -1180,6 +1180,13 @@ export class MessageService {
             const writeValue = evt.data?.value;
             if (writeKey && StorageService.keyIsValid(writeKey) && writeValue !== undefined) {
               await StorageService.set(writeKey, writeValue);
+              // Add the key to chat.memories so it is included in
+              // resolvedMemories on the very next request — otherwise
+              // read_memory returns "content has not been fetched yet"
+              // even though the key is in memoryIndex.
+              store.dispatch(
+                addMemories({ id: chatId, memories: [writeKey] }),
+              );
               console.log(`[memory] write: ${writeKey}`);
             }
             break;

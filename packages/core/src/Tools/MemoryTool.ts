@@ -158,7 +158,13 @@ export function registerMemoryTools(): void {
       // Queue the client-side write
       enqueueMemoryOp(ctx.request, { type: 'write', key, value: String(value) });
 
-      return `Memory "${key}" has been queued for writing. The client will persist it.`;
+      // Update in-memory memories immediately so that read_memory can
+      // return the content within the same request (and in subsequent
+      // tool-loop iterations). The client-side persistence handles
+      // cross-request durability.
+      ctx.request.memories[key] = String(value);
+
+      return `Memory "${key}" has been written.`;
     },
   );
 
