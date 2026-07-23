@@ -83,7 +83,8 @@ export function CustomInputToolbar({
         autoCorrect: true,
         autoCapitalize: "sentences",
         spellCheck: true,
-        autoComplete: "on",
+        autoComplete: "off",
+        textContentType: "none",
         blurOnSubmit: Platform.OS === "web",
         onSubmitEditing:
           Platform.OS === "web"

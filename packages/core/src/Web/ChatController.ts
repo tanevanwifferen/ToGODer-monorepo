@@ -323,6 +323,12 @@ export function GetChatRouter(messageLimiter: RateLimitRequestHandler): Router {
             case "memory_request":
               sse.event("memory_request", evt.data);
               break;
+            case "memory_write":
+              sse.event("memory_write", evt.data);
+              break;
+            case "memory_delete":
+              sse.event("memory_delete", evt.data);
+              break;
             case "signature":
               sse.event("signature", evt.data);
               break;

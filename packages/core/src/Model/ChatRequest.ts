@@ -1,8 +1,6 @@
-import {
-  ChatCompletionMessageParam,
-  ChatCompletionTool,
-} from "openai/resources";
+import { ChatCompletionMessageParam, ChatCompletionTool } from "openai/resources";
 import { AIProvider } from "../LLM/Model/AIProvider";
+import { PendingMemoryOp } from "../Tools/MemoryTool";
 
 export enum ChatRequestCommunicationStyle {
   Default = 0,
@@ -72,6 +70,12 @@ export interface ChatRequest {
    * set by the chat pipeline after SentimentService runs.
    */
   sentimentContext?: string;
+  /**
+   * Server-side only: pending client-side memory operations queued by
+   * conscious memory tools (write_memory, delete_memory). Drained by
+   * StreamingChatService after each backend tool execution.
+   */
+  _pendingMemoryOps?: PendingMemoryOp[];
 }
 
 export interface ExperienceRequest {

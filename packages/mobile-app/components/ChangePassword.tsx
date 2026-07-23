@@ -7,6 +7,7 @@ import {
   ActivityIndicator,
 } from "react-native";
 import { AuthApiClient } from "../apiClients/AuthApiClient";
+import { SyncService } from "../services/SyncService";
 import { ThemedText } from "./ThemedText";
 import { ThemedView } from "./ThemedView";
 import { Colors } from "../constants/Colors";
@@ -47,12 +48,35 @@ export const ChangePassword: React.FC<ChangePasswordProps> = ({ onBack }) => {
 
       setLoading(true);
       await AuthApiClient.changePassword(currentPassword, newPassword);
+
+      // Re-encrypt synced data with the new password so encrypted
+      // storage remains accessible after the password change.
+      try {
+        await SyncService.getInstance().handlePasswordChange(
+          currentPassword,
+          newPassword
+        );
+      } catch (reEncryptErr: any) {
+        // Password was changed but re-encryption failed.
+        // Surface a clear warning — the user's synced data may be
+        // inaccessible until they log out and back in.
+        setError(
+          "Password changed, but re-encrypting your synced data failed: " +
+            (reEncryptErr?.message || reEncryptErr?.error || String(reEncryptErr))
+        );
+        setLoading(false);
+        return;
+      }
+
       setMessage("Password changed successfully");
       setCurrentPassword("");
       setNewPassword("");
       setConfirmPassword("");
     } catch (err: any) {
-      setError(err.toString());
+      // Extract the error message from JSON error objects returned by the API
+      const msg =
+        err?.error || err?.message || err?.toString?.() || "Unknown error";
+      setError(typeof msg === "string" ? msg : String(msg));
     } finally {
       setLoading(false);
     }

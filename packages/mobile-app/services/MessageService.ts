@@ -1175,6 +1175,25 @@ export class MessageService {
             return;
           }
 
+          case "memory_write": {
+            const writeKey = evt.data?.key;
+            const writeValue = evt.data?.value;
+            if (writeKey && StorageService.keyIsValid(writeKey) && writeValue !== undefined) {
+              await StorageService.set(writeKey, writeValue);
+              console.log(`[memory] write: ${writeKey}`);
+            }
+            break;
+          }
+
+          case "memory_delete": {
+            const deleteKey = evt.data?.key;
+            if (deleteKey && StorageService.keyIsValid(deleteKey)) {
+              await StorageService.delete(deleteKey);
+              console.log(`[memory] delete: ${deleteKey}`);
+            }
+            break;
+          }
+
           case "tool_call": {
             const toolCall = evt.data;
 

@@ -1,10 +1,11 @@
-import React, { useState } from 'react';
-import { Modal, StyleSheet, TextInput } from 'react-native';
+import React, { useEffect, useRef, useState } from 'react';
+import { Modal, StyleSheet, TextInput, useColorScheme } from 'react-native';
 import { useDispatch } from 'react-redux';
 import { setPasscode } from '../../redux/slices/passcodeSlice';
 import { ThemedText } from '../ThemedText';
 import { ThemedView } from '../ThemedView';
 import CustomAlert from '../ui/CustomAlert';
+import { Colors } from '../../constants/Colors';
 
 interface PasscodeModalProps {
   visible: boolean;
@@ -16,6 +17,19 @@ export function EditPasscodeModal({ visible, onClose }: PasscodeModalProps) {
   const [step, setStep] = useState<'set' | 'verify'>('set');
   const [passcode, setPasscodeValue] = useState('');
   const [verifyPasscode, setVerifyPasscode] = useState('');
+  const inputRef = useRef<TextInput>(null);
+
+  const colorScheme = useColorScheme();
+  const colors = Colors[colorScheme ?? 'light'];
+  const isDark = colorScheme === 'dark';
+
+  // Re-focus the input when switching between set/verify steps,
+  // and when the modal becomes visible.
+  useEffect(() => {
+    if (visible) {
+      setTimeout(() => inputRef.current?.focus(), 100);
+    }
+  }, [step, visible]);
 
   const handleSubmit = () => {
     if (step === 'set') {
@@ -38,6 +52,11 @@ export function EditPasscodeModal({ visible, onClose }: PasscodeModalProps) {
     }
   };
 
+  const inputColor = isDark ? colors.text : '#11181C';
+  const inputBorderColor = isDark ? colors.icon : '#ddd';
+  const inputBg = isDark ? colors.background : '#fff';
+  const contentBg = isDark ? colors.background : '#fff';
+
   return (
     <Modal
       visible={visible}
@@ -46,7 +65,7 @@ export function EditPasscodeModal({ visible, onClose }: PasscodeModalProps) {
       onRequestClose={onClose}
     >
       <ThemedView style={styles.container}>
-        <ThemedView style={styles.content}>
+        <ThemedView style={[styles.content, { backgroundColor: contentBg }]}>
           <ThemedText style={styles.title}>
             {step === 'set' ? 'Set Passcode' : 'Verify Passcode'}
           </ThemedText>
@@ -55,9 +74,17 @@ export function EditPasscodeModal({ visible, onClose }: PasscodeModalProps) {
               ? 'Enter a 4-digit passcode'
               : 'Re-enter your passcode'}
           </ThemedText>
-          
+
           <TextInput
-            style={styles.input}
+            ref={inputRef}
+            style={[
+              styles.input,
+              {
+                color: inputColor,
+                backgroundColor: inputBg,
+                borderColor: inputBorderColor,
+              },
+            ]}
             keyboardType="numeric"
             maxLength={4}
             secureTextEntry
@@ -65,16 +92,23 @@ export function EditPasscodeModal({ visible, onClose }: PasscodeModalProps) {
             onChangeText={step === 'set' ? setPasscodeValue : setVerifyPasscode}
             onSubmitEditing={handleSubmit}
             autoFocus
+            placeholderTextColor={colors.icon}
           />
-          
+
           {step === 'set' && passcode.length === 4 && (
-            <ThemedText style={styles.button} onPress={() => setStep('verify')}>
+            <ThemedText
+              style={[styles.button, { color: colors.tint }]}
+              onPress={() => setStep('verify')}
+            >
               Next
             </ThemedText>
           )}
-          
+
           {step === 'verify' && verifyPasscode.length === 4 && (
-            <ThemedText style={styles.button} onPress={handleSubmit}>
+            <ThemedText
+              style={[styles.button, { color: colors.tint }]}
+              onPress={handleSubmit}
+            >
               Set Passcode
             </ThemedText>
           )}
@@ -119,7 +153,6 @@ const styles = StyleSheet.create({
   },
   button: {
     fontSize: 18,
-    color: '#2196F3',
     fontWeight: '500',
   },
 });

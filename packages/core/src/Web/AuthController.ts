@@ -236,7 +236,7 @@ const changePasswordHandler = async (req: Request, res: Response) => {
     const user = togoderReq.togoder_auth?.user;
 
     if (!user) {
-      return res.status(401).send('Unauthorized');
+      return res.status(401).json({ error: 'Unauthorized' });
     }
 
     const parseResult = changePasswordSchema.safeParse(req.body);
@@ -248,7 +248,7 @@ const changePasswordHandler = async (req: Request, res: Response) => {
 
     const isValidPassword = await bcrypt.compare(currentPassword, user.password);
     if (!isValidPassword) {
-      return res.status(400).send('Current password is incorrect');
+      return res.status(400).json({ error: 'Current password is incorrect' });
     }
 
     const hashedPassword = await bcrypt.hash(newPassword, 10);
@@ -258,10 +258,10 @@ const changePasswordHandler = async (req: Request, res: Response) => {
       data: { password: hashedPassword },
     });
 
-    res.status(200).send('Password changed successfully');
+    res.status(200).json({ message: 'Password changed successfully' });
   } catch (err) {
     console.log(err);
-    res.status(500).send('Something went wrong');
+    res.status(500).json({ error: 'Something went wrong' });
   }
 };
 

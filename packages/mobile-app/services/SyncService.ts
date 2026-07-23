@@ -52,6 +52,7 @@ export class SyncService {
   private isPushInProgress = false;
   private isSyncInProgress = false;
   private pendingPushAfterSync = false;
+  private static readonly MAX_VERSION_CONFLICT_RETRIES = 3;
 
   private constructor() {}
 
@@ -462,8 +463,15 @@ export class SyncService {
   }
 
   /**
-   * Push local data to server
-   * Protected against concurrent execution
+   * Push local data to server, with automatic version-conflict resolution.
+   *
+   * When the server returns 409 (VERSION_CONFLICT), the latest server
+   * blob is fetched from the conflict response, decrypted, merged with
+   * local state via LWW, applied to the store, and re-pushed — up to
+   * MAX_VERSION_CONFLICT_RETRIES times.  This fixes the multi-tab sync
+   * failure where two tabs push concurrently.
+   *
+   * Protected against concurrent execution.
    */
   private async push(): Promise<void> {
     if (!this.isReady()) {
@@ -480,16 +488,82 @@ export class SyncService {
     this.isPushInProgress = true;
     try {
       const localPayload = this.getLocalPayload();
-      const jsonData = JSON.stringify(localPayload);
-      const encryptedData = await CryptoService.encrypt(jsonData);
+      let lastVersion =
+        this.lastRemoteVersion > 0 ? this.lastRemoteVersion : undefined;
 
+      for (let attempt = 0; attempt <= SyncService.MAX_VERSION_CONFLICT_RETRIES; attempt++) {
+        const jsonData = JSON.stringify(
+          attempt === 0 ? localPayload : this.getLocalPayload()
+        );
+        const encryptedData = await CryptoService.encrypt(jsonData);
+
+        try {
+          const response = await SyncApiClient.push(encryptedData, lastVersion);
+          this.lastRemoteVersion = response.version;
+          console.log(
+            "[SyncService] Push completed, version:",
+            response.version
+          );
+          return;
+        } catch (error: any) {
+          // 409 — server has a newer version. Resolve by merging.
+          if (error?.status === 409 && error?.serverData) {
+            console.log(
+              "[SyncService] Version conflict on push (attempt",
+              attempt + 1,
+              "/",
+              SyncService.MAX_VERSION_CONFLICT_RETRIES + 1,
+              "), resolving..."
+            );
+
+            try {
+              // Decrypt server blob, merge with current local state,
+              // apply merged data to store, then retry the push.
+              const decryptedJson = await CryptoService.decrypt(
+                error.serverData.encryptedData
+              );
+              const serverPayload: SyncPayload = JSON.parse(decryptedJson);
+              const currentLocal = this.getLocalPayload();
+              const merged = mergeSyncPayloads(currentLocal, serverPayload);
+
+              this.applyPayloadToStore(merged);
+              lastVersion = error.serverData.version;
+              this.lastRemoteVersion = lastVersion;
+
+              console.log(
+                "[SyncService] Conflict resolved — merged & applied to store. Retrying push..."
+              );
+              // continue loop to re-push
+            } catch (mergeError) {
+              console.error(
+                "[SyncService] Failed to resolve version conflict:",
+                mergeError
+              );
+              throw mergeError;
+            }
+          } else {
+            console.error("[SyncService] Push failed:", error);
+            throw error;
+          }
+        }
+      }
+
+      // Exhausted retries — one final attempt with fresh state
+      console.log(
+        "[SyncService] Exhausted version-conflict retries, attempting final push"
+      );
+      const finalPayload = this.getLocalPayload();
+      const finalJson = JSON.stringify(finalPayload);
+      const finalEncrypted = await CryptoService.encrypt(finalJson);
       const response = await SyncApiClient.push(
-        encryptedData,
+        finalEncrypted,
         this.lastRemoteVersion > 0 ? this.lastRemoteVersion : undefined
       );
       this.lastRemoteVersion = response.version;
-
-      console.log("[SyncService] Push completed, version:", response.version);
+      console.log(
+        "[SyncService] Final push completed, version:",
+        response.version
+      );
     } catch (error) {
       console.error("[SyncService] Push failed:", error);
       throw error;
