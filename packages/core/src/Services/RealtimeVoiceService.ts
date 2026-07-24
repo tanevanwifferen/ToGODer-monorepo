@@ -208,7 +208,7 @@ export class RealtimeVoiceService {
         } else {
           // B. Text/JSON messages from the client
           const message = JSON.parse(data.toString());
-          console.log('Forwarding JSON message to OpenAI:', message);
+          console.log('Forwarding JSON message to OpenAI');
 
           // Track transcripts if callback provided
           if (onTranscript && message.type === 'conversation.item.created') {

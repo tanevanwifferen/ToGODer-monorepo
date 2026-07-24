@@ -68,8 +68,7 @@ const messageLimiter = rateLimit({
   message: "Too many requests from this IP, please try again later.",
   standardHeaders: true,
   legacyHeaders: false,
-  handler: (req: Request, res: Response) => {
-    console.log(`Rate limit exceeded for IP: ${req.ip}`);
+  handler: (_req: Request, res: Response) => {
     res
       .status(429)
       .send("Too many messages sent from this IP, please try again later.");
@@ -176,7 +175,6 @@ app.get("*", (req, res) => {
 // Centralized error handling middleware
 app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
   console.error("Unhandled error at " + new Date() + ":", err);
-  console.error(_req.body);
   res.status(500).send("Internal Server Error");
 });
 
