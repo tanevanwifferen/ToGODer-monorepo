@@ -33,6 +33,7 @@ import WebSocket from "ws";
 import { registerLibraryTool } from "./Tools/LibraryTool";
 import { registerArxivTools } from "./Tools/ArxivTool";
 import { registerMemoryTools } from "./Tools/MemoryTool";
+import { registerMcpJobTool } from "./Tools/McpJobTool";
 
 const app = express();
 const port = process.env.PORT || 3000;
@@ -199,3 +200,4 @@ setupRunners();
 registerLibraryTool();
 registerArxivTools();
 registerMemoryTools();
+registerMcpJobTool();

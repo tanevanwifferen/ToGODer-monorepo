@@ -33,13 +33,29 @@ export interface McpUser {
 export type McpChatCompletionTool = ChatCompletionTool;
 
 const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
-const CALL_TOOL_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes — heavy MCP tools may run long
+const CALL_TOOL_TIMEOUT_MS =
+  (process.env.MCP_TOOL_TIMEOUT_MS ? parseInt(process.env.MCP_TOOL_TIMEOUT_MS, 10) : 0) ||
+  30 * 60 * 1000; // default 30 min; configurable via env
+const JOB_TTL_MS = 60 * 60 * 1000; // 1 hour — completed/failed jobs kept for polling
+const JOB_CLEANUP_INTERVAL_MS = 5 * 60 * 1000; // prune expired jobs every 5 min
 
 interface CachedConnection {
   client: Client;
   /** toolName -> McpToolDescriptor (for dispatch + description reuse) */
   tools: Map<string, McpToolDescriptor>;
   expiresAt: number;
+}
+
+/** Status of an async MCP tool job. */
+export interface McpJobStatus {
+  jobId: string;
+  status: 'pending' | 'running' | 'complete' | 'error';
+  toolName: string;
+  serverName: string;
+  result?: string;
+  error?: string;
+  createdAt: number;
+  completedAt?: number;
 }
 
 /**
@@ -56,6 +72,8 @@ interface CachedConnection {
  */
 class McpClientManager {
   private readonly cache = new Map<string, CachedConnection>();
+  private readonly jobs = new Map<string, McpJobStatus>();
+  private cleanupTimer: NodeJS.Timeout | null = null;
 
   /**
    * Connect (or reuse a cached client) and return the OpenAI-style tool defs
@@ -133,6 +151,54 @@ class McpClientManager {
     });
 
     return this.callToolWithTimeout(entry.client, descriptor.toolName, args);
+  }
+
+  /**
+   * Dispatch an MCP tool call asynchronously. Returns a job ID immediately;
+   * the tool runs in the background. Poll with getJobStatus() for the result.
+   */
+  callToolAsync(
+    user: McpUser,
+    servers: McpServer[],
+    namespacedName: string,
+    args: Record<string, any>,
+  ): McpJobStatus {
+    const jobId = this.generateJobId();
+    const toolName = namespacedName;
+    const serverName = servers[0]?.name ?? 'unknown';
+    const now = Date.now();
+
+    const job: McpJobStatus = {
+      jobId,
+      status: 'pending',
+      toolName,
+      serverName,
+      createdAt: now,
+    };
+    this.jobs.set(jobId, job);
+    this.ensureCleanup();
+
+    // Fire and forget — run in background
+    this.executeJob(jobId, user, servers, namespacedName, args).catch((err) => {
+      console.error(`[McpClientManager] async job ${jobId} unhandled error:`, err);
+    });
+
+    return job;
+  }
+
+  /**
+   * Poll for the status/result of an async MCP tool job. Returns undefined
+   * if the job ID is unknown (expired or never existed).
+   */
+  getJobStatus(jobId: string): McpJobStatus | undefined {
+    const job = this.jobs.get(jobId);
+    if (!job) return undefined;
+    // Auto-cleanup expired jobs on read
+    if (Date.now() - job.createdAt > JOB_TTL_MS) {
+      this.jobs.delete(jobId);
+      return undefined;
+    }
+    return job;
   }
 
   /**
@@ -331,6 +397,56 @@ class McpClientManager {
     // always maps to the same name within a session.
     const hash = this.shortHash(serverId);
     return `${base}__${hash}`;
+  }
+
+  private async executeJob(
+    jobId: string,
+    user: McpUser,
+    servers: McpServer[],
+    namespacedName: string,
+    args: Record<string, any>,
+  ): Promise<void> {
+    const job = this.jobs.get(jobId);
+    if (!job) return;
+    job.status = 'running';
+
+    try {
+      const result = await this.callTool(user, servers, namespacedName, args);
+      job.status = 'complete';
+      job.result = result;
+      job.completedAt = Date.now();
+    } catch (err: any) {
+      job.status = 'error';
+      job.error = err?.message ?? String(err);
+      job.completedAt = Date.now();
+    }
+  }
+
+  private generateJobId(): string {
+    const rand = Array.from({ length: 8 }, () =>
+      'abcdefghijklmnopqrstuvwxyz0123456789'.charAt(Math.floor(Math.random() * 36)),
+    ).join('');
+    return `mcp_${rand}`;
+  }
+
+  private ensureCleanup(): void {
+    if (this.cleanupTimer) return;
+    this.cleanupTimer = setInterval(() => {
+      const now = Date.now();
+      for (const [id, job] of this.jobs) {
+        if (now - job.createdAt > JOB_TTL_MS) {
+          this.jobs.delete(id);
+        }
+      }
+      if (this.jobs.size === 0 && this.cleanupTimer) {
+        clearInterval(this.cleanupTimer);
+        this.cleanupTimer = null;
+      }
+    }, JOB_CLEANUP_INTERVAL_MS);
+    // Allow the timer to not block process exit
+    if (this.cleanupTimer && 'unref' in this.cleanupTimer) {
+      this.cleanupTimer.unref();
+    }
   }
 
   /** Stable short hash (base36) of a string — used only for name disambiguation. */

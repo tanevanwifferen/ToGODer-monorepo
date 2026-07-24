@@ -615,10 +615,11 @@ export class StreamingChatService {
         });
       }
 
-      // Execute MCP tools (server-side, like backend tools) and add results
-      // to the conversation. The manager re-validates the URL via the SSRF
-      // guard and may throw on block/unreachable/error — surface that as an
-      // error tool_result so the model can recover and answer in text.
+      // Execute MCP tools asynchronously. Instead of blocking the chat while
+      // the remote tool runs (potentially minutes), we dispatch the call in the
+      // background and return a job handle immediately. The LLM can poll for
+      // the result via the mcp_job_status backend tool, or tell the user to
+      // wait and check back.
       if (mcpCalls.length > 0) {
         const mgr = getMcpClientManager();
         for (const tc of mcpCalls) {
@@ -630,16 +631,22 @@ export class StreamingChatService {
           let result: string;
           let isError = false;
           try {
-            result = await mgr.callTool(
+            const job = mgr.callToolAsync(
               user!,
               mcpServers,
               tc.name,
               tc.arguments,
             );
+            result =
+              `[MCP job started: ${job.jobId}]\n` +
+              `Tool "${tc.name}" is running in the background on server "${job.serverName}".\n` +
+              `Poll for the result by calling mcp_job_status with jobId="${job.jobId}".\n` +
+              `Tell the user the job is running and they can continue the conversation — ` +
+              `you'll check the result when they ask or on the next message.`;
           } catch (err: any) {
-            result = `Error executing MCP tool ${tc.name}: ${err?.message ?? String(err)}`;
+            result = `Error dispatching MCP tool ${tc.name}: ${err?.message ?? String(err)}`;
             isError = true;
-            console.error(`MCP tool execution error (${tc.name}):`, err);
+            console.error(`MCP tool dispatch error (${tc.name}):`, err);
           }
 
           yield {
