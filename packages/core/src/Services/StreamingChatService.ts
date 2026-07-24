@@ -420,6 +420,10 @@ export class StreamingChatService {
     // never break because an MCP server is unreachable. Everything here is a
     // local const scoped to this request (no global state).
     const mcpToolNames = new Set<string>();
+    // Reverse map: short tool name → fully-qualified namespaced name.
+    // Built from descriptors so that agent/human short-name calls (e.g.
+    // "board_create_task") resolve to "mcp__code__board_create_task__1eg9e89".
+    const mcpShortToFull = new Map<string, string>();
     let mcpServers: McpServer[] = [];
     if (user) {
       try {
@@ -427,12 +431,23 @@ export class StreamingChatService {
           where: { userId: user.id, enabled: true },
         });
         if (mcpServers.length > 0) {
-          const mcpTools = await getMcpClientManager().getToolsForUser(
-            user,
-            mcpServers,
-          );
+          const [mcpTools, mcpDescriptors] = await Promise.all([
+            getMcpClientManager().getToolsForUser(user, mcpServers),
+            getMcpClientManager().listToolsForUser(user, mcpServers),
+          ]);
           for (const t of mcpTools) {
             if (t.type === "function") mcpToolNames.add(t.function.name);
+          }
+          for (const d of mcpDescriptors) {
+            if (mcpShortToFull.has(d.toolName)) {
+              console.warn(
+                `[tool-loop] MCP short-name collision: "${d.toolName}" ` +
+                  `already maps to "${mcpShortToFull.get(d.toolName)}", ` +
+                  `ignoring "${d.namespacedName}"`,
+              );
+              continue;
+            }
+            mcpShortToFull.set(d.toolName, d.namespacedName);
           }
           mergedTools.push(...mcpTools);
         }
@@ -500,6 +515,16 @@ export class StreamingChatService {
           yield { type: "chunk", data: { delta: notice } };
         }
         break;
+      }
+
+      // Resolve short MCP tool names (e.g. "board_create_task") to their
+      // fully-qualified namespaced name before classification. This lets
+      // agents and humans use simple tool names without the mcp__ prefix.
+      for (const tc of iterationResult.toolCalls) {
+        const resolved = mcpShortToFull.get(tc.name);
+        if (resolved && mcpToolNames.has(resolved)) {
+          tc.name = resolved;
+        }
       }
 
       // Separate backend, frontend, MCP, and unknown tool calls. A frontend
