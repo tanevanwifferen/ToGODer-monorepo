@@ -17,17 +17,21 @@ const API_BASE = ''; // Same origin
  * Cancel flow:
  * - Tap mic while recording → cancelRecording() → stops without sending
  *
- * Web: MediaRecorder API → WebM audio
+ * Web: AudioContext → raw PCM → WAV blob (whisper.cpp only supports flac, mp3, ogg, wav)
  * Mobile: expo-av Audio.Recording → WAV (PCM)
  */
 export function useStt(onTranscription?: (text: string) => void) {
   const sttEnabled = useSelector(selectSttEnabled);
   const [isRecording, setIsRecording] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
-  const chunksRef = useRef<Blob[]>([]);
   const recordingRef = useRef<any>(null);
+
+  // Web-specific refs for AudioContext-based PCM capture
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const scriptNodeRef = useRef<ScriptProcessorNode | null>(null);
+  const pcmChunksRef = useRef<Float32Array[]>([]);
+  const sampleRateRef = useRef<number>(16000);
 
   // Clear error when recording starts
   const clearError = useCallback(() => setError(null), []);
@@ -63,14 +67,14 @@ export function useStt(onTranscription?: (text: string) => void) {
     [onTranscription],
   );
 
-  // --- Web: MediaRecorder API ---
+  // --- Web: AudioContext → raw PCM → WAV ---
   const startRecordingWeb = useCallback(async () => {
     try {
       clearError();
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: {
-          sampleRate: 16000,
-          channelCount: 1,
+          sampleRate: { ideal: 16000 },
+          channelCount: { ideal: 1 },
           echoCancellation: true,
           noiseSuppression: true,
         },
@@ -78,41 +82,29 @@ export function useStt(onTranscription?: (text: string) => void) {
 
       streamRef.current = stream;
 
-      // Try WebM with opus first, then fall back
-      let mimeType = 'audio/webm;codecs=opus';
-      if (!MediaRecorder.isTypeSupported(mimeType)) {
-        mimeType = 'audio/webm';
-      }
-      if (!MediaRecorder.isTypeSupported(mimeType)) {
-        mimeType = 'audio/mp4';
-      }
+      const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+      const audioContext = new AudioCtx({ sampleRate: 16000 });
+      sampleRateRef.current = audioContext.sampleRate;
+      audioContextRef.current = audioContext;
 
-      chunksRef.current = [];
-      const recorder = new MediaRecorder(stream, { mimeType });
-      mediaRecorderRef.current = recorder;
+      const source = audioContext.createMediaStreamSource(stream);
 
-      recorder.ondataavailable = (e) => {
-        if (e.data.size > 0) chunksRef.current.push(e.data);
+      // createScriptProcessor is deprecated but universally supported;
+      // AudioWorklet requires a separate JS file which is impractical here.
+      const scriptNode = audioContext.createScriptProcessor(4096, 1, 1);
+      scriptNodeRef.current = scriptNode;
+
+      pcmChunksRef.current = [];
+
+      scriptNode.onaudioprocess = (e: AudioProcessingEvent) => {
+        const channelData = e.inputBuffer.getChannelData(0);
+        pcmChunksRef.current.push(new Float32Array(channelData));
       };
 
-      recorder.onstop = async () => {
-        // Stop all tracks
-        stream.getTracks().forEach((t) => t.stop());
-        streamRef.current = null;
+      source.connect(scriptNode);
+      // Must connect to destination or onaudioprocess won't fire in some browsers
+      scriptNode.connect(audioContext.destination);
 
-        const blob = new Blob(chunksRef.current, { type: mimeType });
-        chunksRef.current = [];
-
-        try {
-          await transcribe(blob, mimeType);
-        } catch {
-          // error already set by transcribe
-        } finally {
-          setIsRecording(false);
-        }
-      };
-
-      recorder.start();
       setIsRecording(true);
     } catch (err: any) {
       console.warn('[stt] Failed to start recording (web):', err);
@@ -127,39 +119,66 @@ export function useStt(onTranscription?: (text: string) => void) {
       }
       setIsRecording(false);
     }
-  }, [transcribe, clearError]);
+  }, [clearError]);
 
   const stopRecordingWeb = useCallback(() => {
-    const recorder = mediaRecorderRef.current;
-    if (!recorder || recorder.state === 'inactive') {
-      // Recorder already stopped or never started — clean up anyway
-      streamRef.current?.getTracks().forEach((t) => t.stop());
-      streamRef.current = null;
-      setIsRecording(false);
-      return;
-    }
-    recorder.stop();
-  }, []);
-
-  const cancelRecordingWeb = useCallback(() => {
-    const recorder = mediaRecorderRef.current;
+    const scriptNode = scriptNodeRef.current;
+    const audioContext = audioContextRef.current;
     const stream = streamRef.current;
 
-    // Stop the recorder without triggering onstop's transcribe
-    if (recorder && recorder.state !== 'inactive') {
-      // Remove the onstop handler so transcribe is not called
-      recorder.onstop = () => {};
-      recorder.stop();
+    // Disconnect the audio graph
+    if (scriptNode) {
+      scriptNode.disconnect();
+      scriptNode.onaudioprocess = null;
+      scriptNodeRef.current = null;
     }
 
-    // Stop all tracks
+    // Stop the mic stream
     if (stream) {
       stream.getTracks().forEach((t) => t.stop());
       streamRef.current = null;
     }
 
-    chunksRef.current = [];
-    mediaRecorderRef.current = null;
+    // Build WAV blob from captured PCM chunks
+    const wavBlob = pcmToWavBlob(pcmChunksRef.current, sampleRateRef.current);
+    pcmChunksRef.current = [];
+
+    // Close the AudioContext (async, fire-and-forget)
+    if (audioContext && audioContext.state !== 'closed') {
+      audioContext.close().catch(() => {});
+      audioContextRef.current = null;
+    }
+
+    if (wavBlob) {
+      transcribe(wavBlob, 'audio/wav');
+    } else {
+      setIsRecording(false);
+    }
+  }, [transcribe]);
+
+  const cancelRecordingWeb = useCallback(() => {
+    const scriptNode = scriptNodeRef.current;
+    const audioContext = audioContextRef.current;
+    const stream = streamRef.current;
+
+    if (scriptNode) {
+      scriptNode.disconnect();
+      scriptNode.onaudioprocess = null;
+      scriptNodeRef.current = null;
+    }
+
+    if (stream) {
+      stream.getTracks().forEach((t) => t.stop());
+      streamRef.current = null;
+    }
+
+    pcmChunksRef.current = [];
+
+    if (audioContext && audioContext.state !== 'closed') {
+      audioContext.close().catch(() => {});
+      audioContextRef.current = null;
+    }
+
     setIsRecording(false);
   }, []);
 
@@ -268,14 +287,13 @@ export function useStt(onTranscription?: (text: string) => void) {
     return () => {
       // Web cleanup
       if (Platform.OS === 'web') {
-        const recorder = mediaRecorderRef.current;
-        if (recorder && recorder.state !== 'inactive') {
-          recorder.onstop = () => {}; // prevent transcribe
-          recorder.stop();
-        }
+        scriptNodeRef.current?.disconnect();
+        scriptNodeRef.current = null;
         streamRef.current?.getTracks().forEach((t) => t.stop());
         streamRef.current = null;
-        chunksRef.current = [];
+        audioContextRef.current?.close().catch(() => {});
+        audioContextRef.current = null;
+        pcmChunksRef.current = [];
       }
       // Mobile cleanup
       const recording = recordingRef.current;
@@ -331,13 +349,64 @@ export function useStt(onTranscription?: (text: string) => void) {
   };
 }
 
+// --- WAV encoding helpers ---
+
+/**
+ * Encode an array of Float32Array PCM chunks into a 16-bit mono WAV Blob.
+ */
+function pcmToWavBlob(chunks: Float32Array[], sampleRate: number): Blob | null {
+  // Flatten chunks into one buffer
+  const totalLength = chunks.reduce((sum, c) => sum + c.length, 0);
+  if (totalLength === 0) return null;
+
+  const buffer = new ArrayBuffer(44 + totalLength * 2);
+  const view = new DataView(buffer);
+
+  // RIFF header
+  writeString(view, 0, 'RIFF');
+  view.setUint32(4, 36 + totalLength * 2, true); // file size - 8
+  writeString(view, 8, 'WAVE');
+
+  // fmt sub-chunk
+  writeString(view, 12, 'fmt ');
+  view.setUint32(16, 16, true); // sub-chunk size (PCM)
+  view.setUint16(20, 1, true); // audio format (1 = PCM)
+  view.setUint16(22, 1, true); // channels (mono)
+  view.setUint32(24, sampleRate, true);
+  view.setUint32(28, sampleRate * 2, true); // byte rate
+  view.setUint16(32, 2, true); // block align
+  view.setUint16(34, 16, true); // bits per sample
+
+  // data sub-chunk
+  writeString(view, 36, 'data');
+  view.setUint32(40, totalLength * 2, true);
+
+  // Write PCM samples (Float32 [-1,1] → Int16)
+  let offset = 44;
+  for (const chunk of chunks) {
+    for (let i = 0; i < chunk.length; i++) {
+      const s = Math.max(-1, Math.min(1, chunk[i]));
+      view.setInt16(offset, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
+      offset += 2;
+    }
+  }
+
+  return new Blob([buffer], { type: 'audio/wav' });
+}
+
+function writeString(view: DataView, offset: number, str: string): void {
+  for (let i = 0; i < str.length; i++) {
+    view.setUint8(offset + i, str.charCodeAt(i));
+  }
+}
+
 /** Map a MIME type to a common file extension for the upload. */
 function mimeTypeToExt(mime: string): string {
-  if (mime.includes('webm')) return 'webm';
-  if (mime.includes('mp4') || mime.includes('m4a')) return 'm4a';
+  if (mime.includes('wav') || mime.includes('wave')) return 'wav';
   if (mime.includes('ogg') || mime.includes('opus')) return 'ogg';
   if (mime.includes('mp3') || mime.includes('mpeg')) return 'mp3';
-  if (mime.includes('wav') || mime.includes('wave')) return 'wav';
   if (mime.includes('flac')) return 'flac';
+  if (mime.includes('webm')) return 'webm';
+  if (mime.includes('mp4') || mime.includes('m4a')) return 'm4a';
   return 'wav';
 }
