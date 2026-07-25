@@ -35,11 +35,31 @@ COPY packages/core/tsconfig.json packages/core/
 
 RUN pnpm --filter @togoder/core exec tsc
 
-# Stage 4: Runtime
+# Stage 5: Build whisper.cpp (CPU-only STT engine)
+FROM debian:bookworm-slim AS whisper-build
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    git build-essential cmake ca-certificates && \
+    rm -rf /var/lib/apt/lists/*
+
+RUN git clone --depth 1 --branch v1.9.1 https://github.com/ggerganov/whisper.cpp.git /whisper-src && \
+    cd /whisper-src && \
+    cmake -B build && \
+    cmake --build build --config Release -j$(nproc) && \
+    mkdir -p /whisper-out/models && \
+    mkdir -p /whisper-out/lib && \
+    cp build/bin/whisper-cli /whisper-out/ && \
+    cp build/bin/*.so* /whisper-out/lib/
+
+# Download tiny model (~75MB) for STT
+ADD https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.en.bin /whisper-out/models/
+ADD https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.bin /whisper-out/models/
+
+# Stage 6: Runtime
 FROM node:20-bookworm-slim
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    ca-certificates espeak-ng && \
+    ca-certificates espeak-ng libgomp1 && \
     rm -rf /var/lib/apt/lists/*
 
 RUN npm install -g pnpm@9
@@ -66,11 +86,19 @@ COPY --from=build-frontend /app/packages/mobile-app/dist packages/core/Frontend
 # Copy v2 seed prompt (read at runtime by seedv2.ts)
 COPY prompts ./prompts
 
+# Copy whisper.cpp binary + models + shared libs
+COPY --from=whisper-build /whisper-out/whisper-cli /usr/local/bin/
+COPY --from=whisper-build /whisper-out/lib/*.so* /usr/local/lib/
+COPY --from=whisper-build /whisper-out/models /app/whisper-models/
+RUN ldconfig
+
 # Create data directory
 RUN mkdir -p /app/data && chown -R node:node /app
 
 ENV NODE_ENV=production
 ENV PORT=6968
+ENV WHISPER_BINARY=/usr/local/bin/whisper-cli
+ENV WHISPER_MODEL=/app/whisper-models/ggml-tiny.en.bin
 
 USER node
 
