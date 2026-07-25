@@ -27,6 +27,7 @@ import {
   setupRealtimeVoiceWebSocket,
 } from "./Web/RealtimeVoiceController";
 import { GetAdminRouter } from "./Web/AdminController";
+import { GetTtsRouter } from "./Web/TtsController";
 import { GetReferralRouter } from "./Web/ReferralController";
 import { createServer } from "http";
 import WebSocket from "ws";
@@ -102,6 +103,7 @@ const sentimentRouter = GetSentimentRouter(messageLimiter);
 const mcpRouter = GetMcpRouter(messageLimiter);
 const pdfUploadRouter = GetPdfUploadRouter();
 const adminRouter = GetAdminRouter();
+const ttsRouter = GetTtsRouter(messageLimiter);
 const referralRouter = GetReferralRouter();
 
 app.use(chatRouter);
@@ -115,6 +117,7 @@ app.use(sentimentRouter);
 app.use(mcpRouter);
 app.use(pdfUploadRouter);
 app.use(adminRouter);
+app.use(ttsRouter);
 app.use(referralRouter);
 
 const donateOptions: { address: string }[] = JSON.parse(

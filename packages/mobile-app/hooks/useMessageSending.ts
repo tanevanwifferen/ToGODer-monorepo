@@ -3,6 +3,7 @@ import { ApiChatMessage } from "../model/ChatRequest";
 import { ChatResponse, MessageResponse } from "../model/ChatResponse";
 import type { StreamEvent, ToolStatusEvent } from "../apiClients/ChatApiClient";
 import { MessageService } from "../services/MessageService";
+import { useTts } from "./useTts";
 
 /**
  * Human-readable labels for tool activity, shown while the AI is using a tool.
@@ -304,6 +305,7 @@ function useChatMessageSending(chatId: string): UseChatMessageSendingResult {
   const [activity, setActivity] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const lastContentRef = useRef<string | null>(null);
+  const { speak: ttsSpeak } = useTts();
 
   const sendMessage = useCallback(
     async (content: string): Promise<void> => {
@@ -328,10 +330,13 @@ function useChatMessageSending(chatId: string): UseChatMessageSendingResult {
         onToolStatus: (status) => {
           setActivity(toolActivityLabel(status));
         },
-        onComplete: () => {
+        onComplete: (assistantMsg?: ApiChatMessage) => {
           setIsLoading(false);
           setTyping(false);
           setActivity(null);
+          if (assistantMsg?.content) {
+            ttsSpeak(assistantMsg.content);
+          }
         },
         onError: (errorMsg) => {
           setError(errorMsg);
@@ -341,7 +346,7 @@ function useChatMessageSending(chatId: string): UseChatMessageSendingResult {
         },
       });
     },
-    [chatId]
+    [chatId, ttsSpeak]
   );
 
   const retry = useCallback(async (): Promise<void> => {
@@ -370,10 +375,13 @@ function useChatMessageSending(chatId: string): UseChatMessageSendingResult {
       onToolStatus: (status) => {
         setActivity(toolActivityLabel(status));
       },
-      onComplete: () => {
+      onComplete: (assistantMsg?: ApiChatMessage) => {
         setIsLoading(false);
         setTyping(false);
         setActivity(null);
+        if (assistantMsg?.content) {
+          ttsSpeak(assistantMsg.content);
+        }
       },
       onError: (errorMsg) => {
         setError(errorMsg);
@@ -382,7 +390,7 @@ function useChatMessageSending(chatId: string): UseChatMessageSendingResult {
         setActivity(null);
       },
     });
-  }, [chatId]);
+  }, [chatId, ttsSpeak]);
 
   const cancel = useCallback(() => {
     const messageService = MessageService.getInstance();

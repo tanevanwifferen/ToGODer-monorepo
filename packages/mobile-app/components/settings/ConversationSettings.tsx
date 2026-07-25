@@ -8,6 +8,8 @@ import {
   selectHolisticTherapist,
   selectLanguage,
   selectLibraryIntegrationEnabled,
+  selectTtsEnabled,
+  setTtsEnabled,
   setHumanPrompt,
   setKeepGoing,
   setOutsideBox,
@@ -30,6 +32,7 @@ const ConversationSettings = () => {
   const language = useSelector(selectLanguage);
   const holisticTherapist = useSelector(selectHolisticTherapist);
   const libraryIntegrationEnabled = useSelector(selectLibraryIntegrationEnabled);
+  const ttsEnabled = useSelector(selectTtsEnabled);
   const persona = useSelector(selectPersona);
 
   return (
@@ -117,6 +120,16 @@ const ConversationSettings = () => {
           colorScheme={colorScheme}
         />
         <Text style={[styles.checkboxLabel, { color: theme.text }]}>Library Integration (use PDF librarian context)</Text>
+      </View>
+
+      <View style={styles.checkboxSection}>
+        <CustomCheckbox
+          value={ttsEnabled}
+          onValueChange={(value: boolean) => dispatch(setTtsEnabled(value))}
+          color={theme.tint}
+          colorScheme={colorScheme}
+        />
+        <Text style={[styles.checkboxLabel, { color: theme.text }]}>Text-to-Speech (read completed messages aloud)</Text>
       </View>
     </View>
   );
