@@ -21,6 +21,7 @@ import { GetSyncRouter } from "./Web/SyncController";
 import { GetSentimentRouter } from "./Web/SentimentController";
 import { GetMcpRouter } from "./Web/McpController";
 import { GetPdfUploadRouter } from "./Web/PdfUploadController";
+import { GetImageRouter } from "./Web/ImageController";
 import { sentimentIntegrationEnabled } from "./Services/SentimentService";
 import {
   GetRealtimeVoiceRouter,
@@ -105,6 +106,7 @@ const syncRouter = GetSyncRouter(messageLimiter);
 const sentimentRouter = GetSentimentRouter(messageLimiter);
 const mcpRouter = GetMcpRouter(messageLimiter);
 const pdfUploadRouter = GetPdfUploadRouter();
+const imageRouter = GetImageRouter();
 const adminRouter = GetAdminRouter();
 const ttsRouter = GetTtsRouter(messageLimiter);
 const sttRouter = GetSttRouter(messageLimiter);
@@ -120,6 +122,7 @@ app.use(syncRouter);
 app.use(sentimentRouter);
 app.use(mcpRouter);
 app.use(pdfUploadRouter);
+app.use(imageRouter);
 app.use(adminRouter);
 app.use(ttsRouter);
 app.use(sttRouter);

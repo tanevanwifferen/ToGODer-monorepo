@@ -1,5 +1,17 @@
 name: togoder-dev
 
+# NOTE: The prompts/ directory (containing seed-v2.md) is baked into the
+# Docker image via `COPY prompts ./prompts` in the Dockerfile. It is NOT
+# volume-mounted, so any runtime edits to prompt files will be lost on
+# `docker-compose up -d --build`. The prompt system is static by design:
+#   - seed-v2.md is loaded once at startup (cached in memory)
+#   - Runtime prompt modifications use the in-memory update_system_prompt
+#     tool, which is per-session and never touches the filesystem
+#   - The /api/prompts endpoint returns hardcoded prompts from promptlist.ts
+# If user-editable prompts are needed in the future, add a volume mount:
+#     volumes:
+#       - ./prompts:/app/prompts
+
 services:
   togoder:
     build:

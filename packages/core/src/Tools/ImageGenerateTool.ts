@@ -4,16 +4,43 @@ import {
   ImageGenResult,
   IMAGE_GEN_MODEL,
 } from './OpenRouterClient';
+import { storeEncryptedImage } from '../Services/ImageStore';
+
+/**
+ * Format for an image reference token embedded in the tool result and chat
+ * history. The client parses these and fetches / decrypts the image.
+ *
+ * The reference is a custom-URI-scheme token:
+ *   togoder-image://<id>?key=<base64key>&iv=<base64iv>
+ *
+ * This is ~200 chars vs ~100K+ for a base64 image — the chat history and
+ * SSE stream stay lightweight. The ciphertext lives only on disk.
+ */
+export interface ImageRef {
+  url: string | null;
+  /** togoder-image:// reference token when image was stored encrypted */
+  imageRef: string | null;
+  revisedPrompt: string | null;
+  /** Ready-to-use markdown snippet for the LLM to inline in its response */
+  markdown: string | null;
+}
+
+function buildImageRefToken(id: string, keyB64: string, ivB64: string): string {
+  // URI-encode the base64 values (base64 may contain +/= which are safe in
+  // query params but we encode for readability and robustness).
+  return `togoder-image://${id}?key=${encodeURIComponent(keyB64)}&iv=${encodeURIComponent(ivB64)}`;
+}
 
 /**
  * Register the `image_generate` backend tool.
  *
  * When the LLM calls image_generate, the handler sends the prompt to
- * OpenRouter's chat/completions with the gpt-image-2 model and parses
- * the response for image URLs or base64 data.
+ * OpenRouter's image generation endpoint and parses the response for images.
  *
- * The tool result is returned as a JSON structure that the chat UI can
- * recognise and render inline.
+ * Images with URLs (OpenRouter-hosted) are returned as-is. Images returned
+ * as base64 are encrypted and stored on a bind-mount volume; only a compact
+ * reference token is returned in the tool result. This keeps the chat history
+ * and SSE stream free of large binary payloads.
  */
 export function registerImageGenerateTool(): void {
   const registry = ToolRegistry.getInstance();
@@ -87,18 +114,49 @@ export function registerImageGenerateTool(): void {
           });
         }
 
-        const images = results.map((img: ImageGenResult, i: number) => ({
-          url: img.url ?? null,
-          base64: img.base64 ?? null,
-          revisedPrompt: img.revisedPrompt ?? null,
-          // Provide a ready-to-use markdown snippet so the model can inline
-          // the image in its response without guessing the format.
-          markdown: img.url
-            ? `![Generated image ${i + 1}](${img.url})`
-            : img.base64
-              ? `![Generated image ${i + 1}](${img.base64})`
-              : null,
-        }));
+        const images: ImageRef[] = results.map(
+          (img: ImageGenResult, i: number) => {
+            let imageRef: string | null = null;
+            let markdown: string | null = null;
+
+            if (img.url) {
+              // URL-hosted image (OpenRouter): keep as-is, no storage needed
+              markdown = `![Generated image ${i + 1}](${img.url})`;
+            } else if (img.base64) {
+              // Base64 image: encrypt & store on disk, return reference token.
+              // Strip the data:image/...;base64, prefix if present.
+              const b64 = img.base64.startsWith("data:")
+                ? img.base64.split(",")[1]
+                : img.base64;
+              try {
+                const meta = storeEncryptedImage(b64);
+                imageRef = buildImageRefToken(
+                  meta.id,
+                  meta.key,
+                  meta.iv,
+                );
+                markdown = `![Generated image ${i + 1}](${imageRef})`;
+              } catch (err: any) {
+                console.error(
+                  "Failed to store encrypted image:",
+                  err?.message ?? err,
+                );
+                // Fallback: include the base64 inline so the chat doesn't
+                // break, but flag the error so the client knows it's legacy.
+                markdown = img.base64.startsWith("data:")
+                  ? `![Generated image ${i + 1}](${img.base64})`
+                  : `![Generated image ${i + 1}](data:image/png;base64,${img.base64})`;
+              }
+            }
+
+            return {
+              url: img.url ?? null,
+              imageRef,
+              revisedPrompt: img.revisedPrompt ?? null,
+              markdown,
+            };
+          },
+        );
 
         return JSON.stringify({
           success: true,

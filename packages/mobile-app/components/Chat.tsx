@@ -208,6 +208,7 @@ export function Chat({ chatId, onBack }: ChatProps) {
       pdfAttachment={pdf.attachment}
       sttEnabled={stt.enabled}
       isRecording={stt.isRecording}
+      isProcessing={stt.isProcessing}
       sttError={stt.error}
       onMicToggle={stt.toggleRecordSubmit}
       onMicCancel={stt.cancelRecording}

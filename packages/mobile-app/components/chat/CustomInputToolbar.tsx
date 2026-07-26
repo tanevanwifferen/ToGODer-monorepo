@@ -45,6 +45,7 @@ interface CustomInputToolbarProps extends InputToolbarProps<IMessage> {
   /** STT microphone: toggle to record/submit */
   sttEnabled?: boolean;
   isRecording?: boolean;
+  isProcessing?: boolean;
   sttError?: string | null;
   onMicToggle?: () => void;
   onMicCancel?: () => void;
@@ -68,6 +69,7 @@ export function CustomInputToolbar({
   onDropFile,
   sttEnabled,
   isRecording,
+  isProcessing,
   sttError,
   onMicToggle,
   onMicCancel,
@@ -168,15 +170,26 @@ export function CustomInputToolbar({
               </TouchableOpacity>
             )}
             <TouchableOpacity
-              onPress={onMicToggle}
-              style={[styles.micButton, isRecording && styles.micButtonActive]}
-              accessibilityLabel={isRecording ? 'Tap to stop recording and submit' : 'Tap to start recording'}
+              onPress={isProcessing ? undefined : onMicToggle}
+              style={[
+                styles.micButton,
+                isRecording && styles.micButtonActive,
+                isProcessing && styles.micButtonProcessing,
+              ]}
+              disabled={isProcessing}
+              accessibilityLabel={
+                isProcessing
+                  ? 'Transcribing audio…'
+                  : isRecording
+                    ? 'Tap to stop recording and submit'
+                    : 'Tap to start recording'
+              }
               accessibilityRole="button"
             >
               <Ionicons
-                name={isRecording ? 'mic' : 'mic-outline'}
+                name={isProcessing ? 'hourglass-outline' : isRecording ? 'mic' : 'mic-outline'}
                 size={24}
-                color={isRecording ? '#ef4444' : theme.tint}
+                color={isProcessing ? '#f59e0b' : isRecording ? '#ef4444' : theme.tint}
               />
             </TouchableOpacity>
           </View>
@@ -388,6 +401,10 @@ const styles = StyleSheet.create({
   },
   micButtonActive: {
     backgroundColor: "rgba(239,68,68,0.15)",
+  },
+  micButtonProcessing: {
+    backgroundColor: "rgba(245,158,11,0.15)",
+    opacity: 0.8,
   },
   attachButton: {
     justifyContent: "center",

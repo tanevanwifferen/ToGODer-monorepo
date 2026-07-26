@@ -9,10 +9,15 @@ const API_BASE = ''; // Same origin
  * Hook for Text-to-Speech playback of completed assistant messages.
  *
  * Strategy:
- * - Web: Uses the browser's built-in SpeechSynthesis API (zero latency,
- *   no server round-trip). Falls back to server /api/tts if unavailable.
- * - Mobile (React Native): Uses server /api/tts endpoint with expo-av
- *   for audio playback.
+ * - Web: Browser SpeechSynthesis API (instant, no server round-trip).
+ *        Falls back to server /api/tts (espeak-ng + ffmpeg → MP3) if
+ *        SpeechSynthesis is unavailable.
+ * - Mobile: POST /api/tts → MP3 blob → expo-av Sound playback.
+ *
+ * Autoplay handling: browsers may block audio.play() without a prior
+ * user gesture. The call to speak() always comes from a user action
+ * (sending a message), so playback is allowed. If blocked, a warning
+ * is logged.
  */
 export function useTts() {
   const ttsEnabled = useSelector(selectTtsEnabled);
@@ -29,17 +34,22 @@ export function useTts() {
       const blob = await res.blob();
 
       if (Platform.OS === 'web') {
-        // Web: use HTMLAudioElement
+        // Web: HTMLAudioElement from blob URL
         const url = URL.createObjectURL(blob);
         const audio = new Audio(url);
         soundRef.current = audio;
         audio.onended = () => URL.revokeObjectURL(url);
-        await audio.play();
+        audio.onerror = () => URL.revokeObjectURL(url);
+        try {
+          await audio.play();
+        } catch (playErr: any) {
+          // Autoplay blocked — not a critical error, log and continue
+          console.warn('[tts] Audio play blocked by browser autoplay policy:', playErr.message);
+        }
       } else {
-        // Mobile: use expo-av
+        // Mobile: expo-av Sound from blob data URI
         try {
           const { Audio } = require('expo-av');
-          // Convert blob to base64 data URI
           const reader = new FileReader();
           const dataUri = await new Promise<string>((resolve, reject) => {
             reader.onloadend = () => resolve(reader.result as string);
@@ -48,7 +58,7 @@ export function useTts() {
           });
           const { sound } = await Audio.Sound.createAsync(
             { uri: dataUri },
-            { shouldPlay: true },
+            { shouldPlay: true, volume: 1.0 },
           );
           soundRef.current = sound;
         } catch (e) {
@@ -72,6 +82,12 @@ export function useTts() {
         const utterance = new SpeechSynthesisUtterance(text);
         utterance.rate = 1.0;
         utterance.pitch = 1.0;
+        // Prefer a natural-sounding English voice if available
+        const voices = window.speechSynthesis.getVoices();
+        const enVoice = voices.find(
+          (v) => v.lang.startsWith('en') && v.localService,
+        );
+        if (enVoice) utterance.voice = enVoice;
         window.speechSynthesis.speak(utterance);
         return;
       } catch {

@@ -58,6 +58,10 @@ import {
   hasEncryptedPdf,
 } from "../Services/PdfDocStore";
 import { decryptPdfData } from "../Services/PdfCrypto";
+import {
+  deriveSessionId,
+  mergeSessionModifications,
+} from "../Tools/SystemPromptTool";
 
 let quote = "";
 
@@ -491,6 +495,20 @@ export class ConversationApi {
 
     systemPrompt += "\n\n" + this.formatPersonalData(input);
     systemPrompt = rootpersona + "\n\n" + systemPrompt;
+
+    // ── Session-level prompt modifications ─────────────────────
+    // Merge any AI-requested system prompt modifications for this
+    // conversation session. The update_system_prompt tool allows
+    // the AI to add/update/remove named sections (preferences,
+    // context, tone) that persist across turns within a session.
+    const firstUserMsg = input.prompts.find(
+      (p) => p.role === "user",
+    )?.content;
+    const sessionId = deriveSessionId(
+      typeof firstUserMsg === "string" ? firstUserMsg : undefined,
+      this.assistant_name,
+    );
+    systemPrompt = mergeSessionModifications(systemPrompt, sessionId);
 
     return systemPrompt;
   }

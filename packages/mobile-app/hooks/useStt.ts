@@ -6,23 +6,26 @@ import { selectSttEnabled } from '../redux/slices/userSettingsSlice';
 const API_BASE = ''; // Same origin
 
 /**
- * Hook for Speech-to-Text (push-to-talk recording).
+ * Hook for Speech-to-Text (one-tap record, one-tap send).
  *
- * Press-and-hold flow:
- * 1. User presses mic button → startRecording()
- * 2. User releases mic button → stopRecording() → sends audio to POST /api/stt
+ * Tap-to-toggle flow:
+ * 1. Tap mic button (idle) → startRecording() — browser/OS remembers permission grant
+ * 2. Tap mic button (recording) → stopRecording() → transcribe via POST /api/stt
  * 3. Server returns { text, language }
  * 4. Text is provided via onTranscription callback
  *
  * Cancel flow:
- * - Tap mic while recording → cancelRecording() → stops without sending
+ * - Tap X button during recording → cancelRecording() → discards audio without sending
  *
- * Web: AudioContext → raw PCM → WAV blob (whisper.cpp only supports flac, mp3, ogg, wav)
+ * State machine: idle → recording → processing → idle
+ *
+ * Web: AudioContext → raw PCM → WAV blob
  * Mobile: expo-av Audio.Recording → WAV (PCM)
  */
 export function useStt(onTranscription?: (text: string) => void) {
   const sttEnabled = useSelector(selectSttEnabled);
   const [isRecording, setIsRecording] = useState(false);
+  const [isProcessing, setIsProcessing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const recordingRef = useRef<any>(null);
@@ -33,11 +36,12 @@ export function useStt(onTranscription?: (text: string) => void) {
   const pcmChunksRef = useRef<Float32Array[]>([]);
   const sampleRateRef = useRef<number>(16000);
 
-  // Clear error when recording starts
+  // Clear error when starting a new recording
   const clearError = useCallback(() => setError(null), []);
 
   const transcribe = useCallback(
     async (audioBlob: Blob, mimeType: string) => {
+      setIsProcessing(true);
       try {
         const ext = mimeTypeToExt(mimeType);
         const form = new FormData();
@@ -62,6 +66,8 @@ export function useStt(onTranscription?: (text: string) => void) {
         console.warn('[stt] Transcription failed:', err);
         setError(err.message || 'Transcription failed');
         throw err;
+      } finally {
+        setIsProcessing(false);
       }
     },
     [onTranscription],
@@ -149,10 +155,9 @@ export function useStt(onTranscription?: (text: string) => void) {
       audioContextRef.current = null;
     }
 
+    setIsRecording(false);
     if (wavBlob) {
       transcribe(wavBlob, 'audio/wav');
-    } else {
-      setIsRecording(false);
     }
   }, [transcribe]);
 
@@ -243,28 +248,23 @@ export function useStt(onTranscription?: (text: string) => void) {
       }
 
       recordingRef.current = null;
+      setIsRecording(false);
       await recording.stopAndUnloadAsync();
       const uri = recording.getURI();
 
       if (!uri) {
-        setIsRecording(false);
         return;
       }
 
       // Fetch the local file and upload
       const response = await fetch(uri);
       const blob = await response.blob();
-      try {
-        await transcribe(blob, blob.type || 'audio/wav');
-      } catch {
-        // error already set by transcribe
-      } finally {
-        setIsRecording(false);
-      }
+      await transcribe(blob, blob.type || 'audio/wav');
     } catch (err: any) {
       console.warn('[stt] Failed to stop recording (mobile):', err);
       setError(err.message || 'Failed to stop recording');
       setIsRecording(false);
+      setIsProcessing(false);
     }
   }, [transcribe]);
 
@@ -304,15 +304,39 @@ export function useStt(onTranscription?: (text: string) => void) {
     };
   }, []);
 
+  // --- Permission check: one-time grant, never re-prompt ---
+  // Uses navigator.permissions.query (no prompt) to check the current
+  // state. If previously granted, getUserMedia succeeds silently. If
+  // denied, shows a one-time explanation instead of recurring nags.
+  const checkPermissionWeb = useCallback(async (): Promise<boolean> => {
+    try {
+      if (navigator.permissions && navigator.permissions.query) {
+        const result = await navigator.permissions.query({ name: 'microphone' as PermissionName });
+        if (result.state === 'granted') return true;
+        if (result.state === 'denied') {
+          setError(
+            'Microphone access is blocked. Go to your browser settings → Privacy → Microphone, and allow access for this site.'
+          );
+          return false;
+        }
+      }
+      return true; // prompt state or unsupported — let getUserMedia handle it
+    } catch {
+      return true; // Safari: permissions.query not supported — fall through
+    }
+  }, []);
+
   // --- Public API ---
-  const startRecording = useCallback(() => {
+  const startRecording = useCallback(async () => {
     if (!sttEnabled) return;
     if (Platform.OS === 'web') {
+      const allowed = await checkPermissionWeb();
+      if (!allowed) return;
       startRecordingWeb();
     } else {
       startRecordingMobile();
     }
-  }, [sttEnabled, startRecordingWeb, startRecordingMobile]);
+  }, [sttEnabled, startRecordingWeb, startRecordingMobile, checkPermissionWeb]);
 
   const stopRecording = useCallback(() => {
     if (Platform.OS === 'web') {
@@ -349,6 +373,7 @@ export function useStt(onTranscription?: (text: string) => void) {
 
   return {
     isRecording,
+    isProcessing,
     error,
     startRecording,
     stopRecording,
