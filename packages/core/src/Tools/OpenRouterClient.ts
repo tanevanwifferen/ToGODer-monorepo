@@ -70,12 +70,11 @@ export class OpenRouterClient {
   }
 
   /**
-   * Generate images using OpenRouter's chat/completions with an image-capable
-   * model (e.g. openai/gpt-image-2). Returns parsed image results (URLs and/or
-   * base64 data URIs).
+   * Generate images using OpenRouter's /api/v1/images endpoint via the
+   * OpenAI SDK's images.generate() method.
    *
-   * The model is prompted to produce images and returns them inline in its
-   * response content. We parse the content for image URLs and base64 data.
+   * gpt-image-2 is an image generation model and must be called through
+   * the images API, not chat/completions.
    */
   async generateImage(prompt: string): Promise<ImageGenResult[]> {
     const controller = new AbortController();
@@ -85,26 +84,27 @@ export class OpenRouterClient {
     );
 
     try {
-      const response = await this.openai.chat.completions.create(
+      const response = await this.openai.images.generate(
         {
           model: this.config.model ?? IMAGE_GEN_MODEL,
-          messages: [
-            {
-              role: 'user',
-              content: prompt,
-            },
-          ],
-          max_tokens: 4096,
+          prompt,
+          n: this.config.maxImages ?? DEFAULT_MAX_IMAGES,
+          size: '1024x1024',
+          response_format: 'url',
         },
         { signal: controller.signal }
       );
 
-      const content = response.choices?.[0]?.message?.content;
-      if (!content) {
-        throw new Error('Image generation returned empty response');
+      const data = response.data ?? [];
+      if (data.length === 0) {
+        throw new Error('Image generation returned no images');
       }
 
-      return this.parseImageResponse(content);
+      return data.map((img) => ({
+        url: img.url ?? undefined,
+        base64: img.b64_json ?? undefined,
+        revisedPrompt: (img as any).revised_prompt ?? undefined,
+      }));
     } catch (error: any) {
       if (error?.name === 'AbortError' || controller.signal.aborted) {
         throw new Error(
@@ -159,42 +159,6 @@ export class OpenRouterClient {
     } finally {
       clearTimeout(timeout);
     }
-  }
-
-  /**
-   * Parse the model's text response for image URLs and base64 data URIs.
-   *
-   * gpt-image-2 returns images in markdown format like:
-   *   ![image](https://...)
-   * Or inline base64 data URIs.
-   */
-  private parseImageResponse(content: string): ImageGenResult[] {
-    const results: ImageGenResult[] = [];
-
-    // Match markdown image syntax: ![alt](url)
-    const markdownImageRe = /!\[.*?\]\((https?:\/\/[^\s)]+)\)/g;
-    let match: RegExpExecArray | null;
-    while ((match = markdownImageRe.exec(content)) !== null) {
-      results.push({ url: match[1] });
-    }
-
-    // Match base64 data URIs for images
-    const base64Re = /(data:image\/[a-zA-Z+.-]+;base64,[A-Za-z0-9+/=]+)/g;
-    while ((match = base64Re.exec(content)) !== null) {
-      results.push({ base64: match[1] });
-    }
-
-    // If no structured images found, wrap the full content as a single result
-    // (the model may return plain text instructions or error messages)
-    if (results.length === 0) {
-      // The content may contain a URL without markdown syntax
-      const plainUrlRe = /(https?:\/\/[^\s]+\.(?:png|jpg|jpeg|gif|webp)(?:\?[^\s]*)?)/gi;
-      while ((match = plainUrlRe.exec(content)) !== null) {
-        results.push({ url: match[1] });
-      }
-    }
-
-    return results;
   }
 }
 
