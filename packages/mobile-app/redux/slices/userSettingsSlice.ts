@@ -27,6 +27,8 @@ export interface UserSettingsState {
 
   // Feature Settings
   libraryIntegrationEnabled: boolean;
+  ttsEnabled: boolean;
+  sttEnabled: boolean;
 
   // Custom System Prompt
   customSystemPrompt: string | null;
@@ -53,6 +55,8 @@ const initialState: UserSettingsState = {
 
   // Feature defaults
   libraryIntegrationEnabled: false,
+  ttsEnabled: false,
+  sttEnabled: false,
 
   // Prompt defaults
   customSystemPrompt: null,
@@ -112,6 +116,14 @@ const userSettingsSlice = createSlice({
       state.libraryIntegrationEnabled = action.payload;
       state.updatedAt = Date.now();
     },
+    setTtsEnabled: (state, action: PayloadAction<boolean>) => {
+      state.ttsEnabled = action.payload;
+      state.updatedAt = Date.now();
+    },
+    setSttEnabled: (state, action: PayloadAction<boolean>) => {
+      state.sttEnabled = action.payload;
+      state.updatedAt = Date.now();
+    },
 
     // Bulk update settings (for migration and compatibility)
     updateSettings: (state, action: PayloadAction<Partial<UserSettingsState>>) => {
@@ -169,6 +181,8 @@ export const {
   setOutsideBox,
   setHolisticTherapist,
   setLibraryIntegrationEnabled,
+  setTtsEnabled,
+  setSttEnabled,
   updateSettings,
   setCustomSystemPrompt,
   setGeneratingPrompt,
@@ -227,6 +241,16 @@ export const selectLibraryIntegrationEnabled = createSelector(
   (settings) => settings.libraryIntegrationEnabled
 );
 
+export const selectTtsEnabled = createSelector(
+  (state: { userSettings: UserSettingsState }) => state.userSettings,
+  (settings) => settings.ttsEnabled
+);
+
+export const selectSttEnabled = createSelector(
+  (state: { userSettings: UserSettingsState }) => state.userSettings,
+  (settings) => settings.sttEnabled
+);
+
 // Custom System Prompt Selectors
 export const selectCustomSystemPrompt = createSelector(
   (state: { userSettings: UserSettingsState }) => state.userSettings,
@@ -273,6 +297,8 @@ export const selectFeatureSettings = createSelector(
   (state: { userSettings: UserSettingsState }) => state.userSettings,
   (settings) => ({
     libraryIntegrationEnabled: settings.libraryIntegrationEnabled,
+    ttsEnabled: settings.ttsEnabled,
+    sttEnabled: settings.sttEnabled,
   })
 );
 

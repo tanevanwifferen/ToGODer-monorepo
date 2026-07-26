@@ -22,6 +22,7 @@ import { GetSentimentRouter } from "./Web/SentimentController";
 import { GetMcpRouter } from "./Web/McpController";
 import { GetPdfUploadRouter } from "./Web/PdfUploadController";
 import { sentimentIntegrationEnabled } from "./Services/SentimentService";
+import { GetTtsRouter } from "./Web/TtsController";
 import {
   GetRealtimeVoiceRouter,
   setupRealtimeVoiceWebSocket,
@@ -101,6 +102,7 @@ const syncRouter = GetSyncRouter(messageLimiter);
 const sentimentRouter = GetSentimentRouter(messageLimiter);
 const mcpRouter = GetMcpRouter(messageLimiter);
 const pdfUploadRouter = GetPdfUploadRouter();
+const ttsRouter = GetTtsRouter(messageLimiter);
 const adminRouter = GetAdminRouter();
 const referralRouter = GetReferralRouter();
 
@@ -115,6 +117,7 @@ app.use(sentimentRouter);
 app.use(mcpRouter);
 app.use(pdfUploadRouter);
 app.use(adminRouter);
+app.use(ttsRouter);
 app.use(referralRouter);
 
 const donateOptions: { address: string }[] = JSON.parse(
