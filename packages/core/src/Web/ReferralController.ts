@@ -17,16 +17,12 @@ const COOKIE_MAX_AGE = 30 * 24 * 60 * 60 * 1000; // 30 days
 export function GetReferralRouter(): Router {
   const router = Router();
 
-  // GET /ref/:code — set cookie and redirect to homepage
+  // GET /ref/:code — landing page with payout info, set cookie
   router.get('/ref/:code', async (req: Request, res: Response) => {
     const { code } = req.params;
 
     // Validate the referral code exists
     const referrer = await resolveReferralCode(code);
-    if (!referrer) {
-      // Invalid code — still redirect, just don't set cookie
-      return res.redirect('/');
-    }
 
     // analytics: referral_link_clicked
     getAnalytics().trackEvent('referral_link_clicked', {
@@ -34,14 +30,20 @@ export function GetReferralRouter(): Router {
       props: { referrerCode: code },
     });
 
-    // Set cookie and redirect to homepage
+    // Set cookie regardless (even for invalid codes, set what we have —
+    // the signup handler validates again before recording)
     res.cookie(COOKIE_NAME, code, {
       maxAge: COOKIE_MAX_AGE,
       httpOnly: false,
       secure: process.env.NODE_ENV === 'production',
       sameSite: 'lax',
     });
-    res.redirect('/');
+
+    const hostUrl = process.env.HOST_URL || 'https://togoder.click';
+    const referrerEmail = referrer?.email || 'a friend';
+
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    res.send(renderReferralLanding({ referrerEmail, hostUrl }));
   });
 
   // GET /api/referral/code — return the user's referral code + link
@@ -175,6 +177,120 @@ export function GetReferralRouter(): Router {
   );
 
   return router;
+}
+
+// ── HTML renderer for /ref/:code landing page ──────────────────
+
+function renderReferralLanding(params: { referrerEmail: string; hostUrl: string }): string {
+  const { referrerEmail, hostUrl } = params;
+  const esc = (s: string) =>
+    s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>You've been invited to ToGODer!</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: system-ui, -apple-system, sans-serif;
+    background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+    color: #e2e8f0;
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 1rem;
+  }
+  .card {
+    background: #1e293b;
+    border: 1px solid #334155;
+    border-radius: 16px;
+    padding: 2.5rem 2rem;
+    max-width: 480px;
+    width: 100%;
+    text-align: center;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.4);
+  }
+  .icon { font-size: 3rem; margin-bottom: 0.75rem; }
+  h1 { font-size: 1.5rem; font-weight: 700; margin-bottom: 0.5rem; color: #f8fafc; }
+  .subtitle { color: #94a3b8; font-size: 0.95rem; margin-bottom: 2rem; }
+  .payout {
+    background: #0f172a;
+    border-radius: 12px;
+    padding: 1.25rem;
+    margin-bottom: 1.5rem;
+    text-align: left;
+  }
+  .payout h2 {
+    font-size: 0.85rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: #64748b;
+    margin-bottom: 1rem;
+  }
+  .tier {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.6rem 0;
+    border-bottom: 1px solid #1e293b;
+  }
+  .tier:last-child { border-bottom: none; }
+  .tier-label { font-size: 0.9rem; color: #cbd5e1; }
+  .tier-pct { font-weight: 700; font-size: 1rem; color: #38bdf8; }
+  .btn {
+    display: inline-block;
+    width: 100%;
+    padding: 0.85rem;
+    background: #3b82f6;
+    color: #fff;
+    border: none;
+    border-radius: 10px;
+    font-size: 1rem;
+    font-weight: 600;
+    text-decoration: none;
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+  .btn:hover { background: #2563eb; }
+  .footnote {
+    margin-top: 1rem;
+    font-size: 0.75rem;
+    color: #64748b;
+    line-height: 1.5;
+  }
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="icon">🎁</div>
+  <h1>You've been invited by ${esc(referrerEmail)}</h1>
+  <p class="subtitle">Join ToGODer and you'll both earn credits when you become a supporter.</p>
+
+  <div class="payout">
+    <h2>💰 How you earn</h2>
+    <div class="tier">
+      <span class="tier-label">People you refer directly</span>
+      <span class="tier-pct">2%</span>
+    </div>
+    <div class="tier">
+      <span class="tier-label">People your referrals refer</span>
+      <span class="tier-pct">3%</span>
+    </div>
+  </div>
+
+  <a href="${esc(hostUrl)}/" class="btn">Get Started</a>
+
+  <p class="footnote">
+    Commissions are earned when a referred user becomes a paid supporter.<br>
+    Credits can be redeemed for subscription time and premium features.
+  </p>
+</div>
+</body>
+</html>`;
 }
 
 // ── HTML renderer for /admin/referrals ───────────────────────────

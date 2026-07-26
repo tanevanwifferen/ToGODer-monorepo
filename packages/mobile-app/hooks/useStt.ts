@@ -338,6 +338,15 @@ export function useStt(onTranscription?: (text: string) => void) {
     }
   }, [isRecording, startRecording, cancelRecording]);
 
+  /** Toggle: tap idle → start recording, tap while recording → stop & submit. */
+  const toggleRecordSubmit = useCallback(() => {
+    if (isRecording) {
+      stopRecording();
+    } else {
+      startRecording();
+    }
+  }, [isRecording, startRecording, stopRecording]);
+
   return {
     isRecording,
     error,
@@ -345,6 +354,7 @@ export function useStt(onTranscription?: (text: string) => void) {
     stopRecording,
     cancelRecording,
     toggleRecording,
+    toggleRecordSubmit,
     enabled: sttEnabled,
   };
 }

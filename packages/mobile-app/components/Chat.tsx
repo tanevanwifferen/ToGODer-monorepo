@@ -209,8 +209,7 @@ export function Chat({ chatId, onBack }: ChatProps) {
       sttEnabled={stt.enabled}
       isRecording={stt.isRecording}
       sttError={stt.error}
-      onMicPressIn={stt.startRecording}
-      onMicPressOut={stt.stopRecording}
+      onMicToggle={stt.toggleRecordSubmit}
       onMicCancel={stt.cancelRecording}
       onPickPdf={async () => {
         const file = await pickPdfFileWeb();

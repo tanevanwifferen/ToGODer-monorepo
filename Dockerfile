@@ -59,7 +59,7 @@ ADD https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.bin /whi
 FROM node:20-bookworm-slim
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    ca-certificates espeak-ng libgomp1 && \
+    ca-certificates espeak-ng libgomp1 ffmpeg && \
     rm -rf /var/lib/apt/lists/*
 
 RUN npm install -g pnpm@9

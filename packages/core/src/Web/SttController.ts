@@ -73,7 +73,12 @@ export function GetSttRouter(messageLimiter: RateLimitRequestHandler): Router {
         return;
       }
 
-      const filePath = file.path;
+      const originalPath = file.path;
+
+      // Preprocess audio with ffmpeg to 16kHz mono WAV for consistent whisper.cpp input.
+      // Falls back to the original file if ffmpeg is unavailable or fails.
+      const filePath = await preprocessAudio(originalPath);
+
       const whisperBinary = process.env.WHISPER_BINARY || 'whisper-cli';
       const modelPath = process.env.WHISPER_MODEL || '/app/whisper-models/ggml-tiny.en.bin';
 
@@ -105,7 +110,7 @@ export function GetSttRouter(messageLimiter: RateLimitRequestHandler): Router {
 
         proc.on('error', async (err) => {
           console.error('[stt] whisper.cpp spawn error:', err);
-          await cleanupFile(filePath);
+          await cleanupBoth(originalPath, filePath);
           if (!res.headersSent) {
             res.status(500).json({ error: 'STT engine unavailable' });
           } else {
@@ -133,7 +138,7 @@ export function GetSttRouter(messageLimiter: RateLimitRequestHandler): Router {
               detectedLanguage = langMatch[1];
             }
 
-            await cleanupFile(filePath);
+            await cleanupBoth(originalPath, filePath);
 
             if (code !== 0 && !text) {
               console.error(`[stt] whisper.cpp failed (code ${code}):`, stderr);
@@ -151,7 +156,7 @@ export function GetSttRouter(messageLimiter: RateLimitRequestHandler): Router {
 
             res.json({ text, language: detectedLanguage });
           } catch (err) {
-            await cleanupFile(filePath);
+            await cleanupBoth(originalPath, filePath);
             next(err);
           }
         });
@@ -161,16 +166,74 @@ export function GetSttRouter(messageLimiter: RateLimitRequestHandler): Router {
           if (!proc.killed) {
             proc.kill();
           }
-          cleanupFile(filePath);
+          cleanupBoth(originalPath, filePath);
         });
       } catch (error) {
-        await cleanupFile(filePath);
+        await cleanupBoth(originalPath, filePath);
         next(error);
       }
     },
   );
 
   return router;
+}
+
+/**
+ * Convert uploaded audio to 16kHz mono WAV via ffmpeg.
+ * Falls back to the original file if ffmpeg is unavailable or fails.
+ * The caller is responsible for cleaning up both the original file
+ * and the returned file (if different) after transcription.
+ */
+async function preprocessAudio(inputPath: string): Promise<string> {
+  const outputPath = inputPath + '.ffmpeg.wav';
+
+  try {
+    await new Promise<void>((resolve, reject) => {
+      const proc = spawn('ffmpeg', [
+        '-y',           // overwrite output file if it exists
+        '-i', inputPath,
+        '-ar', '16000', // 16kHz sample rate
+        '-ac', '1',     // mono
+        '-sample_fmt', 's16', // 16-bit signed PCM
+        outputPath,
+      ], {
+        stdio: ['pipe', 'pipe', 'pipe'],
+        timeout: 30_000,
+      });
+
+      let stderr = '';
+      proc.stderr.on('data', (chunk: Buffer) => {
+        stderr += chunk.toString();
+      });
+
+      proc.on('error', (err) => {
+        console.warn('[stt] ffmpeg spawn error (falling back to original):', err.message);
+        reject(err);
+      });
+
+      proc.on('close', (code) => {
+        if (code === 0 && fs.existsSync(outputPath)) {
+          resolve();
+        } else {
+          console.warn(`[stt] ffmpeg exited ${code} (falling back to original):`, stderr.slice(-500));
+          reject(new Error(`ffmpeg exited ${code}`));
+        }
+      });
+    });
+    return outputPath;
+  } catch {
+    // Fall back to original file
+    await cleanupFile(outputPath);
+    return inputPath;
+  }
+}
+
+/** Clean up both the original upload and the preprocessed file (if different). */
+async function cleanupBoth(originalPath: string, processedPath: string): Promise<void> {
+  await cleanupFile(originalPath);
+  if (processedPath !== originalPath) {
+    await cleanupFile(processedPath);
+  }
 }
 
 /** Delete a temp file, swallowing any errors. */

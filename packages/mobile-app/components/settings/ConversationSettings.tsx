@@ -10,6 +10,8 @@ import {
   selectLibraryIntegrationEnabled,
   selectTtsEnabled,
   setTtsEnabled,
+  selectSttEnabled,
+  setSttEnabled,
   setHumanPrompt,
   setKeepGoing,
   setOutsideBox,
@@ -33,6 +35,7 @@ const ConversationSettings = () => {
   const holisticTherapist = useSelector(selectHolisticTherapist);
   const libraryIntegrationEnabled = useSelector(selectLibraryIntegrationEnabled);
   const ttsEnabled = useSelector(selectTtsEnabled);
+  const sttEnabled = useSelector(selectSttEnabled);
   const persona = useSelector(selectPersona);
 
   return (
@@ -130,6 +133,16 @@ const ConversationSettings = () => {
           colorScheme={colorScheme}
         />
         <Text style={[styles.checkboxLabel, { color: theme.text }]}>Text-to-Speech (read completed messages aloud)</Text>
+      </View>
+
+      <View style={styles.checkboxSection}>
+        <CustomCheckbox
+          value={sttEnabled}
+          onValueChange={(value: boolean) => dispatch(setSttEnabled(value))}
+          color={theme.tint}
+          colorScheme={colorScheme}
+        />
+        <Text style={[styles.checkboxLabel, { color: theme.text }]}>Speech-to-Text (speak your messages)</Text>
       </View>
     </View>
   );

@@ -42,12 +42,11 @@ interface CustomInputToolbarProps extends InputToolbarProps<IMessage> {
   onRemovePdf: () => void;
   /** Web drag-and-drop: called with the dropped File */
   onDropFile: (file: File) => void;
-  /** STT microphone: press-and-hold to record + release to send, tap to cancel */
+  /** STT microphone: toggle to record/submit */
   sttEnabled?: boolean;
   isRecording?: boolean;
   sttError?: string | null;
-  onMicPressIn?: () => void;
-  onMicPressOut?: () => void;
+  onMicToggle?: () => void;
   onMicCancel?: () => void;
 }
 
@@ -70,8 +69,7 @@ export function CustomInputToolbar({
   sttEnabled,
   isRecording,
   sttError,
-  onMicPressIn,
-  onMicPressOut,
+  onMicToggle,
   onMicCancel,
   ...toolbarProps
 }: CustomInputToolbarProps) {
@@ -157,7 +155,7 @@ export function CustomInputToolbar({
   const renderActions = () => {
     return (
       <View style={styles.actionsRow}>
-        {sttEnabled && onMicPressIn && onMicPressOut && (
+        {sttEnabled && onMicToggle && (
           <View style={styles.micRow}>
             {isRecording && onMicCancel && (
               <TouchableOpacity
@@ -170,10 +168,9 @@ export function CustomInputToolbar({
               </TouchableOpacity>
             )}
             <TouchableOpacity
-              onPressIn={onMicPressIn}
-              onPressOut={onMicPressOut}
+              onPress={onMicToggle}
               style={[styles.micButton, isRecording && styles.micButtonActive]}
-              accessibilityLabel={isRecording ? 'Release to send recording' : 'Hold to record'}
+              accessibilityLabel={isRecording ? 'Tap to stop recording and submit' : 'Tap to start recording'}
               accessibilityRole="button"
             >
               <Ionicons
