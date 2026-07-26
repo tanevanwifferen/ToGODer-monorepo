@@ -36,6 +36,8 @@ import { registerLibraryTool } from "./Tools/LibraryTool";
 import { registerArxivTools } from "./Tools/ArxivTool";
 import { registerMemoryTools } from "./Tools/MemoryTool";
 import { registerMcpJobTool } from "./Tools/McpJobTool";
+import { registerSystemPromptTool } from "./Tools/SystemPromptTool";
+import { registerImageGenerateTool } from "./Tools/ImageGenerateTool";
 
 const app = express();
 const port = process.env.PORT || 3000;
@@ -207,3 +209,5 @@ registerLibraryTool();
 registerArxivTools();
 registerMemoryTools();
 registerMcpJobTool();
+registerSystemPromptTool();
+registerImageGenerateTool();
