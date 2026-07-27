@@ -24,6 +24,7 @@ import { useGiftedMessages, ExtendedIMessage } from "../hooks/useGiftedMessages"
 import { useLibraryIntegration } from "../hooks/useLibraryIntegration";
 import { useAutoSentiment } from "../hooks/useAutoSentiment";
 import { useStt } from "../hooks/useStt";
+import { useTts } from "../hooks/useTts";
 import { usePdfAttachment, pickPdfFileWeb } from "../hooks/usePdfAttachment";
 import Toast from "react-native-toast-message";
 import { ThemedText } from "./ThemedText";
@@ -177,6 +178,8 @@ export function Chat({ chatId, onBack }: ChatProps) {
     setEditingMessageContent("");
   }, []);
 
+  const { speak: ttsSpeak } = useTts();
+
   const { onLongPress } = useChatActions(
     giftedMessages,
     (messageId: string) => {
@@ -186,7 +189,8 @@ export function Chat({ chatId, onBack }: ChatProps) {
         onDeleteMessage(messageIndex);
       }
     },
-    handleEditMessage
+    handleEditMessage,
+    ttsSpeak
   );
 
   const renderInputToolbar = (toolbarProps: any) => (

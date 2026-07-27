@@ -6,7 +6,8 @@ import CustomAlert from '@/components/ui/CustomAlert';
 export const useChatActions = (
   messages: IMessage[],
   onDeleteMessage: (messageId: any) => void,
-  onEditMessage?: (messageId: any, content: string) => void
+  onEditMessage?: (messageId: any, content: string) => void,
+  onSpeakMessage?: (text: string) => void
 ) => {
   const showToast = (text: string) => {
     Toast.show({
@@ -18,9 +19,12 @@ export const useChatActions = (
   };
 
   const onLongPress = (context: any, message: IMessage) => {
-    const options = ['Copy', 'Edit', 'Delete', 'Cancel'];
-    const cancelButtonIndex = 3;
-    const destructiveButtonIndex = 2;
+    const hasText = !!(message.text && message.text.trim());
+    const options: string[] = ['Copy'];
+    if (onSpeakMessage && hasText) options.push('Speak');
+    options.push('Edit', 'Delete', 'Cancel');
+    const cancelButtonIndex = options.length - 1;
+    const destructiveButtonIndex = cancelButtonIndex - 1;
 
     context.actionSheet().showActionSheetWithOptions({
       options,
@@ -28,18 +32,24 @@ export const useChatActions = (
       destructiveButtonIndex,
     },
     (buttonIndex: number) => {
-      switch (buttonIndex) {
-        case 0:
+      const option = options[buttonIndex];
+      switch (option) {
+        case 'Copy':
           Clipboard.setString(message.text || '');
           showToast('Message copied to clipboard');
           break;
-        case 1:
+        case 'Speak':
+          if (onSpeakMessage && message.text) {
+            onSpeakMessage(message.text);
+          }
+          break;
+        case 'Edit':
           if (onEditMessage) {
             onEditMessage(message._id, message.text || '');
             showToast('Message ready to edit');
           }
           break;
-        case 2:
+        case 'Delete':
           CustomAlert.alert(
             'Delete Message',
             'Are you sure you want to delete this message?',
