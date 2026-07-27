@@ -17,7 +17,7 @@
  */
 
 import { rsaDecryptAesKey, getPublicKey } from './imageKeypair';
-import { fromByteArray, toByteArray } from 'react-native-quick-base64';
+import { base64ToBytes, bytesToBase64 } from './base64';
 
 const { gcm } = require("@noble/ciphers/aes.js");
 
@@ -75,8 +75,8 @@ export function decryptImageData(
   ctTag: Uint8Array,
 ): string | null {
   try {
-    const key = toByteArray(keyB64);
-    const iv = toByteArray(ivB64);
+    const key = base64ToBytes(keyB64);
+    const iv = base64ToBytes(ivB64);
 
     if (key.length !== 32 || iv.length !== 12 || ctTag.length <= TAG_LENGTH) {
       console.warn('[imageCrypto] decryptImageData: malformed input', {
@@ -89,7 +89,7 @@ export function decryptImageData(
 
     const aes = gcm(key, iv);
     const plain = aes.decrypt(ctTag); // @noble/ciphers handles the tag internally
-    const b64 = fromByteArray(plain);
+    const b64 = bytesToBase64(plain);
     console.log('[imageCrypto] decryptImageData: success', { plainLen: plain.length });
     return b64;
   } catch (e: any) {
@@ -165,7 +165,7 @@ export async function fetchAndDecryptImage(
         return null;
       }
       // Convert recovered AES key buffer to base64 for decryptImageData
-      keyB64 = fromByteArray(new Uint8Array(aesKeyBuf));
+      keyB64 = bytesToBase64(new Uint8Array(aesKeyBuf));
       console.log('[imageCrypto] fetchAndDecryptImage: RSA key decrypted');
     }
 
