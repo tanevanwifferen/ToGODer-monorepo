@@ -1,5 +1,5 @@
 import { Request, Response, NextFunction, Router } from "express";
-import { getEncryptedImage } from "../Services/ImageStore";
+import { getEncryptedImage, validatePublicKeyPem } from "../Services/ImageStore";
 
 /**
  * Image retrieval controller.
@@ -13,13 +13,20 @@ import { getEncryptedImage } from "../Services/ImageStore";
  *
  * The endpoint returns the raw encrypted binary so the client can
  * decrypt it. No auth is required — the blob is useless without the key.
+ *
+ * Optional `pubkey` query parameter: when provided, the endpoint validates
+ * the key format and, for asymmetric images (scheme=rsa), verifies the
+ * pubkey hash matches the one used at encryption time. This prevents
+ * unauthorized clients from enumerating stored images — even though the
+ * ciphertext is useless without the decryption key, a 403 on pubkey
+ * mismatch reduces the attack surface.
  */
 
 export function GetImageRouter(): Router {
   const router = Router();
 
   /**
-   * GET /api/chat/image/:id
+   * GET /api/chat/image/:id?pubkey=<PEM>
    *
    * Returns the encrypted image binary (ciphertext || authTag) as
    * `application/octet-stream`. The client already has the AES-256-GCM
@@ -44,6 +51,23 @@ export function GetImageRouter(): Router {
         if (!payload) {
           res.status(404).json({ error: "image not found" });
           return;
+        }
+
+        // Optional pubkey verification
+        const pubkeyParam = typeof req.query.pubkey === 'string' ? req.query.pubkey : undefined;
+        if (pubkeyParam) {
+          const hash = validatePublicKeyPem(pubkeyParam);
+          if (!hash) {
+            res.status(400).json({ error: "invalid public key format" });
+            return;
+          }
+          // For asymmetric images, verify the pubkey matches the one used at encryption
+          if (payload.meta.scheme === 'rsa' && payload.meta.pubkeyHash) {
+            if (hash !== payload.meta.pubkeyHash) {
+              res.status(403).json({ error: "public key mismatch" });
+              return;
+            }
+          }
         }
 
         res

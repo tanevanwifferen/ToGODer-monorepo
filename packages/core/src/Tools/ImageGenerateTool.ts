@@ -4,7 +4,7 @@ import {
   ImageGenResult,
   IMAGE_GEN_MODEL,
 } from './OpenRouterClient';
-import { storeEncryptedImage, storeAsymmetricallyEncryptedImage } from '../Services/ImageStore';
+import { storeEncryptedImage, storeAsymmetricallyEncryptedImage, validatePublicKeyPem } from '../Services/ImageStore';
 
 /**
  * Format for an image reference token embedded in the tool result and chat
@@ -194,10 +194,14 @@ export function registerImageGenerateTool(): void {
                 const blob = await downloadImageBlob(img.url);
                 const b64 = blob.toString('base64');
                 const publicKey = ctx.request.imagePublicKey;
+                const pubkeyHash = publicKey ? validatePublicKeyPem(publicKey) : null;
                 let meta;
-                if (publicKey) {
+                if (publicKey && pubkeyHash) {
                   meta = storeAsymmetricallyEncryptedImage(b64, publicKey);
                 } else {
+                  if (publicKey && !pubkeyHash) {
+                    console.warn('[image_generate] Invalid public key PEM — falling back to symmetric encryption');
+                  }
                   meta = storeEncryptedImage(b64);
                 }
                 imageRef = buildImageRefToken(
@@ -224,12 +228,16 @@ export function registerImageGenerateTool(): void {
                 : img.base64;
               try {
                 const publicKey = ctx.request.imagePublicKey;
+                const pubkeyHash = publicKey ? validatePublicKeyPem(publicKey) : null;
                 let meta;
-                if (publicKey) {
+                if (publicKey && pubkeyHash) {
                   // Asymmetric: server encrypts with client's RSA public key.
                   // Only the client (holding the private key) can decrypt.
                   meta = storeAsymmetricallyEncryptedImage(b64, publicKey);
                 } else {
+                  if (publicKey && !pubkeyHash) {
+                    console.warn('[image_generate] Invalid public key PEM — falling back to symmetric encryption');
+                  }
                   // Symmetric fallback: server generates AES key (can decrypt).
                   meta = storeEncryptedImage(b64);
                 }

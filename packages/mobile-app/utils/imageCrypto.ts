@@ -16,7 +16,7 @@
  *   Asymmetric: togoder-image://<id>?key=<rsa_encrypted_key_b64>&iv=<iv_b64>&scheme=rsa
  */
 
-import { rsaDecryptAesKey } from './imageKeypair';
+import { rsaDecryptAesKey, getPublicKey } from './imageKeypair';
 
 const { gcm } = require("@noble/ciphers/aes.js");
 
@@ -106,7 +106,15 @@ export async function fetchAndDecryptImage(
   if (!parsed) return null;
 
   try {
-    const resp = await fetch(`${apiBase}/chat/image/${parsed.id}`);
+    // Include the public key as a query parameter so the server can verify
+    // the requesting client matches the key used at encryption time.
+    const pubkey = await getPublicKey();
+    const url = new URL(`${apiBase}/chat/image/${parsed.id}`);
+    if (pubkey) {
+      url.searchParams.set('pubkey', pubkey);
+    }
+
+    const resp = await fetch(url.toString());
     if (!resp.ok) return null;
 
     const buf = await resp.arrayBuffer();

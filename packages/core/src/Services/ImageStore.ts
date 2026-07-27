@@ -66,6 +66,10 @@ export interface EncryptedImageMeta {
   /** Encryption scheme: absent/undefined = symmetric, "rsa" = asymmetric */
   scheme?: string;
   createdAt: number;
+  /** SHA-256 hash of the public key PEM used to encrypt this image (hex).
+   *  Allows the GET endpoint to verify that a fetch request's pubkey matches
+   *  the one used at encryption time. Absent for legacy symmetric images. */
+  pubkeyHash?: string;
 }
 
 export interface EncryptedImagePayload {
@@ -113,6 +117,29 @@ const RSA_PADDING = crypto.constants.RSA_PKCS1_OAEP_PADDING;
 const RSA_OAEP_HASH = "sha256";
 
 /**
+ * Validate that a string looks like a well-formed RSA public key PEM.
+ * Returns the SHA-256 hash (hex) of the canonicalized PEM on success,
+ * or null if the input is not a valid RSA public key.
+ */
+export function validatePublicKeyPem(publicKeyPem: string): string | null {
+  try {
+    if (!publicKeyPem || typeof publicKeyPem !== 'string') return null;
+    const trimmed = publicKeyPem.trim();
+    if (!trimmed.startsWith('-----BEGIN PUBLIC KEY-----') ||
+        !trimmed.endsWith('-----END PUBLIC KEY-----')) {
+      return null;
+    }
+    // Try parsing it with Node crypto to ensure it's a real RSA key
+    crypto.createPublicKey({ key: trimmed, format: 'pem', type: 'spki' });
+    // Compute hash for later verification
+    const hash = crypto.createHash('sha256').update(trimmed).digest('hex');
+    return hash;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Encrypt raw image bytes using hybrid RSA+AES-256-GCM.
  *
  * 1. Generate a fresh random AES-256 key + GCM nonce
@@ -153,12 +180,14 @@ export function storeAsymmetricallyEncryptedImage(
   );
 
   const id = generateId();
+  const pubkeyHash = crypto.createHash('sha256').update(publicKeyPem.trim()).digest('hex');
   const meta: EncryptedImageMeta = {
     id,
     key: encryptedKey.toString("base64"),
     iv: iv.toString("base64"),
     scheme: "rsa",
     createdAt: Date.now(),
+    pubkeyHash,
   };
 
   fs.writeFileSync(jsonPath(id), JSON.stringify(meta), "utf8");
