@@ -13,7 +13,7 @@ import * as os from 'os';
  * Accepts an audio file via POST /api/stt (multipart/form-data, field "audio"),
  * runs whisper.cpp locally to transcribe, and returns the transcribed text.
  *
- * Primary model: small.en (~466MB) — much better accuracy than tiny, still CPU-viable.
+ * Primary model: base.en (~148MB) — good accuracy, ~3x faster than small on CPU.
  * Fallback model: tiny.en (~75MB) — fast, low memory, always available.
  *
  * whisper.cpp is a lightweight CPU-only C++ inference engine for OpenAI Whisper
@@ -82,16 +82,17 @@ export function GetSttRouter(messageLimiter: RateLimitRequestHandler): Router {
       const filePath = await preprocessAudio(originalPath);
 
       const whisperBinary = process.env.WHISPER_BINARY || 'whisper-cli';
-      const primaryModel = process.env.WHISPER_MODEL || '/app/whisper-models/ggml-small.en.bin';
+      const primaryModel = process.env.WHISPER_MODEL || '/app/whisper-models/ggml-base.en.bin';
       const fallbackModel = process.env.WHISPER_MODEL_FALLBACK || '/app/whisper-models/ggml-tiny.en.bin';
+      const threads = parseInt(process.env.WHISPER_THREADS || '4', 10);
 
       // Detect language from request or let whisper auto-detect
       const language = (req.body as any)?.language || 'auto';
 
-      // ── Try primary model (small.en), fall back to tiny if unavailable ──
+      // ── Try primary model (base.en), fall back to tiny if unavailable ──
       try {
         const result = await transcribeWithModel(
-          req, whisperBinary, primaryModel, filePath, language, 120_000,
+          req, whisperBinary, primaryModel, filePath, language, 90_000, threads,
         );
         await cleanupBoth(originalPath, filePath);
         res.json(result);
@@ -100,7 +101,7 @@ export function GetSttRouter(messageLimiter: RateLimitRequestHandler): Router {
 
         try {
           const result = await transcribeWithModel(
-            req, whisperBinary, fallbackModel, filePath, language, 60_000,
+            req, whisperBinary, fallbackModel, filePath, language, 60_000, Math.max(1, threads - 2),
           );
           await cleanupBoth(originalPath, filePath);
           res.json({ ...result, model: 'fallback' });
@@ -130,10 +131,12 @@ async function transcribeWithModel(
   filePath: string,
   language: string,
   timeoutMs: number,
+  threads: number,
 ): Promise<{ text: string; language: string; model?: string }> {
   const args: string[] = [
     '-m', modelPath,
     '-f', filePath,
+    '-t', String(threads),
     '--no-timestamps',
     '--output-txt',
     '--output-file', filePath, // writes to filePath + '.txt'

@@ -63,7 +63,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 RUN git clone --depth 1 --branch v1.9.1 https://github.com/ggerganov/whisper.cpp.git /whisper-src && \
     cd /whisper-src && \
-    cmake -B build && \
+    cmake -B build -DWHISPER_FFMPEG=OFF && \
     cmake --build build --config Release -j$(nproc) && \
     mkdir -p /whisper-out/models && \
     mkdir -p /whisper-out/lib && \
@@ -71,11 +71,10 @@ RUN git clone --depth 1 --branch v1.9.1 https://github.com/ggerganov/whisper.cpp
     cp build/bin/*.so* /whisper-out/lib/
 
 # Download whisper models for STT
-# small.en (~466MB) — primary: much better accuracy than tiny, still CPU-viable
-ADD https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.en.bin /whisper-out/models/
+# base.en (~148MB) — primary: good accuracy, ~3x faster than small on CPU
+ADD https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.en.bin /whisper-out/models/
 # tiny.en (~75MB) — fallback: fast, low memory
 ADD https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.en.bin /whisper-out/models/
-ADD https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.bin /whisper-out/models/
 
 # Stage 6: Runtime
 FROM node:20-bookworm-slim
@@ -129,8 +128,9 @@ ENV PORT=6968
 ENV PIPER_BINARY=/usr/local/bin/piper
 ENV PIPER_MODEL=/app/piper-models/en_US-lessac-medium.onnx
 ENV WHISPER_BINARY=/usr/local/bin/whisper-cli
-ENV WHISPER_MODEL=/app/whisper-models/ggml-small.en.bin
+ENV WHISPER_MODEL=/app/whisper-models/ggml-base.en.bin
 ENV WHISPER_MODEL_FALLBACK=/app/whisper-models/ggml-tiny.en.bin
+ENV WHISPER_THREADS=4
 
 USER node
 
