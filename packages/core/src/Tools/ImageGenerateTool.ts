@@ -116,7 +116,12 @@ export function registerImageGenerateTool(): void {
         name: 'image_generate',
         description:
           'Generate an AI image from a text prompt using OpenRouter\'s gpt-image-2 model. ' +
-          'Returns one or more images as URLs or base64 data that can be rendered inline. ' +
+          'The result JSON contains an "images" array; each image has a "markdown" ' +
+          'field with a ready-to-render markdown snippet. YOU MUST include each ' +
+          '"markdown" field verbatim in your response so the image renders inline. ' +
+          'For example, if the result has images[0].markdown = ' +
+          '"![Generated image](togoder-image://...)", copy that exact string into ' +
+          'your message. Do NOT describe the image without including the markdown. ' +
           'Use this when the user asks you to create, draw, or generate an image.',
         parameters: {
           type: 'object',

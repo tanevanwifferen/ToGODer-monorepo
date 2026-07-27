@@ -21,6 +21,10 @@ const MARKDOWN_IMAGE_RE = /!\[.*?\]\((https?:\/\/[^\s)]+)\)/gi;
 const BASE64_IMAGE_RE = /(data:image\/[a-zA-Z+.-]+;base64,[A-Za-z0-9+/=]+)/gi;
 const TOGODER_IMAGE_RE =
   /!\[.*?\]\((togoder-image:\/\/[a-f0-9]{32}\?key=[^&]+&iv=[^\s)]+(?:&scheme=[^\s)]+)?)\)/gi;
+/** Bare togoder-image:// reference URL (without markdown wrapper).
+ *  Detected as a fallback when the LLM outputs the reference URL directly. */
+const BARE_TOGODER_IMAGE_RE =
+  /(togoder-image:\/\/[a-f0-9]{32}\?key=[^\s&]+&iv=[^\s&]+(?:&scheme=[^\s&]+)?)/gi;
 const PLAIN_IMAGE_URL_RE =
   /(https?:\/\/[^\s]+\.(?:png|jpg|jpeg|gif|webp)(?:\?[^\s]*)?)/gi;
 
@@ -40,11 +44,9 @@ export function parseImageSegments(text: string): ParsedSegment[] {
   const segments: ParsedSegment[] = [];
   let remaining = text;
 
-  // Combined regex: markdown image | base64 data URI | plain image URL
-  // togoder-image:// refs are embedded in markdown images, so they're
-  // captured by the markdown-image pattern below.
+  // Combined regex: markdown image | togoder-image ref | bare togoder-image | base64 data URI | plain image URL
   const combinedRe = new RegExp(
-    `(${MARKDOWN_IMAGE_RE.source})|(${TOGODER_IMAGE_RE.source})|(${BASE64_IMAGE_RE.source})|(${PLAIN_IMAGE_URL_RE.source})`,
+    `(${MARKDOWN_IMAGE_RE.source})|(${TOGODER_IMAGE_RE.source})|(${BARE_TOGODER_IMAGE_RE.source})|(${BASE64_IMAGE_RE.source})|(${PLAIN_IMAGE_URL_RE.source})`,
     'gi'
   );
 
@@ -97,6 +99,7 @@ export function hasImages(text: string): boolean {
   return (
     MARKDOWN_IMAGE_RE.test(text) ||
     TOGODER_IMAGE_RE.test(text) ||
+    BARE_TOGODER_IMAGE_RE.test(text) ||
     BASE64_IMAGE_RE.test(text) ||
     PLAIN_IMAGE_URL_RE.test(text)
   );
