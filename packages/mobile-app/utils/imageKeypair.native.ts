@@ -2,12 +2,14 @@
  * Client-side RSA keypair management for asymmetric image encryption.
  *
  * Native (iOS/Android) implementation: uses react-native-quick-crypto for
- * RSA operations and AsyncStorage for persistence.
+ * RSA operations, expo-secure-store (Keychain/Keystore) for the private key,
+ * and AsyncStorage for the non-secret public key.
  *
  * See imageKeypair.ts for the web implementation.
  */
 
 import QuickCrypto from "react-native-quick-crypto";
+import * as SecureStore from "expo-secure-store";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
 const STORAGE_KEY_PRIVATE = "togoder_image_private_key_pem";
@@ -22,12 +24,32 @@ export async function generateAndStoreKeypair(): Promise<string> {
     privateKeyEncoding: { type: "pkcs8", format: "pem" },
   });
 
-  await AsyncStorage.multiSet([
-    [STORAGE_KEY_PUBLIC, publicKey],
-    [STORAGE_KEY_PRIVATE, privateKey],
-  ]);
+  // Public key is not secret — AsyncStorage is fine
+  await AsyncStorage.setItem(STORAGE_KEY_PUBLIC, publicKey);
+  // Private key goes to secure hardware-backed storage (Keychain/Keystore)
+  await SecureStore.setItemAsync(STORAGE_KEY_PRIVATE, privateKey, {
+    keychainAccessible: SecureStore.WHEN_UNLOCKED_THIS_DEVICE_ONLY,
+  });
 
   return publicKey;
+}
+
+/**
+ * Generate a fresh keypair and replace the stored one.
+ *
+ * ⚠️ Old images encrypted with the previous public key become unreadable
+ * after rotation — the new private key cannot decrypt them.
+ */
+export async function regenerateKeypair(): Promise<string> {
+  // Remove old keys
+  try {
+    await SecureStore.deleteItemAsync(STORAGE_KEY_PRIVATE);
+  } catch {}
+  try {
+    await AsyncStorage.removeItem(STORAGE_KEY_PUBLIC);
+  } catch {}
+
+  return generateAndStoreKeypair();
 }
 
 // ── Retrieval ────────────────────────────────────────────────────
@@ -42,7 +64,7 @@ export async function getPublicKey(): Promise<string | null> {
 
 export async function getPrivateKey(): Promise<string | null> {
   try {
-    return await AsyncStorage.getItem(STORAGE_KEY_PRIVATE);
+    return await SecureStore.getItemAsync(STORAGE_KEY_PRIVATE);
   } catch {
     return null;
   }

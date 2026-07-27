@@ -33,6 +33,67 @@ function buildImageRefToken(id: string, keyB64: string, ivB64: string, scheme?: 
   return scheme ? `${base}&scheme=${encodeURIComponent(scheme)}` : base;
 }
 
+// ── Image blob download (temporary OpenRouter URLs → local buffer) ───
+
+const DOWNLOAD_TIMEOUT_MS = 30_000;
+const DOWNLOAD_MAX_RETRIES = 2;
+
+/**
+ * Download an image blob from a URL with timeout and exponential-backoff
+ * retry. OpenRouter-hosted image URLs are temporary; this captures the
+ * blob before it expires so the server can encrypt and persist it.
+ */
+async function downloadImageBlob(url: string): Promise<Buffer> {
+  let lastError: Error | undefined;
+
+  for (let attempt = 0; attempt <= DOWNLOAD_MAX_RETRIES; attempt++) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), DOWNLOAD_TIMEOUT_MS);
+
+    try {
+      console.log(
+        `[image_download] Attempt ${attempt + 1}/${DOWNLOAD_MAX_RETRIES + 1} — ${url.slice(0, 80)}…`,
+      );
+
+      const response = await fetch(url, { signal: controller.signal });
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status} ${response.statusText}`);
+      }
+
+      const arrayBuffer = await response.arrayBuffer();
+      console.log(
+        `[image_download] Success — ${(arrayBuffer.byteLength / 1024).toFixed(1)} KB`,
+      );
+      return Buffer.from(arrayBuffer);
+    } catch (err: any) {
+      lastError = err;
+      const remaining = DOWNLOAD_MAX_RETRIES - attempt;
+
+      if (err?.name === 'AbortError') {
+        lastError = new Error(
+          `Image download timed out after ${DOWNLOAD_TIMEOUT_MS / 1000}s`,
+        );
+      }
+
+      if (remaining > 0) {
+        const delay = 1_000 * Math.pow(2, attempt);
+        console.warn(
+          `[image_download] Attempt ${attempt + 1} failed, retrying in ${delay}ms: ${lastError?.message}`,
+        );
+        await new Promise((r) => setTimeout(r, delay));
+      }
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+
+  throw (
+    lastError ??
+    new Error(`Failed to download image after all retries`)
+  );
+}
+
 /**
  * Register the `image_generate` backend tool.
  *
@@ -94,7 +155,7 @@ export function registerImageGenerateTool(): void {
       const client = getOpenRouterClient({
         model: process.env.IMAGE_GEN_MODEL || IMAGE_GEN_MODEL,
         maxImages: count,
-        timeoutMs: Number(process.env.IMAGE_GEN_TIMEOUT_MS) || 60_000,
+        timeoutMs: Number(process.env.IMAGE_GEN_TIMEOUT_MS) || 120_000,
       });
 
       // Append a count hint to the prompt so gpt-image-2 produces multiple
@@ -116,14 +177,40 @@ export function registerImageGenerateTool(): void {
           });
         }
 
-        const images: ImageRef[] = results.map(
-          (img: ImageGenResult, i: number) => {
+        const images: ImageRef[] = await Promise.all(
+          results.map(async (img: ImageGenResult, i: number) => {
             let imageRef: string | null = null;
             let markdown: string | null = null;
 
             if (img.url) {
-              // URL-hosted image (OpenRouter): keep as-is, no storage needed
-              markdown = `![Generated image ${i + 1}](${img.url})`;
+              // OpenRouter-hosted image URL: download before it expires,
+              // then encrypt & store (same pipeline as base64).
+              try {
+                const blob = await downloadImageBlob(img.url);
+                const b64 = blob.toString('base64');
+                const publicKey = ctx.request.imagePublicKey;
+                let meta;
+                if (publicKey) {
+                  meta = storeAsymmetricallyEncryptedImage(b64, publicKey);
+                } else {
+                  meta = storeEncryptedImage(b64);
+                }
+                imageRef = buildImageRefToken(
+                  meta.id,
+                  meta.key,
+                  meta.iv,
+                  meta.scheme,
+                );
+                markdown = `![Generated image ${i + 1}](${imageRef})`;
+              } catch (err: any) {
+                console.error(
+                  'Failed to download/store image from URL:',
+                  err?.message ?? err,
+                );
+                // Fallback: embed the URL directly. It may expire, but
+                // this keeps the chat from erroring out entirely.
+                markdown = `![Generated image ${i + 1}](${img.url})`;
+              }
             } else if (img.base64) {
               // Base64 image: encrypt & store on disk, return reference token.
               // Strip the data:image/...;base64, prefix if present.
@@ -168,7 +255,7 @@ export function registerImageGenerateTool(): void {
               markdown,
             };
           },
-        );
+        ));
 
         return JSON.stringify({
           success: true,

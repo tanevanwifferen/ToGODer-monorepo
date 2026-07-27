@@ -83,6 +83,18 @@ export async function getOrCreateKeypair(): Promise<string> {
   return generateAndStoreKeypair();
 }
 
+/**
+ * Generate a fresh keypair and replace the stored one.
+ *
+ * ⚠️ Old images encrypted with the previous public key become unreadable
+ * after rotation — the new private key cannot decrypt them.
+ */
+export async function regenerateKeypair(): Promise<string> {
+  localStorage.removeItem(STORAGE_KEY_PRIVATE);
+  localStorage.removeItem(STORAGE_KEY_PUBLIC);
+  return generateAndStoreKeypair();
+}
+
 // ── Decryption ───────────────────────────────────────────────────
 
 export async function rsaDecryptAesKey(
