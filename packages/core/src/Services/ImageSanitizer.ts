@@ -41,6 +41,32 @@ export function stripInlineImageData(content: string): string {
   return cleaned;
 }
 
+/** Regex matching markdown image syntax wrapping a togoder-image:// URL */
+const TOGODER_MARKDOWN_RE = /!\[.*?\]\((togoder-image:\/\/[a-f0-9]{32}\?key=[^\s&]+&iv=[^\s&]+(?:&scheme=[^\s&]+)?)\)/gi;
+
+/**
+ * Strip togoder-image:// reference URLs from text destined for TTS or
+ * other non-visual consumption. Replaces both markdown-wrapped and bare
+ * references with "[image]" so the listener knows an image was present
+ * without hearing the encrypted blob reference spoken aloud.
+ *
+ * This prevents leaking key/IV parameters through audio output and
+ * avoids nonsensical TTS output.
+ */
+export function stripTogoderRefs(content: string): string {
+  if (!content || typeof content !== 'string') return content;
+
+  let cleaned = content;
+
+  // Strip markdown-wrapped: ![alt](togoder-image://...)
+  cleaned = cleaned.replace(TOGODER_MARKDOWN_RE, '[image]');
+
+  // Strip bare togoder-image:// URLs (not inside markdown syntax)
+  cleaned = cleaned.replace(TOGODER_REF_RE, '[image]');
+
+  return cleaned;
+}
+
 /**
  * Check if content contains any inline base64 image data that should be
  * stripped before persistence.

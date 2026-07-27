@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction, Router } from 'express';
 import { RateLimitRequestHandler } from 'express-rate-limit';
 import { spawn } from 'child_process';
+import { stripTogoderRefs } from '../Services/ImageSanitizer';
 
 /**
  * Controller for Text-to-Speech.
@@ -39,7 +40,8 @@ export function GetTtsRouter(messageLimiter: RateLimitRequestHandler): Router {
         }
 
         // Sanity cap — 5000 chars is ~5 min of speech
-        const safeText = text.slice(0, 5000);
+        // Strip togoder-image:// refs so TTS doesn't vocalize encrypted blob URLs
+        const safeText = stripTogoderRefs(text.slice(0, 5000));
 
         // ── Primary: Piper TTS (neural, natural quality) ──────────
         const piperBinary = process.env.PIPER_BINARY || 'piper';
