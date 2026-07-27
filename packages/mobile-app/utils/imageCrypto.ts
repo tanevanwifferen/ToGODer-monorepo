@@ -109,7 +109,8 @@ export async function fetchAndDecryptImage(
     // Include the public key as a query parameter so the server can verify
     // the requesting client matches the key used at encryption time.
     const pubkey = await getPublicKey();
-    const url = new URL(`${apiBase}/chat/image/${parsed.id}`);
+    const url = new URL(`${apiBase}/chat/blob`);
+    url.searchParams.set('ref', ref);
     if (pubkey) {
       url.searchParams.set('pubkey', pubkey);
     }
