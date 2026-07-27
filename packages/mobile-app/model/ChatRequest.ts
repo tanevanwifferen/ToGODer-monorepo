@@ -39,6 +39,8 @@ export interface ChatSettings {
   assistant_name: string | undefined;
   language: string | undefined;
   libraryIntegrationEnabled: boolean | undefined;
+  ttsEnabled: boolean | undefined;
+  sttEnabled: boolean | undefined;
   customSystemPrompt?: string;
   persona?: string;
 }

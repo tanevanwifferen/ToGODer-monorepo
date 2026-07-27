@@ -62,6 +62,7 @@ import {
   deriveSessionId,
   mergeSessionModifications,
 } from "../Tools/SystemPromptTool";
+import { stripTogoderRefs } from "../Services/ImageSanitizer";
 
 let quote = "";
 
@@ -214,7 +215,17 @@ async function injectPdfFileParts(
 export async function buildLlmMessages(
   input: ChatRequest,
 ): Promise<ChatCompletionMessageParam[]> {
-  const base = withSentimentContext(input);
+  // Strip togoder-image:// reference URLs from all message content before
+  // sending to the LLM. These are display-layer artifacts — the model must
+  // never see encrypted blob references (wastes context, leaks metadata).
+  const strippedPrompts: ChatCompletionMessageParam[] = input.prompts.map((p) => {
+    if (typeof p.content === "string") {
+      return { ...p, content: stripTogoderRefs(p.content) };
+    }
+    return p;
+  });
+  const strippedInput = { ...input, prompts: strippedPrompts };
+  const base = withSentimentContext(strippedInput);
   const supportsDocs = await modelSupportsDocuments(input.model);
   return await injectPdfFileParts(base, input, supportsDocs);
 }
