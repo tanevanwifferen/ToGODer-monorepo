@@ -1,11 +1,14 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   Image,
+  Modal,
+  Pressable,
   StyleSheet,
   View,
   Dimensions,
   useColorScheme,
   ActivityIndicator,
+  StatusBar,
 } from 'react-native';
 import { Colors } from '../../constants/Colors';
 import { fetchAndDecryptImage } from '../../utils/imageCrypto';
@@ -106,15 +109,19 @@ export function hasImages(text: string): boolean {
 }
 
 /**
- * Render an inline image with proper sizing and theming.
+ * Render an inline image with proper sizing, theming, and tap-to-expand.
  *
  * When the source is a togoder-image:// reference token, the component
  * fetches the encrypted ciphertext from the server, decrypts it with the
  * key/nonce embedded in the token, and renders the resulting data URI.
  * Non-reference URLs (https://, data:) are rendered directly.
+ *
+ * Tap the image to open a fullscreen lightbox view. The lightbox adapts
+ * to the device color scheme (dark/light background).
  */
 export function InlineImage({ source }: { source: string }) {
   const colorScheme = useColorScheme();
+  const isDark = colorScheme === 'dark';
   const borderColor = Colors[colorScheme ?? 'light'].tint + '44'; // tint at ~27% opacity
 
   // If it's a togoder-image:// reference, we need to fetch + decrypt
@@ -123,6 +130,13 @@ export function InlineImage({ source }: { source: string }) {
     isRef ? null : source
   );
   const [decryptError, setDecryptError] = useState(false);
+
+  // Tap-to-expand lightbox
+  const [expanded, setExpanded] = useState(false);
+  const openLightbox = useCallback(() => {
+    if (decryptedUri) setExpanded(true);
+  }, [decryptedUri]);
+  const closeLightbox = useCallback(() => setExpanded(false), []);
 
   useEffect(() => {
     if (!isRef) return;
@@ -164,14 +178,45 @@ export function InlineImage({ source }: { source: string }) {
   }
 
   return (
-    <View style={[styles.imageContainer, { borderColor }]}>
-      <Image
-        source={{ uri: decryptedUri }}
-        style={styles.image}
-        resizeMode="contain"
-        accessibilityLabel="Generated image"
-      />
-    </View>
+    <>
+      <Pressable onPress={openLightbox}>
+        <View style={[styles.imageContainer, { borderColor }]}>
+          <Image
+            source={{ uri: decryptedUri }}
+            style={styles.image}
+            resizeMode="contain"
+            accessibilityLabel="Generated image"
+            accessibilityHint="Tap to view full size"
+          />
+        </View>
+      </Pressable>
+
+      {/* Lightbox modal — fullscreen image view */}
+      <Modal
+        visible={expanded}
+        transparent={false}
+        animationType="fade"
+        onRequestClose={closeLightbox}
+        statusBarTranslucent
+      >
+        <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} />
+        <Pressable
+          style={[
+            styles.lightboxOverlay,
+            { backgroundColor: isDark ? '#000' : '#fff' },
+          ]}
+          onPress={closeLightbox}
+        >
+          <Image
+            source={{ uri: decryptedUri }}
+            style={styles.lightboxImage}
+            resizeMode="contain"
+            accessibilityLabel="Generated image fullscreen"
+            accessibilityHint="Tap anywhere to close"
+          />
+        </Pressable>
+      </Modal>
+    </>
   );
 }
 
@@ -193,5 +238,14 @@ const styles = StyleSheet.create({
     width: MAX_IMAGE_WIDTH,
     height: MAX_IMAGE_WIDTH, // Square aspect by default, adjusts via resizeMode
     maxWidth: MAX_IMAGE_WIDTH,
+  },
+  lightboxOverlay: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  lightboxImage: {
+    width: SCREEN_WIDTH * 0.95,
+    height: SCREEN_WIDTH * 0.95,
   },
 });
