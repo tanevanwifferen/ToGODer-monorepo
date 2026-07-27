@@ -45,6 +45,24 @@ export function parseImageRef(ref: string): {
 }
 
 /**
+ * Extract all togoder-image:// reference URLs from text content.
+ * Returns unique refs in order of first appearance.
+ */
+export function extractAllImageRefs(text: string): string[] {
+  const re = /togoder-image:\/\/[a-f0-9]{32}\?key=[^\s&]+&iv=[^\s&]+(?:&scheme=[^\s&]+)?/gi;
+  const seen = new Set<string>();
+  const refs: string[] = [];
+  let match: RegExpExecArray | null;
+  while ((match = re.exec(text)) !== null) {
+    if (!seen.has(match[0])) {
+      seen.add(match[0]);
+      refs.push(match[0]);
+    }
+  }
+  return refs;
+}
+
+/**
  * Decrypt raw ciphertext bytes (ct || tag) with the given key and nonce.
  * All inputs are base64 strings (as they appear in the reference token).
  * Returns the base64 image content (suitable for a data: URI), or null on
