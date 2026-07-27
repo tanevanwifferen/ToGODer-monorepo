@@ -9,13 +9,32 @@ import {
   useColorScheme,
   ActivityIndicator,
   StatusBar,
+  Text,
 } from 'react-native';
+import * as FileSystem from 'expo-file-system';
 import { Colors } from '../../constants/Colors';
 import { fetchAndDecryptImage } from '../../utils/imageCrypto';
 import { getApiUrl } from '../../constants/Env';
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
 const MAX_IMAGE_WIDTH = SCREEN_WIDTH * 0.75;
+
+function getCacheDir(): string {
+  return `${FileSystem.cacheDirectory ?? ''}togoder-images/`;
+}
+
+async function ensureCacheDir(): Promise<void> {
+  const dir = getCacheDir();
+  if (!dir || dir === 'togoder-images/') return; // no cache directory available
+  try {
+    const info = await FileSystem.getInfoAsync(dir);
+    if (!info.exists) {
+      await FileSystem.makeDirectoryAsync(dir, { intermediates: true });
+    }
+  } catch {
+    // best-effort — fall back to data URI if cache is unavailable
+  }
+}
 
 /**
  * Regex patterns for detecting images in message text.
@@ -109,12 +128,47 @@ export function hasImages(text: string): boolean {
 }
 
 /**
+ * Write base64 image data to the cache directory and return a file:// URI.
+ * Uses expo-file-system for reliable cross-platform file I/O.
+ */
+async function cacheDecryptedImage(
+  ref: string,
+  base64Data: string,
+): Promise<string | null> {
+  try {
+    await ensureCacheDir();
+
+    // Use the ref's hash as a stable cache key (prefix of the id)
+    const parsed = ref.match(/togoder-image:\/\/([a-f0-9]{32})/i);
+    const id = parsed ? parsed[1] : ref.slice(-32);
+    const uri = `${getCacheDir()}${id}.png`;
+
+    // Check cache first — immutable images never change
+    const info = await FileSystem.getInfoAsync(uri);
+    if (info.exists) {
+      console.log('[InlineImage] cache hit', { id, uri });
+      return uri;
+    }
+
+    await FileSystem.writeAsStringAsync(uri, base64Data, {
+      encoding: FileSystem.EncodingType.Base64,
+    });
+    console.log('[InlineImage] cached image', { id, uri, size: base64Data.length });
+    return uri;
+  } catch (e: any) {
+    console.warn('[InlineImage] cache write error', e?.message ?? e);
+    return null;
+  }
+}
+
+/**
  * Render an inline image with proper sizing, theming, and tap-to-expand.
  *
  * When the source is a togoder-image:// reference token, the component
- * fetches the encrypted ciphertext from the server, decrypts it with the
- * key/nonce embedded in the token, and renders the resulting data URI.
- * Non-reference URLs (https://, data:) are rendered directly.
+ * fetches the encrypted ciphertext from the server, decrypts it, writes
+ * the result to the device cache, and renders from a file:// URI.  This
+ * is far more reliable than inline data: URIs which silently fail on
+ * some React Native platforms when the payload is large.
  *
  * Tap the image to open a fullscreen lightbox view. The lightbox adapts
  * to the device color scheme (dark/light background).
@@ -124,18 +178,19 @@ export function InlineImage({ source }: { source: string }) {
   const isDark = colorScheme === 'dark';
   const borderColor = Colors[colorScheme ?? 'light'].tint + '44'; // tint at ~27% opacity
 
-  // If it's a togoder-image:// reference, we need to fetch + decrypt
+  // If it's a togoder-image:// reference, we need to fetch + decrypt + cache
   const isRef = source.startsWith('togoder-image://');
-  const [decryptedUri, setDecryptedUri] = useState<string | null>(
+  const [imageUri, setImageUri] = useState<string | null>(
     isRef ? null : source
   );
-  const [decryptError, setDecryptError] = useState(false);
+  const [loadError, setLoadError] = useState(false);
+  const [imageLoadError, setImageLoadError] = useState(false);
 
   // Tap-to-expand lightbox
   const [expanded, setExpanded] = useState(false);
   const openLightbox = useCallback(() => {
-    if (decryptedUri) setExpanded(true);
-  }, [decryptedUri]);
+    if (imageUri && !imageLoadError) setExpanded(true);
+  }, [imageUri, imageLoadError]);
   const closeLightbox = useCallback(() => setExpanded(false), []);
 
   useEffect(() => {
@@ -145,16 +200,35 @@ export function InlineImage({ source }: { source: string }) {
     (async () => {
       try {
         const apiBase = getApiUrl();
-        const uri = await fetchAndDecryptImage(source, apiBase);
-        if (!cancelled) {
-          if (uri) {
-            setDecryptedUri(uri);
-          } else {
-            setDecryptError(true);
-          }
+        console.log('[InlineImage] fetchAndDecryptImage start', {
+          ref: source.slice(0, 60),
+        });
+        const b64 = await fetchAndDecryptImage(source, apiBase);
+        if (cancelled) return;
+
+        if (!b64) {
+          console.warn('[InlineImage] fetchAndDecryptImage returned null');
+          setLoadError(true);
+          return;
         }
-      } catch {
-        if (!cancelled) setDecryptError(true);
+
+        // Write decrypted image to cache and use file:// URI
+        const fileUri = await cacheDecryptedImage(source, b64);
+        if (cancelled) return;
+
+        if (fileUri) {
+          console.log('[InlineImage] rendering from file URI', {
+            uri: fileUri.slice(-50),
+          });
+          setImageUri(fileUri);
+        } else {
+          // Fallback: use data URI if caching fails
+          console.warn('[InlineImage] cache failed, falling back to data URI');
+          setImageUri(`data:image/png;base64,${b64}`);
+        }
+      } catch (e: any) {
+        console.warn('[InlineImage] unexpected error', e?.message ?? e);
+        if (!cancelled) setLoadError(true);
       }
     })();
 
@@ -163,16 +237,25 @@ export function InlineImage({ source }: { source: string }) {
     };
   }, [source, isRef]);
 
-  // Error state — show nothing (avoid a broken-image icon)
-  if (decryptError) {
+  // Error state — show a subtle fallback instead of nothing
+  if (loadError) {
     return null;
   }
 
   // Loading state — show a spinner placeholder
-  if (decryptedUri === null) {
+  if (imageUri === null) {
     return (
       <View style={[styles.imageContainer, styles.loadingContainer, { borderColor }]}>
         <ActivityIndicator size="large" color={Colors[colorScheme ?? 'light'].tint} />
+      </View>
+    );
+  }
+
+  // Image failed to load (e.g. corrupt data) — show discreet error indicator
+  if (imageLoadError) {
+    return (
+      <View style={[styles.imageContainer, styles.errorContainer, { borderColor }]}>
+        <Text style={styles.errorText}>⚠️ Image failed to load</Text>
       </View>
     );
   }
@@ -182,11 +265,21 @@ export function InlineImage({ source }: { source: string }) {
       <Pressable onPress={openLightbox}>
         <View style={[styles.imageContainer, { borderColor }]}>
           <Image
-            source={{ uri: decryptedUri }}
+            source={{ uri: imageUri }}
             style={styles.image}
             resizeMode="contain"
             accessibilityLabel="Generated image"
             accessibilityHint="Tap to view full size"
+            onError={(e) => {
+              console.warn('[InlineImage] Image onError', {
+                uri: imageUri.slice(0, 60),
+                error: e?.nativeEvent?.error ?? 'unknown',
+              });
+              setImageLoadError(true);
+            }}
+            onLoad={() => {
+              console.log('[InlineImage] Image onLoad success');
+            }}
           />
         </View>
       </Pressable>
@@ -208,7 +301,7 @@ export function InlineImage({ source }: { source: string }) {
           onPress={closeLightbox}
         >
           <Image
-            source={{ uri: decryptedUri }}
+            source={{ uri: imageUri }}
             style={styles.lightboxImage}
             resizeMode="contain"
             accessibilityLabel="Generated image fullscreen"
@@ -233,6 +326,16 @@ const styles = StyleSheet.create({
     height: MAX_IMAGE_WIDTH / 2,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  errorContainer: {
+    width: MAX_IMAGE_WIDTH,
+    height: MAX_IMAGE_WIDTH / 3,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  errorText: {
+    fontSize: 13,
+    opacity: 0.6,
   },
   image: {
     width: MAX_IMAGE_WIDTH,

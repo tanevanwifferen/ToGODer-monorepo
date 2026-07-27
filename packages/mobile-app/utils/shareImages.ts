@@ -50,13 +50,8 @@ export async function prepareImagesForSharing(
   const results: ShareImageInput[] = [];
 
   for (const ref of refs) {
-    const dataUri = await fetchAndDecryptImage(ref, apiBase);
-    if (!dataUri) continue; // skip images that couldn't be decrypted
-
-    // Strip the data:image/...;base64, prefix — server expects raw base64
-    const b64 = dataUri.includes(';base64,')
-      ? dataUri.split(';base64,')[1]
-      : dataUri;
+    const b64 = await fetchAndDecryptImage(ref, apiBase);
+    if (!b64) continue; // skip images that couldn't be decrypted
     results.push({ ref, data: b64 });
   }
 

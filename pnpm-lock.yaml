@@ -238,6 +238,9 @@ importers:
       expo-dev-menu:
         specifier: ^6.1.14
         version: 6.1.15(expo@53.0.22(@babel/core@7.29.0)(@expo/metro-runtime@5.0.5(react-native@0.79.5(@babel/core@7.29.0)(@types/react@19.0.14)(react@19.0.0)))(react-native-webview@13.13.5(react-native@0.79.5(@babel/core@7.29.0)(@types/react@19.0.14)(react@19.0.0))(react@19.0.0))(react-native@0.79.5(@babel/core@7.29.0)(@types/react@19.0.14)(react@19.0.0))(react@19.0.0))
+      expo-file-system:
+        specifier: ~18.1.2
+        version: 18.1.11(expo@53.0.22(@babel/core@7.29.0)(@expo/metro-runtime@5.0.5(react-native@0.79.5(@babel/core@7.29.0)(@types/react@19.0.14)(react@19.0.0)))(react-native-webview@13.13.5(react-native@0.79.5(@babel/core@7.29.0)(@types/react@19.0.14)(react@19.0.0))(react@19.0.0))(react-native@0.79.5(@babel/core@7.29.0)(@types/react@19.0.14)(react@19.0.0))(react@19.0.0))(react-native@0.79.5(@babel/core@7.29.0)(@types/react@19.0.14)(react@19.0.0))
       expo-font:
         specifier: ~13.3.2
         version: 13.3.2(expo@53.0.22(@babel/core@7.29.0)(@expo/metro-runtime@5.0.5(react-native@0.79.5(@babel/core@7.29.0)(@types/react@19.0.14)(react@19.0.0)))(react-native-webview@13.13.5(react-native@0.79.5(@babel/core@7.29.0)(@types/react@19.0.14)(react@19.0.0))(react@19.0.0))(react-native@0.79.5(@babel/core@7.29.0)(@types/react@19.0.14)(react@19.0.0))(react@19.0.0))(react@19.0.0)

@@ -17,6 +17,7 @@
  */
 
 import { rsaDecryptAesKey, getPublicKey } from './imageKeypair';
+import { fromByteArray, toByteArray } from 'react-native-quick-base64';
 
 const { gcm } = require("@noble/ciphers/aes.js");
 
@@ -65,8 +66,8 @@ export function extractAllImageRefs(text: string): string[] {
 /**
  * Decrypt raw ciphertext bytes (ct || tag) with the given key and nonce.
  * All inputs are base64 strings (as they appear in the reference token).
- * Returns the base64 image content (suitable for a data: URI), or null on
- * auth failure / malformed input.
+ * Returns the base64-encoded plaintext bytes, or null on auth failure /
+ * malformed input.
  */
 export function decryptImageData(
   keyB64: string,
@@ -74,41 +75,32 @@ export function decryptImageData(
   ctTag: Uint8Array,
 ): string | null {
   try {
-    const key = base64ToBytes(keyB64);
-    const iv = base64ToBytes(ivB64);
+    const key = toByteArray(keyB64);
+    const iv = toByteArray(ivB64);
 
     if (key.length !== 32 || iv.length !== 12 || ctTag.length <= TAG_LENGTH) {
+      console.warn('[imageCrypto] decryptImageData: malformed input', {
+        keyLen: key.length,
+        ivLen: iv.length,
+        ctTagLen: ctTag.length,
+      });
       return null;
     }
 
     const aes = gcm(key, iv);
     const plain = aes.decrypt(ctTag); // @noble/ciphers handles the tag internally
-    return bytesToBase64(plain);
-  } catch {
+    const b64 = fromByteArray(plain);
+    console.log('[imageCrypto] decryptImageData: success', { plainLen: plain.length });
+    return b64;
+  } catch (e: any) {
+    console.warn('[imageCrypto] decryptImageData: error', e?.message ?? e);
     return null;
   }
 }
 
-function base64ToBytes(b64: string): Uint8Array {
-  const binary = atob(b64);
-  const bytes = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i++) {
-    bytes[i] = binary.charCodeAt(i);
-  }
-  return bytes;
-}
-
-function bytesToBase64(bytes: Uint8Array): string {
-  let binary = "";
-  for (let i = 0; i < bytes.length; i++) {
-    binary += String.fromCharCode(bytes[i]);
-  }
-  return btoa(binary);
-}
-
 /**
- * Fetch the encrypted image blob from the server, decrypt it, and return a
- * data: URI for rendering.
+ * Fetch the encrypted image blob from the server, decrypt it, and return
+ * the raw base64-encoded image bytes (no data: URI prefix).
  *
  * Auto-detects the encryption scheme from the reference token:
  * - scheme=rsa: decrypts the AES key with the client's RSA private key first
@@ -120,8 +112,19 @@ export async function fetchAndDecryptImage(
   ref: string,
   apiBase: string,
 ): Promise<string | null> {
+  console.log('[imageCrypto] fetchAndDecryptImage: start', { ref: ref.slice(0, 60) });
+
   const parsed = parseImageRef(ref);
-  if (!parsed) return null;
+  if (!parsed) {
+    console.warn('[imageCrypto] fetchAndDecryptImage: parseImageRef failed');
+    return null;
+  }
+
+  console.log('[imageCrypto] fetchAndDecryptImage: parsed', {
+    id: parsed.id,
+    scheme: parsed.scheme ?? 'symmetric',
+    keyLen: parsed.key.length,
+  });
 
   try {
     // Include the public key as a query parameter so the server can verify
@@ -133,27 +136,49 @@ export async function fetchAndDecryptImage(
       url.searchParams.set('pubkey', pubkey);
     }
 
-    const resp = await fetch(url.toString());
-    if (!resp.ok) return null;
+    const fetchUrl = url.toString();
+    console.log('[imageCrypto] fetchAndDecryptImage: fetching', { url: fetchUrl.slice(0, 80) });
+
+    const resp = await fetch(fetchUrl);
+    if (!resp.ok) {
+      console.warn('[imageCrypto] fetchAndDecryptImage: fetch failed', {
+        status: resp.status,
+        statusText: resp.statusText,
+      });
+      return null;
+    }
 
     const buf = await resp.arrayBuffer();
     const ctTag = new Uint8Array(buf);
+    console.log('[imageCrypto] fetchAndDecryptImage: fetched blob', { size: ctTag.length });
 
     let keyB64 = parsed.key;
 
     // If asymmetric (RSA-encrypted AES key), decrypt it with private key
     if (parsed.scheme === 'rsa') {
+      console.log('[imageCrypto] fetchAndDecryptImage: RSA decrypt key');
       const aesKeyBuf = await rsaDecryptAesKey(parsed.key);
-      if (!aesKeyBuf || aesKeyBuf.length !== 32) return null;
+      if (!aesKeyBuf || aesKeyBuf.length !== 32) {
+        console.warn('[imageCrypto] fetchAndDecryptImage: RSA key decrypt failed', {
+          bufLen: aesKeyBuf?.length,
+        });
+        return null;
+      }
       // Convert recovered AES key buffer to base64 for decryptImageData
-      keyB64 = btoa(String.fromCharCode(...new Uint8Array(aesKeyBuf)));
+      keyB64 = fromByteArray(new Uint8Array(aesKeyBuf));
+      console.log('[imageCrypto] fetchAndDecryptImage: RSA key decrypted');
     }
 
     const b64 = decryptImageData(keyB64, parsed.iv, ctTag);
-    if (!b64) return null;
+    if (!b64) {
+      console.warn('[imageCrypto] fetchAndDecryptImage: decryptImageData failed');
+      return null;
+    }
 
-    return `data:image/png;base64,${b64}`;
-  } catch {
+    console.log('[imageCrypto] fetchAndDecryptImage: success', { b64Len: b64.length });
+    return b64;
+  } catch (e: any) {
+    console.warn('[imageCrypto] fetchAndDecryptImage: exception', e?.message ?? e);
     return null;
   }
 }
