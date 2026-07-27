@@ -4,17 +4,20 @@ import {
   ImageGenResult,
   IMAGE_GEN_MODEL,
 } from './OpenRouterClient';
-import { storeEncryptedImage } from '../Services/ImageStore';
+import { storeEncryptedImage, storeAsymmetricallyEncryptedImage } from '../Services/ImageStore';
 
 /**
  * Format for an image reference token embedded in the tool result and chat
  * history. The client parses these and fetches / decrypts the image.
  *
- * The reference is a custom-URI-scheme token:
+ * Symmetric (default):
  *   togoder-image://<id>?key=<base64key>&iv=<base64iv>
  *
- * This is ~200 chars vs ~100K+ for a base64 image — the chat history and
- * SSE stream stay lightweight. The ciphertext lives only on disk.
+ * Asymmetric (when client provides RSA public key):
+ *   togoder-image://<id>?key=<rsa_encrypted_aes_key>&iv=<base64iv>&scheme=rsa
+ *
+ * These are ~200-600 chars vs ~100K+ for base64 — chat history and SSE stay
+ * lightweight. The ciphertext lives only on disk.
  */
 export interface ImageRef {
   url: string | null;
@@ -25,10 +28,9 @@ export interface ImageRef {
   markdown: string | null;
 }
 
-function buildImageRefToken(id: string, keyB64: string, ivB64: string): string {
-  // URI-encode the base64 values (base64 may contain +/= which are safe in
-  // query params but we encode for readability and robustness).
-  return `togoder-image://${id}?key=${encodeURIComponent(keyB64)}&iv=${encodeURIComponent(ivB64)}`;
+function buildImageRefToken(id: string, keyB64: string, ivB64: string, scheme?: string): string {
+  const base = `togoder-image://${id}?key=${encodeURIComponent(keyB64)}&iv=${encodeURIComponent(ivB64)}`;
+  return scheme ? `${base}&scheme=${encodeURIComponent(scheme)}` : base;
 }
 
 /**
@@ -129,11 +131,21 @@ export function registerImageGenerateTool(): void {
                 ? img.base64.split(",")[1]
                 : img.base64;
               try {
-                const meta = storeEncryptedImage(b64);
+                const publicKey = ctx.request.imagePublicKey;
+                let meta;
+                if (publicKey) {
+                  // Asymmetric: server encrypts with client's RSA public key.
+                  // Only the client (holding the private key) can decrypt.
+                  meta = storeAsymmetricallyEncryptedImage(b64, publicKey);
+                } else {
+                  // Symmetric fallback: server generates AES key (can decrypt).
+                  meta = storeEncryptedImage(b64);
+                }
                 imageRef = buildImageRefToken(
                   meta.id,
                   meta.key,
                   meta.iv,
+                  meta.scheme,
                 );
                 markdown = `![Generated image ${i + 1}](${imageRef})`;
               } catch (err: any) {

@@ -20,7 +20,7 @@ const MAX_IMAGE_WIDTH = SCREEN_WIDTH * 0.75;
 const MARKDOWN_IMAGE_RE = /!\[.*?\]\((https?:\/\/[^\s)]+)\)/gi;
 const BASE64_IMAGE_RE = /(data:image\/[a-zA-Z+.-]+;base64,[A-Za-z0-9+/=]+)/gi;
 const TOGODER_IMAGE_RE =
-  /!\[.*?\]\((togoder-image:\/\/[a-f0-9]{32}\?key=[^&]+&iv=[^\s)]+)\)/gi;
+  /!\[.*?\]\((togoder-image:\/\/[a-f0-9]{32}\?key=[^&]+&iv=[^\s)]+(?:&scheme=[^\s)]+)?)\)/gi;
 const PLAIN_IMAGE_URL_RE =
   /(https?:\/\/[^\s]+\.(?:png|jpg|jpeg|gif|webp)(?:\?[^\s]*)?)/gi;
 

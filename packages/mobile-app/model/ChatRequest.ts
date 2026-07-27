@@ -82,6 +82,8 @@ export interface ChatRequest extends ChatSettings {
   memoryLoopLimitReached?: boolean;
   artifactIndex?: ArtifactIndexItem[];
   tools?: ToolSchema[];
+  /** Client's RSA public key (PEM) for asymmetric image encryption */
+  imagePublicKey?: string;
 }
 
 export interface ExperienceRequest {

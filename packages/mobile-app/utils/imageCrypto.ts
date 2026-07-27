@@ -1,18 +1,22 @@
 /**
  * Client-side image decryption.
  *
- * Generated images are encrypted server-side with AES-256-GCM and stored on
- * a bind-mount volume. The reference token embedded in the chat history
- * carries the key and nonce, so the client can fetch the ciphertext from
- * GET /api/chat/image/:id and decrypt it here.
+ * Supports two encryption schemes:
+ * - Symmetric (default): AES-256-GCM key travels in the reference token.
+ *   Used for logged-out users or when the client has no keypair.
+ * - Asymmetric (scheme=rsa): The AES key in the token is RSA-OAEP encrypted
+ *   with the client's public key. The client decrypts it with its private key.
+ *   The server CANNOT decrypt images in this scheme.
  *
- * Uses the same @noble/ciphers + @noble/hashes stack as pdfCrypto.ts for
- * AES-256-GCM. Wire format: `data` is `ciphertext || authTag` (16-byte tag),
- * `iv` is the 12-byte nonce — both are embedded in the reference token.
+ * Wire format (both schemes): `data` is `ciphertext || authTag` (16-byte tag),
+ * `iv` is the 12-byte GCM nonce — both from the reference token.
  *
- * The reference-token format is:
- *   togoder-image://<hexId>?key=<base64key>&iv=<base64iv>
+ * Reference-token formats:
+ *   Symmetric:  togoder-image://<id>?key=<aes_key_b64>&iv=<iv_b64>
+ *   Asymmetric: togoder-image://<id>?key=<rsa_encrypted_key_b64>&iv=<iv_b64>&scheme=rsa
  */
+
+import { rsaDecryptAesKey } from './imageKeypair';
 
 const { gcm } = require("@noble/ciphers/aes.js");
 
@@ -26,15 +30,17 @@ export function parseImageRef(ref: string): {
   id: string;
   key: string;
   iv: string;
+  scheme: string | null;
 } | null {
   const m = ref.match(
-    /^togoder-image:\/\/([a-f0-9]{32})\?key=([^&]+)&iv=([^&\s)]+)$/i,
+    /^togoder-image:\/\/([a-f0-9]{32})\?key=([^&]+)&iv=([^&\s)]+)(?:&scheme=([^&\s)]+))?$/i,
   );
   if (!m) return null;
   return {
     id: m[1],
     key: decodeURIComponent(m[2]),
     iv: decodeURIComponent(m[3]),
+    scheme: m[4] ? decodeURIComponent(m[4]) : null,
   };
 }
 
@@ -83,9 +89,14 @@ function bytesToBase64(bytes: Uint8Array): string {
 }
 
 /**
- * Fetch the encrypted image blob from the server, decrypt it with the key
- * and nonce from the reference token, and return a data: URI for rendering.
- * Returns null on any failure.
+ * Fetch the encrypted image blob from the server, decrypt it, and return a
+ * data: URI for rendering.
+ *
+ * Auto-detects the encryption scheme from the reference token:
+ * - scheme=rsa: decrypts the AES key with the client's RSA private key first
+ * - no scheme: uses the AES key directly from the token (symmetric legacy)
+ *
+ * Returns null on any failure (network, decryption, missing private key).
  */
 export async function fetchAndDecryptImage(
   ref: string,
@@ -100,7 +111,18 @@ export async function fetchAndDecryptImage(
 
     const buf = await resp.arrayBuffer();
     const ctTag = new Uint8Array(buf);
-    const b64 = decryptImageData(parsed.key, parsed.iv, ctTag);
+
+    let keyB64 = parsed.key;
+
+    // If asymmetric (RSA-encrypted AES key), decrypt it with private key
+    if (parsed.scheme === 'rsa') {
+      const aesKeyBuf = await rsaDecryptAesKey(parsed.key);
+      if (!aesKeyBuf || aesKeyBuf.length !== 32) return null;
+      // Convert recovered AES key buffer to base64 for decryptImageData
+      keyB64 = btoa(String.fromCharCode(...new Uint8Array(aesKeyBuf)));
+    }
+
+    const b64 = decryptImageData(keyB64, parsed.iv, ctTag);
     if (!b64) return null;
 
     return `data:image/png;base64,${b64}`;

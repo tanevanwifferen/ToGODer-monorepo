@@ -2,19 +2,21 @@
  * Persisted out-of-band image store.
  *
  * Companion to ImageGenerateTool: generated images are encrypted server-side
- * with a freshly generated AES-256-GCM key and written to disk under a
- * bind-mount volume. Only a lightweight reference token (id + key + nonce)
- * is stored in the chat history. The client fetches the ciphertext from a
- * dedicated endpoint and decrypts it using the same AES-256-GCM utilities it
- * already uses for PDF storage.
+ * and written to disk under a bind-mount volume. Only a lightweight reference
+ * token is stored in the chat history.
+ *
+ * Two encryption schemes:
+ * - Symmetric (default): AES-256-GCM with a fresh random key. Token carries
+ *   the key + IV. Server CAN decrypt (key in .json meta). Used for logged-out
+ *   users or when the client hasn't registered a public key.
+ * - Asymmetric (when client provides RSA public key): Hybrid RSA+AES-256-GCM.
+ *   A fresh AES key encrypts the image; the AES key is then encrypted with the
+ *   client's RSA public key. Server CANNOT decrypt (no private key). Token
+ *   carries the RSA-encrypted AES key + IV + `scheme=rsa`.
  *
  * Layout: one JSON file per image under `IMAGE_STORE_DIR` (env) or
- * `<cwd>/data/images/`. Each file is `{id, iv, key}` where `iv` is the
- * base64 GCM nonce and `key` is the base64 AES-256 key. The actual encrypted
- * blob is stored as a separate `.bin` file (`<id>.bin`) — keep the ciphertext
- * out of JSON to avoid huge parse/serialize costs.
- *
- * The plaintext (generated image bytes) never touches disk.
+ * `<cwd>/data/images/`. Each file is `{id, iv, key?, scheme?, createdAt}`.
+ * The ciphertext is stored as `<id>.bin`. Plaintext never touches disk.
  */
 
 import fs from "fs";
@@ -57,10 +59,12 @@ function generateId(): string {
 
 export interface EncryptedImageMeta {
   id: string;
-  /** base64 AES-256 key */
+  /** base64 AES-256 key (plain for symmetric, RSA-encrypted for asymmetric) */
   key: string;
   /** base64 GCM nonce (12 bytes) */
   iv: string;
+  /** Encryption scheme: absent/undefined = symmetric, "rsa" = asymmetric */
+  scheme?: string;
   createdAt: number;
 }
 
@@ -71,9 +75,9 @@ export interface EncryptedImagePayload {
 }
 
 /**
- * Encrypt raw image bytes (base64-decoded) with a fresh random key, write
- * both the JSON meta and the `.bin` ciphertext to disk. Returns the metadata
- * (with the key and nonce) so the caller can build a reference token.
+ * Encrypt raw image bytes (base64-decoded) with a fresh random AES key.
+ * The key is stored as plaintext in meta — the server CAN decrypt.
+ * Only used for symmetric (logged-out / no-public-key) flow.
  */
 export function storeEncryptedImage(base64Content: string): EncryptedImageMeta {
   ensureDir();
@@ -94,6 +98,66 @@ export function storeEncryptedImage(base64Content: string): EncryptedImageMeta {
     id,
     key: key.toString("base64"),
     iv: iv.toString("base64"),
+    createdAt: Date.now(),
+  };
+
+  fs.writeFileSync(jsonPath(id), JSON.stringify(meta), "utf8");
+  fs.writeFileSync(binPath(id), data);
+
+  return meta;
+}
+
+// ── Asymmetric (hybrid RSA+AES-256-GCM) ────────────────────────
+
+const RSA_PADDING = crypto.constants.RSA_PKCS1_OAEP_PADDING;
+const RSA_OAEP_HASH = "sha256";
+
+/**
+ * Encrypt raw image bytes using hybrid RSA+AES-256-GCM.
+ *
+ * 1. Generate a fresh random AES-256 key + GCM nonce
+ * 2. Encrypt the image plaintext with AES-256-GCM
+ * 3. Encrypt the AES key with the client's RSA public key (OAEP)
+ * 4. Store ciphertext on disk; return meta with the RSA-encrypted key
+ *
+ * The server never has the RSA private key and CANNOT decrypt the image.
+ * Only the client (holding the private key) can recover the AES key.
+ *
+ * @param base64Content The base64-encoded image bytes (no data: prefix)
+ * @param publicKeyPem The client's RSA public key in PEM format
+ */
+export function storeAsymmetricallyEncryptedImage(
+  base64Content: string,
+  publicKeyPem: string,
+): EncryptedImageMeta {
+  ensureDir();
+
+  const plaintext = Buffer.from(base64Content, "base64");
+
+  // 1. Generate random AES key + IV
+  const aesKey = crypto.randomBytes(KEY_LEN);
+  const iv = crypto.randomBytes(IV_LEN);
+
+  // 2. AES-256-GCM encrypt the image
+  const cipher = crypto.createCipheriv("aes-256-gcm", aesKey, iv, {
+    authTagLength: TAG_LEN,
+  });
+  const ct = Buffer.concat([cipher.update(plaintext), cipher.final()]);
+  const tag = cipher.getAuthTag();
+  const data = Buffer.concat([ct, tag]);
+
+  // 3. RSA-OAEP encrypt the AES key
+  const encryptedKey = crypto.publicEncrypt(
+    { key: publicKeyPem, padding: RSA_PADDING, oaepHash: RSA_OAEP_HASH },
+    aesKey,
+  );
+
+  const id = generateId();
+  const meta: EncryptedImageMeta = {
+    id,
+    key: encryptedKey.toString("base64"),
+    iv: iv.toString("base64"),
+    scheme: "rsa",
     createdAt: Date.now(),
   };
 

@@ -321,6 +321,7 @@ export class ChatApiClient {
     pdfCacheId?: string | undefined,
     pdfName?: string | undefined,
     pdfKey?: string | undefined,
+    imagePublicKey?: string | undefined,
   ): Promise<ChatResponse> {
     const response = await ApiClient.post<ChatResponse>("/chat", {
       model,
@@ -345,6 +346,7 @@ export class ChatApiClient {
       pdfCacheId,
       pdfName,
       pdfKey,
+      imagePublicKey,
     });
 
     if (response instanceof Error) {
@@ -380,6 +382,7 @@ export class ChatApiClient {
     pdfCacheId?: string | undefined,
     pdfName?: string | undefined,
     pdfKey?: string | undefined,
+    imagePublicKey?: string | undefined,
     signal?: AbortSignal,
   ): AsyncGenerator<StreamEvent> {
     const baseUrl = getApiUrl();
@@ -423,6 +426,7 @@ export class ChatApiClient {
       pdfCacheId,
       pdfName,
       pdfKey,
+      imagePublicKey,
     };
 
     // On React Native mobile, fetch() does not support ReadableStream for

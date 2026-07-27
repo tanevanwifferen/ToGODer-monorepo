@@ -30,6 +30,7 @@ import { ApiChatMessage } from "../model/ChatRequest";
 import Toast from "react-native-toast-message";
 import { Platform } from "react-native";
 import { BalanceService } from "./BalanceService";
+import { getOrCreateKeypair } from "../utils/imageKeypair";
 import StorageService from "./StorageService";
 import { CalendarService } from "./CalendarService";
 import { HealthService } from "./health";
@@ -74,6 +75,8 @@ export interface SendMessageStreamOptions {
   pdfName?: string;
   /** Client-derived AES-256-GCM key (base64) for the persisted PDF */
   pdfKey?: string;
+  /** Client's RSA public key (PEM) for asymmetric image encryption */
+  imagePublicKey?: string;
   onChunk?: (content: string) => void;
   onComplete?: (message: ApiChatMessage) => void;
   onError?: (error: string) => void;
@@ -826,6 +829,12 @@ export class MessageService {
             })()
           : undefined;
 
+      // Get or create the client's RSA keypair for asymmetric image encryption.
+      // Generates a 2048-bit RSA keypair on first use and persists it to
+      // AsyncStorage. Only the public key is sent to the server; the private
+      // key stays on-device for decrypting images.
+      const imagePublicKey = await getOrCreateKeypair();
+
       // Send the message and get response
       if (useStreaming) {
         await this.sendMessageWithStreaming({
@@ -839,6 +848,7 @@ export class MessageService {
           pdfCacheId,
           pdfName,
           pdfKey,
+          imagePublicKey,
           signal,
           onChunk,
           onComplete,
@@ -857,6 +867,7 @@ export class MessageService {
           pdfCacheId,
           pdfName,
           pdfKey,
+          imagePublicKey,
           signal,
           onComplete,
           onError,
@@ -1070,6 +1081,7 @@ export class MessageService {
         pdfCacheId,
         pdfName,
         pdfKey,
+        options.imagePublicKey,
         signal,
       )) {
         switch (evt.type) {
@@ -1165,6 +1177,7 @@ export class MessageService {
               pdfCacheId,
               pdfName,
               pdfKey,
+              imagePublicKey: options.imagePublicKey,
               signal,
               onChunk,
               onComplete,
@@ -1407,6 +1420,7 @@ export class MessageService {
           pdfCacheId,
           pdfName,
           pdfKey,
+          imagePublicKey: options.imagePublicKey,
           signal,
           onChunk,
           onComplete,
@@ -1548,6 +1562,7 @@ export class MessageService {
         pdfCacheId,
         pdfName,
         pdfKey,
+        options.imagePublicKey,
       );
 
       if ("requestForMemory" in response) {
@@ -1594,6 +1609,7 @@ export class MessageService {
           pdfCacheId,
           pdfName,
           pdfKey,
+          imagePublicKey: options.imagePublicKey,
           onComplete,
           onError,
         });
@@ -1758,6 +1774,9 @@ export class MessageService {
             })()
           : undefined;
 
+      // Get the client's RSA public key for asymmetric image encryption.
+      const imagePublicKey = await getOrCreateKeypair();
+
       // Send the message and get response
       if (useStreaming) {
         await this.sendMessageWithStreaming({
@@ -1769,6 +1788,7 @@ export class MessageService {
           pdfCacheId,
           pdfName,
           pdfKey,
+          imagePublicKey,
           signal,
           onChunk,
           onComplete,
@@ -1785,6 +1805,7 @@ export class MessageService {
           pdfCacheId,
           pdfName,
           pdfKey,
+          imagePublicKey,
           signal,
           onComplete,
           onError,
