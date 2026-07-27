@@ -13,8 +13,11 @@ import * as os from 'os';
  * Accepts an audio file via POST /api/stt (multipart/form-data, field "audio"),
  * runs whisper.cpp locally to transcribe, and returns the transcribed text.
  *
+ * Primary model: small.en (~466MB) — much better accuracy than tiny, still CPU-viable.
+ * Fallback model: tiny.en (~75MB) — fast, low memory, always available.
+ *
  * whisper.cpp is a lightweight CPU-only C++ inference engine for OpenAI Whisper
- * models. We ship the tiny model (~75MB) which balances size and accuracy.
+ * models. No GPU required.
  */
 export function GetSttRouter(messageLimiter: RateLimitRequestHandler): Router {
   const router = Router();
@@ -76,101 +79,40 @@ export function GetSttRouter(messageLimiter: RateLimitRequestHandler): Router {
       const originalPath = file.path;
 
       // Preprocess audio with ffmpeg to 16kHz mono WAV for consistent whisper.cpp input.
-      // Falls back to the original file if ffmpeg is unavailable or fails.
       const filePath = await preprocessAudio(originalPath);
 
       const whisperBinary = process.env.WHISPER_BINARY || 'whisper-cli';
-      const modelPath = process.env.WHISPER_MODEL || '/app/whisper-models/ggml-tiny.en.bin';
+      const primaryModel = process.env.WHISPER_MODEL || '/app/whisper-models/ggml-small.en.bin';
+      const fallbackModel = process.env.WHISPER_MODEL_FALLBACK || '/app/whisper-models/ggml-tiny.en.bin';
 
       // Detect language from request or let whisper auto-detect
       const language = (req.body as any)?.language || 'auto';
 
-      const args: string[] = [
-        '-m', modelPath,
-        '-f', filePath,
-        '--no-timestamps',
-        '--output-txt',
-        '--output-file', filePath, // writes to filePath + '.txt'
-      ];
-
-      if (language !== 'auto') {
-        args.push('-l', language);
-      }
-
+      // ── Try primary model (small.en), fall back to tiny if unavailable ──
       try {
-        const proc = spawn(whisperBinary, args, {
-          stdio: ['pipe', 'pipe', 'pipe'],
-          timeout: 60_000, // 60 second timeout for transcription
-        });
+        const result = await transcribeWithModel(
+          req, whisperBinary, primaryModel, filePath, language, 120_000,
+        );
+        await cleanupBoth(originalPath, filePath);
+        res.json(result);
+      } catch (primaryErr: any) {
+        console.warn('[stt] Primary model failed, trying fallback:', primaryErr.message);
 
-        let stderr = '';
-        proc.stderr.on('data', (chunk: Buffer) => {
-          stderr += chunk.toString();
-        });
-
-        proc.on('error', async (err) => {
-          console.error('[stt] whisper.cpp spawn error:', err);
+        try {
+          const result = await transcribeWithModel(
+            req, whisperBinary, fallbackModel, filePath, language, 60_000,
+          );
+          await cleanupBoth(originalPath, filePath);
+          res.json({ ...result, model: 'fallback' });
+        } catch (fallbackErr: any) {
           await cleanupBoth(originalPath, filePath);
           if (!res.headersSent) {
-            res.status(500).json({ error: 'STT engine unavailable' });
-          } else {
-            res.end();
+            res.status(500).json({
+              error: 'Transcription failed',
+              details: fallbackErr.message,
+            });
           }
-        });
-
-        proc.on('close', async (code) => {
-          try {
-            // whisper.cpp writes output to <filePath>.txt
-            const outputPath = filePath + '.txt';
-            let text = '';
-            let detectedLanguage = language;
-
-            if (fs.existsSync(outputPath)) {
-              text = fs.readFileSync(outputPath, 'utf-8').trim();
-              // Clean up output file
-              await cleanupFile(outputPath);
-            }
-
-            // Try to extract detected language from stderr
-            // whisper.cpp logs: "auto-detected language: en"
-            const langMatch = stderr.match(/auto-detected language[:\s]+(\w+)/i);
-            if (langMatch) {
-              detectedLanguage = langMatch[1];
-            }
-
-            await cleanupBoth(originalPath, filePath);
-
-            if (code !== 0 && !text) {
-              console.error(`[stt] whisper.cpp failed (code ${code}):`, stderr);
-              res.status(500).json({
-                error: 'Transcription failed',
-                details: stderr.slice(-500),
-              });
-              return;
-            }
-
-            if (!text) {
-              res.status(422).json({ error: 'No speech detected in audio' });
-              return;
-            }
-
-            res.json({ text, language: detectedLanguage });
-          } catch (err) {
-            await cleanupBoth(originalPath, filePath);
-            next(err);
-          }
-        });
-
-        // Clean up if client disconnects
-        req.on('close', () => {
-          if (!proc.killed) {
-            proc.kill();
-          }
-          cleanupBoth(originalPath, filePath);
-        });
-      } catch (error) {
-        await cleanupBoth(originalPath, filePath);
-        next(error);
+        }
       }
     },
   );
@@ -179,10 +121,88 @@ export function GetSttRouter(messageLimiter: RateLimitRequestHandler): Router {
 }
 
 /**
+ * Run whisper.cpp with a specific model and return the transcription result.
+ */
+async function transcribeWithModel(
+  req: Request,
+  whisperBinary: string,
+  modelPath: string,
+  filePath: string,
+  language: string,
+  timeoutMs: number,
+): Promise<{ text: string; language: string; model?: string }> {
+  const args: string[] = [
+    '-m', modelPath,
+    '-f', filePath,
+    '--no-timestamps',
+    '--output-txt',
+    '--output-file', filePath, // writes to filePath + '.txt'
+  ];
+
+  if (language !== 'auto') {
+    args.push('-l', language);
+  }
+
+  return new Promise((resolve, reject) => {
+    const proc = spawn(whisperBinary, args, {
+      stdio: ['pipe', 'pipe', 'pipe'],
+      timeout: timeoutMs,
+    });
+
+    let stderr = '';
+    proc.stderr.on('data', (chunk: Buffer) => {
+      stderr += chunk.toString();
+    });
+
+    proc.on('error', (err) => {
+      reject(new Error(`STT engine unavailable: ${err.message}`));
+    });
+
+    proc.on('close', (code) => {
+      try {
+        const outputPath = filePath + '.txt';
+        let text = '';
+        let detectedLanguage = language;
+
+        if (fs.existsSync(outputPath)) {
+          text = fs.readFileSync(outputPath, 'utf-8').trim();
+          cleanupFile(outputPath);
+        }
+
+        // Extract detected language from stderr
+        const langMatch = stderr.match(/auto-detected language[:\s]+(\w+)/i);
+        if (langMatch) {
+          detectedLanguage = langMatch[1];
+        }
+
+        if (code !== 0 && !text) {
+          console.error(`[stt] whisper.cpp failed (code ${code}):`, stderr.slice(-300));
+          reject(new Error(`Transcription failed (exit ${code})`));
+          return;
+        }
+
+        if (!text) {
+          reject(new Error('No speech detected in audio'));
+          return;
+        }
+
+        resolve({ text, language: detectedLanguage });
+      } catch (err) {
+        reject(err);
+      }
+    });
+
+    // Clean up if client disconnects
+    req.on('close', () => {
+      if (!proc.killed) proc.kill();
+      reject(new Error('Client disconnected'));
+    });
+  });
+}
+
+/**
  * Convert uploaded audio to 16kHz mono WAV via ffmpeg.
  * Falls back to the original file if ffmpeg is unavailable or fails.
- * The caller is responsible for cleaning up both the original file
- * and the returned file (if different) after transcription.
  */
 async function preprocessAudio(inputPath: string): Promise<string> {
   const outputPath = inputPath + '.ffmpeg.wav';
@@ -190,11 +210,11 @@ async function preprocessAudio(inputPath: string): Promise<string> {
   try {
     await new Promise<void>((resolve, reject) => {
       const proc = spawn('ffmpeg', [
-        '-y',           // overwrite output file if it exists
+        '-y',
         '-i', inputPath,
-        '-ar', '16000', // 16kHz sample rate
-        '-ac', '1',     // mono
-        '-sample_fmt', 's16', // 16-bit signed PCM
+        '-ar', '16000',
+        '-ac', '1',
+        '-sample_fmt', 's16',
         outputPath,
       ], {
         stdio: ['pipe', 'pipe', 'pipe'],
@@ -222,7 +242,6 @@ async function preprocessAudio(inputPath: string): Promise<string> {
     });
     return outputPath;
   } catch {
-    // Fall back to original file
     await cleanupFile(outputPath);
     return inputPath;
   }
