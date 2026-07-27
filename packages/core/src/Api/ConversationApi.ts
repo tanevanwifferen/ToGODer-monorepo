@@ -454,6 +454,14 @@ export class ConversationApi {
     }
 
     systemPrompt += "\n\n" + FormattingPrompt;
+
+    // Tool-call discipline: must be high in the prompt so the model
+    // prioritises it.  Emitting a tool call inline is required — never
+    // end a response with an announcement like "let me search that".
+    if (input.tools && input.tools.length > 0) {
+      systemPrompt += "\n\n" + ToolCallDisciplinePrompt;
+    }
+
     if (input.humanPrompt) {
       systemPrompt += "\n\n" + HumanResponsePrompt;
     }
@@ -482,10 +490,6 @@ export class ConversationApi {
 
     if (input.holisticTherapist) {
       systemPrompt += "\n\n" + holisticTherapistPrompt;
-    }
-
-    if (input.tools && input.tools.length > 0) {
-      systemPrompt += "\n\n" + ToolCallDisciplinePrompt;
     }
 
     systemPrompt = systemPrompt.replace(

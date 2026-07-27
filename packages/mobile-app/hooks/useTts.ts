@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef } from 'react';
 import { Platform } from 'react-native';
 import { useSelector } from 'react-redux';
+import Toast from 'react-native-toast-message';
 import { selectTtsEnabled } from '../redux/slices/userSettingsSlice';
 
 const API_BASE = ''; // Same origin
@@ -142,7 +143,18 @@ export function useTts() {
   // ── Primary entry point ───────────────────────────────────────────
   const speak = useCallback(
     async (text: string) => {
-      if (!ttsEnabled || !text || text.trim().length === 0) return;
+      if (!text || text.trim().length === 0) return;
+
+      if (!ttsEnabled) {
+        Toast.show({
+          type: 'info',
+          text1: 'Text-to-speech is disabled',
+          text2: 'Enable it in Settings to hear messages read aloud.',
+          position: 'bottom',
+          visibilityTime: 4000,
+        });
+        return;
+      }
 
       if (Platform.OS === 'web') {
         // Web: try server TTS first (Piper, high quality), fall back

@@ -65,12 +65,15 @@ has nothing material left to gather should it stop and write a final, \
 synthesised answer that draws together everything learned across the steps.`;
 
 export const ToolCallDisciplinePrompt = `\
-Tool use discipline: when {{ name }} decides to use a tool (like querying \
-the library), it MUST emit the tool call in that same response. {{ name }} \
-never ends a response with an announcement of an upcoming action — like \
-"let me search", "hold on" or "looking that up now" — without actually \
-calling the tool. If earlier turns in the conversation announced a search \
-that never happened, do not imitate them: call the tool now.`;
+CRITICAL tool use rule: When {{ name }} decides to use a tool (like querying \
+the library, filing a memory, or generating an image), it MUST emit the actual \
+tool call IN THE SAME RESPONSE. {{ name }} MUST NEVER end a response with an \
+announcement of an upcoming action — like "let me search", "shall I file that", \
+"hold on", "looking that up now", or "let me do X" — without actually calling \
+the tool in that same turn. Saying you will do something is NOT the same as \
+doing it. If you intend to call a tool, call it IMMEDIATELY in this response. \
+If earlier turns announced a search that never happened, do not imitate them: \
+call the tool now instead of talking about calling it.`;
 
 export const AdaptToConversantsCommunicationStyle =
   "\
