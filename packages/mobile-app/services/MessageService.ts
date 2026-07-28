@@ -217,11 +217,14 @@ export class MessageService {
   private buildTools(projectId: string | undefined): ToolSchema[] | undefined {
     const state = store.getState();
     const libraryEnabled = state.userSettings.libraryIntegrationEnabled;
+    const isAdmin = state.auth.isAdmin;
 
     const tools: ToolSchema[] = [];
 
-    // Console error viewer is always available
-    tools.push(GET_CONSOLE_ERRORS_TOOL_SCHEMA);
+    // Console error viewer: admin-only
+    if (isAdmin) {
+      tools.push(GET_CONSOLE_ERRORS_TOOL_SCHEMA);
+    }
 
     if (projectId) {
       tools.push(...ARTIFACT_TOOL_SCHEMAS);
@@ -1264,8 +1267,15 @@ export class MessageService {
               operation?: "read" | "write" | "delete" | "move";
             };
 
-            // Handle get_console_errors tool (no project required)
+            // Handle get_console_errors tool (admin-only, no project required)
             if (toolCall.name === "get_console_errors") {
+              const isAdmin = store.getState().auth.isAdmin;
+              if (!isAdmin) {
+                result = {
+                  message: "Access denied: get_console_errors is only available for admin accounts.",
+                  isError: true,
+                };
+              } else {
               const limit =
                 typeof toolCall.arguments.limit === "number"
                   ? toolCall.arguments.limit
@@ -1289,6 +1299,7 @@ export class MessageService {
                   : "No console errors captured yet.",
                 isError: false,
               };
+              }
             } else if (!FRONTEND_TOOL_NAMES.includes(toolCall.name)) {
               result = {
                 message: `Error: tool "${toolCall.name}" does not exist. Answer the user directly instead.`,
