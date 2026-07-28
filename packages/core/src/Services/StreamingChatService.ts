@@ -14,6 +14,7 @@ import { ToolRegistry } from "../Tools/ToolRegistry";
 import { drainMemoryOps } from "../Tools/MemoryTool";
 import { getMcpClientManager } from "../Tools/McpClientManager";
 import { getDbContext } from "../Entity/Database";
+import { serverLog } from "./ServerLogService";
 import { SentimentService, SentimentSummary } from "./SentimentService";
 import { resolvePromptListItem } from "../LLM/prompts/promptlist";
 import {
@@ -456,6 +457,9 @@ export class StreamingChatService {
           "[tool-loop] MCP tool loading failed; proceeding with zero MCP tools",
           err,
         );
+        serverLog('error', 'MCP tool loading failed', {
+          error: (err as Error)?.message ?? String(err),
+        });
         mcpToolNames.clear();
       }
     }
@@ -611,6 +615,10 @@ export class StreamingChatService {
           result = `Error executing tool ${tc.name}: ${err?.message ?? String(err)}`;
           isError = true;
           console.error(`Backend tool execution error (${tc.name}):`, err);
+          serverLog('error', `Backend tool failed: ${tc.name}`, {
+            error: err?.message ?? String(err),
+            tool: tc.name,
+          });
         }
 
         yield {
@@ -672,6 +680,10 @@ export class StreamingChatService {
             result = `Error dispatching MCP tool ${tc.name}: ${err?.message ?? String(err)}`;
             isError = true;
             console.error(`MCP tool dispatch error (${tc.name}):`, err);
+            serverLog('error', `MCP tool dispatch failed: ${tc.name}`, {
+              error: err?.message ?? String(err),
+              tool: tc.name,
+            });
           }
 
           yield {

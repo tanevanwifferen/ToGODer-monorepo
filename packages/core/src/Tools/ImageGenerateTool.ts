@@ -5,6 +5,7 @@ import {
   IMAGE_GEN_MODEL,
 } from './OpenRouterClient';
 import { storeEncryptedImage, storeAsymmetricallyEncryptedImage, validatePublicKeyPem } from '../Services/ImageStore';
+import { serverLog } from '../Services/ServerLogService';
 
 /**
  * Format for an image reference token embedded in the tool result and chat
@@ -216,6 +217,10 @@ export function registerImageGenerateTool(): void {
                   'Failed to download/store image from URL:',
                   err?.message ?? err,
                 );
+                serverLog('error', 'Image gen: failed to download/store from URL', {
+                  error: err?.message ?? String(err),
+                  imageUrl: img.url?.slice(0, 200),
+                });
                 // Fallback: embed the URL directly. It may expire, but
                 // this keeps the chat from erroring out entirely.
                 markdown = `![Generated image ${i + 1}](${img.url})`;
@@ -253,6 +258,9 @@ export function registerImageGenerateTool(): void {
                   "Failed to store encrypted image:",
                   err?.message ?? err,
                 );
+                serverLog('error', 'Image gen: failed to store encrypted image', {
+                  error: err?.message ?? String(err),
+                });
                 // Fallback: include the base64 inline so the chat doesn't
                 // break, but flag the error so the client knows it's legacy.
                 markdown = img.base64.startsWith("data:")
@@ -278,6 +286,10 @@ export function registerImageGenerateTool(): void {
         });
       } catch (error: any) {
         console.error('image_generate tool error:', error?.message ?? error);
+        serverLog('error', 'Image generation failed', {
+          error: error?.message ?? String(error),
+          model: process.env.IMAGE_GEN_MODEL || IMAGE_GEN_MODEL,
+        });
         return JSON.stringify({
           error: error?.message ?? 'Image generation failed unexpectedly.',
         });

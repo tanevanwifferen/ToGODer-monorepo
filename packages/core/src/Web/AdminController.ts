@@ -2,6 +2,7 @@ import { Request, Response, Router, NextFunction } from 'express';
 import { authenticated, setAuthUser } from './Middleware/auth';
 import { ToGODerRequest } from './Model/ToGODerRequest';
 import { getAnalytics } from '../Analytics/AnalyticsService';
+import { getServerLogs, getServerLogSummary } from '../Services/ServerLogService';
 
 // ── BigInt JSON serialization ──────────────────────────────────────
 // Some SQLite drivers (e.g. better-sqlite3 via Prisma) return COUNT
@@ -120,6 +121,30 @@ export function GetAdminRouter(): Router {
         res.send(json);
       } catch (err) {
         console.error('[admin] api metrics error:', err);
+        res.status(500).json({ error: 'Internal Server Error' });
+      }
+    },
+  );
+
+  // GET /api/admin/logs — admin-gated server-side log query
+  router.get(
+    '/api/admin/logs',
+    authenticated,
+    setAuthUser,
+    requireAdmin,
+    (req: Request, res: Response) => {
+      try {
+        const since = req.query.since as string | undefined;
+        const limit = req.query.limit
+          ? parseInt(req.query.limit as string, 10)
+          : undefined;
+
+        const logs = getServerLogs(since, limit);
+        const summary = getServerLogSummary();
+
+        res.json({ logs, summary, total: logs.length });
+      } catch (err) {
+        console.error('[admin] api logs error:', err);
         res.status(500).json({ error: 'Internal Server Error' });
       }
     },
