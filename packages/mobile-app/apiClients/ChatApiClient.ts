@@ -21,7 +21,8 @@ export interface ArtifactToolCall {
     | "write_artifact"
     | "delete_artifact"
     | "move_artifact"
-    | "list_directory";
+    | "list_directory"
+    | "get_console_errors";
   arguments: {
     path: string;
     content?: string;
@@ -29,6 +30,8 @@ export interface ArtifactToolCall {
     mimeType?: string;
     destination?: string;
     depth?: number;
+    limit?: number;
+    level?: string;
   };
 }
 
@@ -72,6 +75,36 @@ export interface ToolSchema {
  * Library query tool schema for AI function calling.
  * Included when library integration is enabled.
  */
+/**
+ * Console error viewer tool schema.
+ * Lets ToGODer query the client-side console error ring buffer.
+ * Always available — no server round-trip needed.
+ */
+export const GET_CONSOLE_ERRORS_TOOL_SCHEMA: ToolSchema = {
+  type: "function",
+  function: {
+    name: "get_console_errors",
+    description:
+      "Retrieve recent console errors and warnings captured on the mobile client. " +
+      "Returns the last 100 entries (newest first). Use this to debug client-side " +
+      "issues like image decrypt errors, network failures, or render crashes.",
+    parameters: {
+      type: "object",
+      properties: {
+        limit: {
+          type: "number",
+          description: "Max entries to return (default: all matching)",
+        },
+        level: {
+          type: "string",
+          description: "Filter by level: 'error', 'warn', 'log', or 'all' (default: 'all')",
+        },
+      },
+      required: [],
+    },
+  },
+};
+
 export const LIBRARY_TOOL_SCHEMA: ToolSchema = {
   type: "function",
   function: {

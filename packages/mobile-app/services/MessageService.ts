@@ -24,8 +24,10 @@ import {
   ToolStatusEvent,
   ARTIFACT_TOOL_SCHEMAS,
   LIBRARY_TOOL_SCHEMA,
+  GET_CONSOLE_ERRORS_TOOL_SCHEMA,
   ToolSchema,
 } from "../apiClients/ChatApiClient";
+import { getConsoleErrors } from "./ConsoleErrorService";
 import { ApiChatMessage } from "../model/ChatRequest";
 import Toast from "react-native-toast-message";
 import { Platform } from "react-native";
@@ -217,6 +219,9 @@ export class MessageService {
     const libraryEnabled = state.userSettings.libraryIntegrationEnabled;
 
     const tools: ToolSchema[] = [];
+
+    // Console error viewer is always available
+    tools.push(GET_CONSOLE_ERRORS_TOOL_SCHEMA);
 
     if (projectId) {
       tools.push(...ARTIFACT_TOOL_SCHEMAS);
@@ -1217,13 +1222,14 @@ export class MessageService {
           case "tool_call": {
             const toolCall = evt.data;
 
-            // Check if this is a known frontend tool (artifact tools)
+            // Check if this is a known frontend tool (artifact tools + console errors)
             const FRONTEND_TOOL_NAMES = [
               "read_artifact",
               "write_artifact",
               "delete_artifact",
               "move_artifact",
               "list_directory",
+              "get_console_errors",
             ];
 
             // Notify callback for known frontend tools
@@ -1257,7 +1263,33 @@ export class MessageService {
               isError: boolean;
               operation?: "read" | "write" | "delete" | "move";
             };
-            if (!FRONTEND_TOOL_NAMES.includes(toolCall.name)) {
+
+            // Handle get_console_errors tool (no project required)
+            if (toolCall.name === "get_console_errors") {
+              const limit =
+                typeof toolCall.arguments.limit === "number"
+                  ? toolCall.arguments.limit
+                  : undefined;
+              const level =
+                typeof toolCall.arguments.level === "string"
+                  ? toolCall.arguments.level
+                  : "all";
+
+              let entries = getConsoleErrors();
+              if (level !== "all") {
+                entries = entries.filter((e) => e.level === level);
+              }
+              if (limit != null && limit > 0) {
+                entries = entries.slice(0, limit);
+              }
+
+              result = {
+                message: entries.length > 0
+                  ? JSON.stringify(entries, null, 2)
+                  : "No console errors captured yet.",
+                isError: false,
+              };
+            } else if (!FRONTEND_TOOL_NAMES.includes(toolCall.name)) {
               result = {
                 message: `Error: tool "${toolCall.name}" does not exist. Answer the user directly instead.`,
                 isError: true,
