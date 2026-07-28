@@ -13,10 +13,12 @@
 // Web has native Buffer support via Uint8Array and no polyfill is needed
 // The WebCryptoService uses native Web Crypto API directly
 
-import { initConsoleErrorService } from "./services/ConsoleErrorService";
+import { initConsoleErrorService, initNetworkErrorCapture } from "./services/ConsoleErrorService";
 
 // Intercept console.error/warn/log before anything else runs
 initConsoleErrorService();
+// Intercept fetch/XHR failures and unhandled rejections
+initNetworkErrorCapture();
 
 // Export empty to satisfy any potential imports
 export {};

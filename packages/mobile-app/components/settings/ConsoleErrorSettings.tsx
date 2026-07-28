@@ -20,6 +20,7 @@ const LEVEL_COLORS: Record<string, string> = {
   error: "#dc2626",
   warn: "#d97706",
   log: "#6b7280",
+  network: "#7c3aed",
 };
 
 export default function ConsoleErrorSettings() {
@@ -42,7 +43,7 @@ export default function ConsoleErrorSettings() {
   const handleClear = () => {
     clearConsoleErrors();
     setEntries([]);
-    setSummary({ error: 0, warn: 0, log: 0 });
+    setSummary({ error: 0, warn: 0, log: 0, network: 0 });
   };
 
   const handleRefresh = () => {
@@ -68,7 +69,14 @@ export default function ConsoleErrorSettings() {
           </Text>
           <Text style={[styles.subtitle, { color: mutedColor }]}>
             {total > 0
-              ? `${summary.error} error${summary.error !== 1 ? "s" : ""}, ${summary.warn} warning${summary.warn !== 1 ? "s" : ""}, ${summary.log} log${summary.log !== 1 ? "s" : ""}`
+              ? [
+                  summary.error > 0 ? `${summary.error} error${summary.error !== 1 ? "s" : ""}` : null,
+                  summary.warn > 0 ? `${summary.warn} warning${summary.warn !== 1 ? "s" : ""}` : null,
+                  summary.log > 0 ? `${summary.log} log${summary.log !== 1 ? "s" : ""}` : null,
+                  summary.network > 0 ? `${summary.network} network` : null,
+                ]
+                  .filter(Boolean)
+                  .join(", ")
               : "No errors captured"}
           </Text>
         </View>
@@ -115,6 +123,15 @@ export default function ConsoleErrorSettings() {
               {
                 flex: summary.log,
                 backgroundColor: LEVEL_COLORS.log,
+              },
+            ]}
+          />
+          <View
+            style={[
+              styles.bar,
+              {
+                flex: summary.network,
+                backgroundColor: LEVEL_COLORS.network,
               },
             ]}
           />
@@ -187,8 +204,9 @@ export default function ConsoleErrorSettings() {
 
       {total === 0 && (
         <Text style={[styles.empty, { color: mutedColor }]}>
-          Intercepted console.error, console.warn, and console.log calls will
-          appear here. This panel helps debug client-side issues.
+          Intercepted console.error, console.warn, console.log calls, and failed
+          network requests (fetch/XHR) will appear here. This panel helps debug
+          client-side issues.
         </Text>
       )}
     </View>
