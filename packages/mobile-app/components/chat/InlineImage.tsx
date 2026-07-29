@@ -41,12 +41,20 @@ async function ensureCacheDir(): Promise<void> {
  */
 const MARKDOWN_IMAGE_RE = /!\[.*?\]\((https?:\/\/[^\s)]+)\)/gi;
 const BASE64_IMAGE_RE = /(data:image\/[a-zA-Z+.-]+;base64,[A-Za-z0-9+/=]+)/gi;
-const TOGODER_IMAGE_RE =
-  /!\[.*?\]\((togoder-image:\/\/[a-f0-9]{32}\?key=[^&]+&iv=[^\s)]+(?:&scheme=[^\s)]+)?)\)/gi;
+/** Token parameter values are base64 + encodeURIComponent, nothing else.
+ *  A looser class (e.g. [^\s&]+) greedily eats the closing `)` of the
+ *  markdown wrapper and any following JSON delimiters. */
+const REF_VALUE = String.raw`[A-Za-z0-9%+/=._~-]+`;
+const TOGODER_REF_SRC =
+  String.raw`togoder-image:\/\/[a-f0-9]{32}\?key=${REF_VALUE}&iv=${REF_VALUE}(?:&scheme=${REF_VALUE})?`;
+
+const TOGODER_IMAGE_RE = new RegExp(
+  String.raw`!\[.*?\]\((${TOGODER_REF_SRC})\)`,
+  'gi',
+);
 /** Bare togoder-image:// reference URL (without markdown wrapper).
  *  Detected as a fallback when the LLM outputs the reference URL directly. */
-const BARE_TOGODER_IMAGE_RE =
-  /(togoder-image:\/\/[a-f0-9]{32}\?key=[^\s&]+&iv=[^\s&]+(?:&scheme=[^\s&]+)?)/gi;
+const BARE_TOGODER_IMAGE_RE = new RegExp(`(${TOGODER_REF_SRC})`, 'gi');
 const PLAIN_IMAGE_URL_RE =
   /(https?:\/\/[^\s]+\.(?:png|jpg|jpeg|gif|webp)(?:\?[^\s]*)?)/gi;
 
@@ -118,13 +126,18 @@ export function parseImageSegments(text: string): ParsedSegment[] {
  * Check if a message text contains any detectable images.
  */
 export function hasImages(text: string): boolean {
-  return (
-    MARKDOWN_IMAGE_RE.test(text) ||
-    TOGODER_IMAGE_RE.test(text) ||
-    BARE_TOGODER_IMAGE_RE.test(text) ||
-    BASE64_IMAGE_RE.test(text) ||
-    PLAIN_IMAGE_URL_RE.test(text)
-  );
+  if (!text) return false;
+  // All the patterns above carry the /g flag, which makes `.test()` stateful
+  // through lastIndex: calling it twice on the same string alternates
+  // true/false. Since this is called repeatedly on every render (and by two
+  // separate renderers), the global flag must be dropped for the check.
+  return [
+    MARKDOWN_IMAGE_RE,
+    TOGODER_IMAGE_RE,
+    BARE_TOGODER_IMAGE_RE,
+    BASE64_IMAGE_RE,
+    PLAIN_IMAGE_URL_RE,
+  ].some((re) => new RegExp(re.source, 'i').test(text));
 }
 
 /**

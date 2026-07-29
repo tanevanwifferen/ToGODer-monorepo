@@ -27,6 +27,18 @@ const TAG_LENGTH = 16;
  * Parse an image reference token into its components.
  * Returns null if the string isn't a togoder-image reference.
  */
+/**
+ * Character class for one token parameter value.
+ *
+ * Values are base64 run through encodeURIComponent, so only base64 chars and
+ * percent-escapes are possible. A looser class such as `[^\s&]+` greedily eats
+ * surrounding JSON/markdown delimiters and yields corrupted refs.
+ */
+const REF_VALUE = String.raw`[A-Za-z0-9%+/=._~-]+`;
+
+export const TOGODER_REF_SRC =
+  String.raw`togoder-image:\/\/[a-f0-9]{32}\?key=${REF_VALUE}&iv=${REF_VALUE}(?:&scheme=${REF_VALUE})?`;
+
 export function parseImageRef(ref: string): {
   id: string;
   key: string;
@@ -34,7 +46,10 @@ export function parseImageRef(ref: string): {
   scheme: string | null;
 } | null {
   const m = ref.match(
-    /^togoder-image:\/\/([a-f0-9]{32})\?key=([^&]+)&iv=([^&\s)]+)(?:&scheme=([^&\s)]+))?$/i,
+    new RegExp(
+      String.raw`^togoder-image:\/\/([a-f0-9]{32})\?key=(${REF_VALUE})&iv=(${REF_VALUE})(?:&scheme=(${REF_VALUE}))?$`,
+      'i',
+    ),
   );
   if (!m) return null;
   return {
@@ -50,7 +65,7 @@ export function parseImageRef(ref: string): {
  * Returns unique refs in order of first appearance.
  */
 export function extractAllImageRefs(text: string): string[] {
-  const re = /togoder-image:\/\/[a-f0-9]{32}\?key=[^\s&]+&iv=[^\s&]+(?:&scheme=[^\s&]+)?/gi;
+  const re = new RegExp(TOGODER_REF_SRC, 'gi');
   const seen = new Set<string>();
   const refs: string[] = [];
   let match: RegExpExecArray | null;
@@ -164,8 +179,8 @@ export async function fetchAndDecryptImage(
         });
         return null;
       }
-      // Convert recovered AES key buffer to base64 for decryptImageData
-      keyB64 = bytesToBase64(new Uint8Array(aesKeyBuf));
+      // Convert recovered AES key bytes to base64 for decryptImageData
+      keyB64 = bytesToBase64(aesKeyBuf);
       console.log('[imageCrypto] fetchAndDecryptImage: RSA key decrypted');
     }
 

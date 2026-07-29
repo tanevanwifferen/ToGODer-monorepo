@@ -16,6 +16,11 @@ import { getMcpClientManager } from "../Tools/McpClientManager";
 import { getDbContext } from "../Entity/Database";
 import { serverLog } from "./ServerLogService";
 import { SentimentService, SentimentSummary } from "./SentimentService";
+import {
+  extractImageRefs,
+  buildImageMarkdown,
+  summarizeImageToolResult,
+} from "./ImageSanitizer";
 import { resolvePromptListItem } from "../LLM/prompts/promptlist";
 import {
   ChatCompletionMessageParam,
@@ -625,6 +630,26 @@ export class StreamingChatService {
           type: "tool_status",
           data: { id: tc.id, name: tc.name, status: "done", isError },
         };
+
+        // Image tool results carry togoder-image:// tokens (AES key + IV).
+        // Those must never enter the LLM context: they burn tokens, leak
+        // encryption metadata, and get ref-stripped into invalid JSON on the
+        // next turn (which is why the model used to report `url: null`).
+        //
+        // Instead the server owns rendering: emit the markdown straight into
+        // the assistant's visible output, and give the model only a short
+        // ref-free confirmation. This also removes the dependence on the model
+        // choosing to echo a token back verbatim.
+        if (!isError) {
+          const refs = extractImageRefs(result);
+          if (refs.length > 0) {
+            const markdown = (full.length > 0 ? "\n\n" : "") +
+              buildImageMarkdown(refs);
+            full += markdown;
+            yield { type: "chunk", data: { delta: markdown } };
+            result = summarizeImageToolResult(refs.length);
+          }
+        }
 
         // Drain pending client-side memory operations (write/delete)
         for (const op of drainMemoryOps(body)) {

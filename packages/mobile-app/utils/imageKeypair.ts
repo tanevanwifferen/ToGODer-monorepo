@@ -99,10 +99,13 @@ export async function regenerateKeypair(): Promise<string> {
 
 export async function rsaDecryptAesKey(
   encryptedKeyB64: string,
-): Promise<Buffer | null> {
+): Promise<Uint8Array | null> {
   try {
     const privateKeyPem = await getPrivateKey();
-    if (!privateKeyPem) return null;
+    if (!privateKeyPem) {
+      console.warn('[imageKeypair] rsaDecryptAesKey: no private key stored');
+      return null;
+    }
 
     const der = pemToDer(privateKeyPem);
     const privateKey = await crypto.subtle.importKey(
@@ -123,9 +126,13 @@ export async function rsaDecryptAesKey(
       encryptedKey,
     );
 
-    // @ts-ignore — Buffer compat
-    return Buffer.from(decrypted);
-  } catch {
+    // Return a Uint8Array, NOT a Buffer: `Buffer` is not defined in browsers
+    // (polyfills.web.ts intentionally installs no polyfill), so touching it
+    // here threw and was swallowed by the catch below — which made every
+    // scheme=rsa image silently fail to decrypt.
+    return new Uint8Array(decrypted);
+  } catch (e: any) {
+    console.warn('[imageKeypair] rsaDecryptAesKey failed', e?.message ?? e);
     return null;
   }
 }

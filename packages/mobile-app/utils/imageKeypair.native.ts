@@ -80,10 +80,13 @@ export async function getOrCreateKeypair(): Promise<string> {
 
 export async function rsaDecryptAesKey(
   encryptedKeyB64: string,
-): Promise<Buffer | null> {
+): Promise<Uint8Array | null> {
   try {
     const privateKeyPem = await getPrivateKey();
-    if (!privateKeyPem) return null;
+    if (!privateKeyPem) {
+      console.warn('[imageKeypair] rsaDecryptAesKey: no private key stored');
+      return null;
+    }
 
     const encryptedKey = Buffer.from(encryptedKeyB64, "base64");
     const aesKey = QuickCrypto.privateDecrypt(
@@ -95,8 +98,10 @@ export async function rsaDecryptAesKey(
       encryptedKey,
     );
 
-    return Buffer.from(aesKey);
-  } catch {
+    // Normalise to Uint8Array so both platforms return the same shape.
+    return new Uint8Array(aesKey as any);
+  } catch (e: any) {
+    console.warn('[imageKeypair] rsaDecryptAesKey failed', e?.message ?? e);
     return null;
   }
 }

@@ -116,13 +116,13 @@ export function registerImageGenerateTool(): void {
       function: {
         name: 'image_generate',
         description:
-          'Generate an AI image from a text prompt using OpenRouter\'s gpt-image-2 model. ' +
-          'The result JSON contains an "images" array; each image has a "markdown" ' +
-          'field with a ready-to-render markdown snippet. YOU MUST include each ' +
-          '"markdown" field verbatim in your response so the image renders inline. ' +
-          'For example, if the result has images[0].markdown = ' +
-          '"![Generated image](togoder-image://...)", copy that exact string into ' +
-          'your message. Do NOT describe the image without including the markdown. ' +
+          'Generate an AI image from a text prompt. ' +
+          'The generated image is displayed to the user AUTOMATICALLY and ' +
+          'IMMEDIATELY by the system \u2014 you do NOT need to embed, link, or ' +
+          'reproduce it, and you must never invent an image URL or markdown ' +
+          'for it. After calling this tool, simply talk about the image you ' +
+          'created (what you depicted and why) as though the user is already ' +
+          'looking at it, because they are. ' +
           'Use this when the user asks you to create, draw, or generate an image.',
         parameters: {
           type: 'object',
@@ -261,11 +261,11 @@ export function registerImageGenerateTool(): void {
                 serverLog('error', 'Image gen: failed to store encrypted image', {
                   error: err?.message ?? String(err),
                 });
-                // Fallback: include the base64 inline so the chat doesn't
-                // break, but flag the error so the client knows it's legacy.
-                markdown = img.base64.startsWith("data:")
-                  ? `![Generated image ${i + 1}](${img.base64})`
-                  : `![Generated image ${i + 1}](data:image/png;base64,${img.base64})`;
+                // Deliberately do NOT fall back to inlining the base64.
+                // A ~1.4MB image becomes ~1.9MB of base64, which would be
+                // fed straight back into the model's context window and
+                // blow the token budget. Report the failure instead.
+                markdown = null;
               }
             }
 
