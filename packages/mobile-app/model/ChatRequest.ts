@@ -39,6 +39,8 @@ export interface ChatSettings {
   assistant_name: string | undefined;
   language: string | undefined;
   libraryIntegrationEnabled: boolean | undefined;
+  ttsEnabled: boolean | undefined;
+  sttEnabled: boolean | undefined;
   customSystemPrompt?: string;
   persona?: string;
 }
@@ -82,6 +84,8 @@ export interface ChatRequest extends ChatSettings {
   memoryLoopLimitReached?: boolean;
   artifactIndex?: ArtifactIndexItem[];
   tools?: ToolSchema[];
+  /** Client's RSA public key (PEM) for asymmetric image encryption */
+  imagePublicKey?: string;
 }
 
 export interface ExperienceRequest {

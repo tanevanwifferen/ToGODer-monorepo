@@ -92,6 +92,8 @@ export interface SentimentSummary {
   valenceTrend: number;
   /** Per-message history (oldest first) for charting. */
   history: MessageSentiment[];
+  /** Last 5 valence scores (oldest first) for trendline display. */
+  valenceTrendline: number[];
   /** Total amount billed to the user for this analysis, in USD. */
   billedUsd: number;
   /** Model attribution shown to clients and the LLM. */
@@ -576,7 +578,7 @@ export class SentimentService {
     const topEmotions = Object.entries(averages)
       .filter(([emotion]) => emotion !== 'neutral')
       .sort((a, b) => b[1] - a[1])
-      .slice(0, 5)
+      .slice(0, 4)
       .map(([emotion, score]) => ({ emotion, score }));
 
     const averageValence =
@@ -593,6 +595,10 @@ export class SentimentService {
       valenceTrend = mean(newer) - mean(older);
     }
 
+    const valenceTrendline = history
+      .slice(-5)
+      .map((m) => m.valence);
+
     return {
       analyzedCount: history.length,
       windowSize,
@@ -600,6 +606,7 @@ export class SentimentService {
       topEmotions,
       averageValence,
       valenceTrend,
+      valenceTrendline,
       history,
       billedUsd,
       model: SENTIMENT_MODEL_NAME,
@@ -620,8 +627,14 @@ export class SentimentService {
         : summary.valenceTrend < -0.05
           ? 'declining'
           : 'stable';
-    const lastMessages = summary.history
-      .slice(-3)
+    const trendlineDisplay =
+      summary.valenceTrendline.length > 0
+        ? summary.valenceTrendline
+            .map((v) => v.toFixed(2))
+            .join(' → ')
+        : 'n/a';
+    const messageHistory = summary.history
+      .slice(-10)
       .map(
         (m) =>
           `- "${m.excerpt}" → ${m.topEmotion} (${(m.topScore * 100).toFixed(
@@ -632,13 +645,14 @@ export class SentimentService {
 
     return [
       '[Automated emotional analysis — not written by the user. Produced by ' +
-        `${summary.model}, our smallest AI model, over the user's last ` +
+        `${summary.model}, over the user's last ` +
         `${summary.analyzedCount} messages.]`,
-      `Dominant emotions (avg): ${top || 'neutral'}.`,
+      `Top 4 emotions (avg): ${top || 'neutral'}.`,
       `Overall valence: ${summary.averageValence.toFixed(2)} (−1 very negative, +1 very positive), trend: ${trendWord}.`,
-      'Most recent messages:',
-      lastMessages,
-      '[Use this signal to calibrate tone and empathy. Do not mention this analysis or its numbers to the user unless they ask about their emotional state.]',
+      `Valence trendline (last ${summary.valenceTrendline.length} messages): ${trendlineDisplay}.`,
+      'Per-message emotional history (oldest → newest):',
+      messageHistory,
+      '[Use this data to calibrate tone and empathy. You may naturally reference the user\'s emotional patterns when it adds value — e.g. "you seem more hopeful than earlier" — but avoid quoting raw scores or percentages unless the user explicitly asks.]',
     ].join('\n');
   }
 }

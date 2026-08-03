@@ -11,11 +11,14 @@ export function setupKoFi(app: Express) {
   kofi(app, {
     async onDonation(donation: DonationData) {
       const db = getDbContext();
+      const isDonationTag =
+        donation.message.toLowerCase() === donationTag;
+
       await db.payment.create({
         data: {
           amount: new Decimal(donation.amount),
           user_email:
-            donation.message.toLowerCase() == donationTag
+            isDonationTag
               ? donationTag
               : donation.email,
           timestamp: new Date(),
@@ -23,9 +26,21 @@ export function setupKoFi(app: Express) {
         },
       });
 
-      // analytics: donation_made event
-      const isDonationTag =
-        donation.message.toLowerCase() === donationTag;
+      // Create CreditTransaction for deposit
+      if (!isDonationTag) {
+        const donor = await db.user.findUnique({ where: { email: donation.email } });
+        if (donor) {
+          await db.creditTransaction.create({
+            data: {
+              userId: donor.id,
+              amount: new Decimal(donation.amount),
+              type: 'credit',
+              source: 'deposit',
+              description: `Ko-Fi deposit: $${donation.amount}`,
+            },
+          });
+        }
+      }
       getAnalytics().trackEvent('donation_made', {
         userId: isDonationTag ? null : donation.email,
         source: 'kofi',

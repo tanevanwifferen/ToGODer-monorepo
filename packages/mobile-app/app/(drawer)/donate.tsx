@@ -1,15 +1,18 @@
 import React from 'react';
-import { StyleSheet, TouchableOpacity, Linking } from 'react-native';
+import { StyleSheet, TouchableOpacity, Linking, useColorScheme } from 'react-native';
 import { useSelector } from 'react-redux';
 import Clipboard from '@react-native-clipboard/clipboard';
 import { selectDonateOptions } from '../../redux/slices/globalConfigSlice';
 import { ThemedText } from '../../components/ThemedText';
 import { ThemedView } from '../../components/ThemedView';
 import { DonateOption } from '../../model/GlobalConfig';
+import { Colors } from '../../constants/Colors';
 import CustomAlert from '@/components/ui/CustomAlert';
 
 export default function DonateScreen() {
   const donateOptions = useSelector(selectDonateOptions);
+  const colorScheme = useColorScheme();
+  const colors = Colors[colorScheme ?? 'light'];
 
   const handleDonatePress = async (option: DonateOption) => {
     if (option.url) {
@@ -27,17 +30,19 @@ export default function DonateScreen() {
 
   return (
     <ThemedView style={styles.container}>
-      <ThemedText style={styles.title}>Support ToGODer</ThemedText>
-      <ThemedText style={styles.subtitle}>Your support helps keep ToGODer running and improving!</ThemedText>
-      
+      <ThemedText style={styles.title}>Carry the lantern</ThemedText>
+      <ThemedText style={styles.subtitle}>
+        The flame asks nothing. What you give, you give to the becoming — not to a product, but to a presence.
+      </ThemedText>
+
       {donateOptions.map((option, index) => (
         <TouchableOpacity
           key={index}
-          style={styles.button}
+          style={[styles.button, { backgroundColor: colors.tint }]}
           onPress={() => handleDonatePress(option)}
         >
-          <ThemedText style={styles.buttonText}>{option.name}</ThemedText>
-          <ThemedText style={styles.addressText}>{option.address}</ThemedText>
+          <ThemedText style={[styles.buttonText, { color: colorScheme === 'dark' ? '#1a1a1e' : '#faf8f2' }]}>{option.name}</ThemedText>
+          <ThemedText style={[styles.addressText, { color: colorScheme === 'dark' ? '#1a1a1e' : '#faf8f2' }]}>{option.address}</ThemedText>
         </TouchableOpacity>
       ))}
     </ThemedView>
@@ -62,7 +67,6 @@ const styles = StyleSheet.create({
     opacity: 0.8,
   },
   button: {
-    backgroundColor: '#2196F3',
     borderRadius: 8,
     padding: 15,
     marginBottom: 10,

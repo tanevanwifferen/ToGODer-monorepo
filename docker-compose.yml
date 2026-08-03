@@ -1,5 +1,17 @@
 name: togoder-prod
 
+# NOTE: The prompts/ directory (containing seed-v2.md) is baked into the
+# Docker image via `COPY prompts ./prompts` in the Dockerfile. It is NOT
+# volume-mounted, so any runtime edits to prompt files will be lost on
+# `docker-compose up -d --build`. The prompt system is static by design:
+#   - seed-v2.md is loaded once at startup (cached in memory)
+#   - Runtime prompt modifications use the in-memory update_system_prompt
+#     tool, which is per-session and never touches the filesystem
+#   - The /api/prompts endpoint returns hardcoded prompts from promptlist.ts
+# If user-editable prompts are needed in the future, add a volume mount:
+#     volumes:
+#       - ./prompts:/app/prompts
+
 services:
   togoder:
     build:
@@ -13,6 +25,12 @@ services:
       - PORT=${PORT:-6969}
       - DATABASE_URL=${DATABASE_URL:-file:/app/data/dev.db}
       - HOST_URL=${HOST_URL:-http://localhost:${PORT:-6968}}
+      # Encrypted generated images MUST live on the bind-mounted volume.
+      # Without this, ImageStore falls back to <cwd>/data/images, which
+      # resolves to /app/packages/core/data/images inside the container --
+      # an ephemeral path wiped on every rebuild, so stored images 404 and
+      # the client renders nothing.
+      - IMAGE_STORE_DIR=${IMAGE_STORE_DIR:-/app/data/images}
       - PREVIOUS_DEFAULT_MODEL=${PREVIOUS_DEFAULT_MODEL:-mistralai/ministral-8b-2512}
     ports:
       - "${PORT:-6969}:${PORT:-6969}"

@@ -132,11 +132,24 @@ export async function creditReferralCommissions(
 }
 
 /** Add credits to a user's balance by userId. */
-async function creditUserBalance(userId: string, amount: Decimal): Promise<void> {
+async function creditUserBalance(
+  userId: string,
+  amount: Decimal,
+  source: string = 'referral',
+): Promise<void> {
   const db = getDbContext();
   await db.user.update({
     where: { id: userId },
     data: { creditsBalance: { increment: amount } },
+  });
+  await db.creditTransaction.create({
+    data: {
+      userId,
+      amount,
+      type: 'credit',
+      source,
+      description: `${source} commission`,
+    },
   });
 }
 
@@ -148,6 +161,15 @@ async function creditUserByEmail(email: string, amount: Decimal): Promise<void> 
   await db.user.update({
     where: { id: user.id },
     data: { creditsBalance: { increment: amount } },
+  });
+  await db.creditTransaction.create({
+    data: {
+      userId: user.id,
+      amount,
+      type: 'credit',
+      source: 'referral',
+      description: 'Platform commission',
+    },
   });
 }
 

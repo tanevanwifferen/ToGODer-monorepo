@@ -58,6 +58,11 @@ import {
   hasEncryptedPdf,
 } from "../Services/PdfDocStore";
 import { decryptPdfData } from "../Services/PdfCrypto";
+import {
+  deriveSessionId,
+  mergeSessionModifications,
+} from "../Tools/SystemPromptTool";
+import { stripTogoderRefs } from "../Services/ImageSanitizer";
 
 let quote = "";
 
@@ -210,7 +215,17 @@ async function injectPdfFileParts(
 export async function buildLlmMessages(
   input: ChatRequest,
 ): Promise<ChatCompletionMessageParam[]> {
-  const base = withSentimentContext(input);
+  // Strip togoder-image:// reference URLs from all message content before
+  // sending to the LLM. These are display-layer artifacts — the model must
+  // never see encrypted blob references (wastes context, leaks metadata).
+  const strippedPrompts: ChatCompletionMessageParam[] = input.prompts.map((p) => {
+    if (typeof p.content === "string") {
+      return { ...p, content: stripTogoderRefs(p.content) };
+    }
+    return p;
+  });
+  const strippedInput = { ...input, prompts: strippedPrompts };
+  const base = withSentimentContext(strippedInput);
   const supportsDocs = await modelSupportsDocuments(input.model);
   return await injectPdfFileParts(base, input, supportsDocs);
 }
@@ -450,6 +465,14 @@ export class ConversationApi {
     }
 
     systemPrompt += "\n\n" + FormattingPrompt;
+
+    // Tool-call discipline: must be high in the prompt so the model
+    // prioritises it.  Emitting a tool call inline is required — never
+    // end a response with an announcement like "let me search that".
+    if (input.tools && input.tools.length > 0) {
+      systemPrompt += "\n\n" + ToolCallDisciplinePrompt;
+    }
+
     if (input.humanPrompt) {
       systemPrompt += "\n\n" + HumanResponsePrompt;
     }
@@ -480,10 +503,6 @@ export class ConversationApi {
       systemPrompt += "\n\n" + holisticTherapistPrompt;
     }
 
-    if (input.tools && input.tools.length > 0) {
-      systemPrompt += "\n\n" + ToolCallDisciplinePrompt;
-    }
-
     systemPrompt = systemPrompt.replace(
       /{{ name }}/g,
       () => this.assistant_name!,
@@ -491,6 +510,20 @@ export class ConversationApi {
 
     systemPrompt += "\n\n" + this.formatPersonalData(input);
     systemPrompt = rootpersona + "\n\n" + systemPrompt;
+
+    // ── Session-level prompt modifications ─────────────────────
+    // Merge any AI-requested system prompt modifications for this
+    // conversation session. The update_system_prompt tool allows
+    // the AI to add/update/remove named sections (preferences,
+    // context, tone) that persist across turns within a session.
+    const firstUserMsg = input.prompts.find(
+      (p) => p.role === "user",
+    )?.content;
+    const sessionId = deriveSessionId(
+      typeof firstUserMsg === "string" ? firstUserMsg : undefined,
+      this.assistant_name,
+    );
+    systemPrompt = mergeSessionModifications(systemPrompt, sessionId);
 
     return systemPrompt;
   }

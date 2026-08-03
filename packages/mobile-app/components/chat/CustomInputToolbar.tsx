@@ -42,6 +42,13 @@ interface CustomInputToolbarProps extends InputToolbarProps<IMessage> {
   onRemovePdf: () => void;
   /** Web drag-and-drop: called with the dropped File */
   onDropFile: (file: File) => void;
+  /** STT microphone: toggle to record/submit */
+  sttEnabled?: boolean;
+  isRecording?: boolean;
+  isProcessing?: boolean;
+  sttError?: string | null;
+  onMicToggle?: () => void;
+  onMicCancel?: () => void;
 }
 
 export function CustomInputToolbar({
@@ -60,6 +67,12 @@ export function CustomInputToolbar({
   onPickPdf,
   onRemovePdf,
   onDropFile,
+  sttEnabled,
+  isRecording,
+  isProcessing,
+  sttError,
+  onMicToggle,
+  onMicCancel,
   ...toolbarProps
 }: CustomInputToolbarProps) {
   const colorScheme = useColorScheme();
@@ -140,24 +153,62 @@ export function CustomInputToolbar({
     );
   };
 
-  // Render the attachment (paperclip) button. Disabled/hidden for
-  // non-document-capable models so users can only attach a PDF when the
-  // selected model can read it.
+  // Render the attachment (paperclip) button and STT mic button.
   const renderActions = () => {
-    if (!modelSupportsPdfs) return null;
     return (
-      <TouchableOpacity
-        onPress={onPickPdf}
-        style={styles.attachButton}
-        accessibilityLabel="Attach a PDF"
-        accessibilityRole="button"
-      >
-        <Ionicons
-          name="attach"
-          size={24}
-          color={theme.tint}
-        />
-      </TouchableOpacity>
+      <View style={styles.actionsRow}>
+        {sttEnabled && onMicToggle && (
+          <View style={styles.micRow}>
+            {isRecording && onMicCancel && (
+              <TouchableOpacity
+                onPress={onMicCancel}
+                style={styles.cancelButton}
+                accessibilityLabel="Cancel recording"
+                accessibilityRole="button"
+              >
+                <Ionicons name="close-circle" size={24} color="#ef4444" />
+              </TouchableOpacity>
+            )}
+            <TouchableOpacity
+              onPress={isProcessing ? undefined : onMicToggle}
+              style={[
+                styles.micButton,
+                isRecording && styles.micButtonActive,
+                isProcessing && styles.micButtonProcessing,
+              ]}
+              disabled={isProcessing}
+              accessibilityLabel={
+                isProcessing
+                  ? 'Transcribing audio…'
+                  : isRecording
+                    ? 'Tap to stop recording and submit'
+                    : 'Tap to start recording'
+              }
+              accessibilityRole="button"
+            >
+              <Ionicons
+                name={isProcessing ? 'hourglass-outline' : isRecording ? 'mic' : 'mic-outline'}
+                size={24}
+                color={isProcessing ? '#f59e0b' : isRecording ? '#ef4444' : theme.tint}
+              />
+            </TouchableOpacity>
+          </View>
+        )}
+        {modelSupportsPdfs && (
+          <TouchableOpacity
+            onPress={onPickPdf}
+            style={styles.attachButton}
+            accessibilityLabel="Attach a PDF"
+            accessibilityRole="button"
+          >
+            <Ionicons
+              name="attach"
+              size={24}
+              color={theme.tint}
+            />
+          </TouchableOpacity>
+        )}
+      </View>
     );
   };
 
@@ -320,6 +371,40 @@ const styles = StyleSheet.create({
   },
   inputToolbar: {
     borderTopWidth: 1,
+  },
+  actionsRow: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  micButton: {
+    justifyContent: "center",
+    alignItems: "center",
+    marginLeft: 8,
+    marginBottom: 4,
+    paddingHorizontal: 4,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+  },
+  micRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  cancelButton: {
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginLeft: 8,
+    marginBottom: 4,
+    paddingHorizontal: 4,
+    width: 36,
+    height: 36,
+  },
+  micButtonActive: {
+    backgroundColor: "rgba(239,68,68,0.15)",
+  },
+  micButtonProcessing: {
+    backgroundColor: "rgba(245,158,11,0.15)",
+    opacity: 0.8,
   },
   attachButton: {
     justifyContent: "center",

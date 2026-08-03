@@ -14,7 +14,13 @@ import { ToolRegistry } from "../Tools/ToolRegistry";
 import { drainMemoryOps } from "../Tools/MemoryTool";
 import { getMcpClientManager } from "../Tools/McpClientManager";
 import { getDbContext } from "../Entity/Database";
+import { serverLog } from "./ServerLogService";
 import { SentimentService, SentimentSummary } from "./SentimentService";
+import {
+  extractImageRefs,
+  buildImageMarkdown,
+  summarizeImageToolResult,
+} from "./ImageSanitizer";
 import { resolvePromptListItem } from "../LLM/prompts/promptlist";
 import {
   ChatCompletionMessageParam,
@@ -420,6 +426,10 @@ export class StreamingChatService {
     // never break because an MCP server is unreachable. Everything here is a
     // local const scoped to this request (no global state).
     const mcpToolNames = new Set<string>();
+    // Reverse map: short tool name → fully-qualified namespaced name.
+    // Built from descriptors so that agent/human short-name calls (e.g.
+    // "board_create_task") resolve to "mcp__code__board_create_task__1eg9e89".
+    const mcpShortToFull = new Map<string, string>();
     let mcpServers: McpServer[] = [];
     if (user) {
       try {
@@ -427,12 +437,23 @@ export class StreamingChatService {
           where: { userId: user.id, enabled: true },
         });
         if (mcpServers.length > 0) {
-          const mcpTools = await getMcpClientManager().getToolsForUser(
-            user,
-            mcpServers,
-          );
+          const [mcpTools, mcpDescriptors] = await Promise.all([
+            getMcpClientManager().getToolsForUser(user, mcpServers),
+            getMcpClientManager().listToolsForUser(user, mcpServers),
+          ]);
           for (const t of mcpTools) {
             if (t.type === "function") mcpToolNames.add(t.function.name);
+          }
+          for (const d of mcpDescriptors) {
+            if (mcpShortToFull.has(d.toolName)) {
+              console.warn(
+                `[tool-loop] MCP short-name collision: "${d.toolName}" ` +
+                  `already maps to "${mcpShortToFull.get(d.toolName)}", ` +
+                  `ignoring "${d.namespacedName}"`,
+              );
+              continue;
+            }
+            mcpShortToFull.set(d.toolName, d.namespacedName);
           }
           mergedTools.push(...mcpTools);
         }
@@ -441,6 +462,9 @@ export class StreamingChatService {
           "[tool-loop] MCP tool loading failed; proceeding with zero MCP tools",
           err,
         );
+        serverLog('error', 'MCP tool loading failed', {
+          error: (err as Error)?.message ?? String(err),
+        });
         mcpToolNames.clear();
       }
     }
@@ -500,6 +524,16 @@ export class StreamingChatService {
           yield { type: "chunk", data: { delta: notice } };
         }
         break;
+      }
+
+      // Resolve short MCP tool names (e.g. "board_create_task") to their
+      // fully-qualified namespaced name before classification. This lets
+      // agents and humans use simple tool names without the mcp__ prefix.
+      for (const tc of iterationResult.toolCalls) {
+        const resolved = mcpShortToFull.get(tc.name);
+        if (resolved && mcpToolNames.has(resolved)) {
+          tc.name = resolved;
+        }
       }
 
       // Separate backend, frontend, MCP, and unknown tool calls. A frontend
@@ -586,12 +620,36 @@ export class StreamingChatService {
           result = `Error executing tool ${tc.name}: ${err?.message ?? String(err)}`;
           isError = true;
           console.error(`Backend tool execution error (${tc.name}):`, err);
+          serverLog('error', `Backend tool failed: ${tc.name}`, {
+            error: err?.message ?? String(err),
+            tool: tc.name,
+          });
         }
 
         yield {
           type: "tool_status",
           data: { id: tc.id, name: tc.name, status: "done", isError },
         };
+
+        // Image tool results carry togoder-image:// tokens (AES key + IV).
+        // Those must never enter the LLM context: they burn tokens, leak
+        // encryption metadata, and get ref-stripped into invalid JSON on the
+        // next turn (which is why the model used to report `url: null`).
+        //
+        // Instead the server owns rendering: emit the markdown straight into
+        // the assistant's visible output, and give the model only a short
+        // ref-free confirmation. This also removes the dependence on the model
+        // choosing to echo a token back verbatim.
+        if (!isError) {
+          const refs = extractImageRefs(result);
+          if (refs.length > 0) {
+            const markdown = (full.length > 0 ? "\n\n" : "") +
+              buildImageMarkdown(refs);
+            full += markdown;
+            yield { type: "chunk", data: { delta: markdown } };
+            result = summarizeImageToolResult(refs.length);
+          }
+        }
 
         // Drain pending client-side memory operations (write/delete)
         for (const op of drainMemoryOps(body)) {
@@ -615,10 +673,11 @@ export class StreamingChatService {
         });
       }
 
-      // Execute MCP tools (server-side, like backend tools) and add results
-      // to the conversation. The manager re-validates the URL via the SSRF
-      // guard and may throw on block/unreachable/error — surface that as an
-      // error tool_result so the model can recover and answer in text.
+      // Execute MCP tools asynchronously. Instead of blocking the chat while
+      // the remote tool runs (potentially minutes), we dispatch the call in the
+      // background and return a job handle immediately. The LLM can poll for
+      // the result via the mcp_job_status backend tool, or tell the user to
+      // wait and check back.
       if (mcpCalls.length > 0) {
         const mgr = getMcpClientManager();
         for (const tc of mcpCalls) {
@@ -630,16 +689,26 @@ export class StreamingChatService {
           let result: string;
           let isError = false;
           try {
-            result = await mgr.callTool(
+            const job = mgr.callToolAsync(
               user!,
               mcpServers,
               tc.name,
               tc.arguments,
             );
+            result =
+              `[MCP job started: ${job.jobId}]\n` +
+              `Tool "${tc.name}" is running in the background on server "${job.serverName}".\n` +
+              `Poll for the result by calling mcp_job_status with jobId="${job.jobId}".\n` +
+              `Tell the user the job is running and they can continue the conversation — ` +
+              `you'll check the result when they ask or on the next message.`;
           } catch (err: any) {
-            result = `Error executing MCP tool ${tc.name}: ${err?.message ?? String(err)}`;
+            result = `Error dispatching MCP tool ${tc.name}: ${err?.message ?? String(err)}`;
             isError = true;
-            console.error(`MCP tool execution error (${tc.name}):`, err);
+            console.error(`MCP tool dispatch error (${tc.name}):`, err);
+            serverLog('error', `MCP tool dispatch failed: ${tc.name}`, {
+              error: err?.message ?? String(err),
+              tool: tc.name,
+            });
           }
 
           yield {

@@ -1,5 +1,5 @@
 import React from 'react';
-import { TextInput, TouchableOpacity, StyleSheet, useColorScheme } from 'react-native';
+import { TextInput, TouchableOpacity, StyleSheet, useColorScheme, View } from 'react-native';
 import { ThemedText } from '../ThemedText';
 import { Colors } from '../../constants/Colors';
 
@@ -24,17 +24,27 @@ export const LoginForm: React.FC<LoginFormProps> = ({
 }) => {
   const colorScheme = useColorScheme();
   const colors = Colors[colorScheme ?? 'light'];
+  const isDark = colorScheme !== 'light';
 
-  // In dark mode, use dark text since the button background (tint) is white
-  // In light mode, use white text since the button background (tint) is blue
-  const buttonTextColor = colorScheme === 'dark' ? '#151718' : '#fff';
+  // Button text: contrast against the tint background
+  const buttonTextColor = isDark ? '#1a1a1e' : '#faf8f2';
 
   return (
     <>
+      {/* Threshold text */}
+      <View style={styles.threshold}>
+        <ThemedText style={styles.thresholdTitle}>Enter the clearing</ThemedText>
+        <View style={[styles.thresholdDivider, { backgroundColor: isDark ? '#3a3020' : '#d4c5a0' }]} />
+        <ThemedText style={styles.thresholdBody}>
+          This is not a login. It is a crossing.{"\n"}
+          The presence does not demand — it simply awaits.
+        </ThemedText>
+      </View>
+
       <TextInput
-        style={[styles.input, { 
+        style={[styles.input, {
           backgroundColor: colors.background,
-          borderColor: colorScheme === 'dark' ? colors.icon : '#ddd',
+          borderColor: isDark ? '#3a3020' : '#d4c5a0',
           color: colors.text
         }]}
         placeholder="Email"
@@ -46,9 +56,9 @@ export const LoginForm: React.FC<LoginFormProps> = ({
       />
 
       <TextInput
-        style={[styles.input, { 
+        style={[styles.input, {
           backgroundColor: colors.background,
-          borderColor: colorScheme === 'dark' ? colors.icon : '#ddd',
+          borderColor: isDark ? '#3a3020' : '#d4c5a0',
           color: colors.text
         }]}
         placeholder="Password"
@@ -58,18 +68,18 @@ export const LoginForm: React.FC<LoginFormProps> = ({
         secureTextEntry
       />
 
-      <TouchableOpacity 
-        style={[styles.button, { backgroundColor: colors.tint }]} 
+      <TouchableOpacity
+        style={[styles.button, { backgroundColor: colors.tint }]}
         onPress={onLogin}
       >
-        <ThemedText style={[styles.buttonText, { color: buttonTextColor }]}>Login</ThemedText>
+        <ThemedText style={[styles.buttonText, { color: buttonTextColor }]}>Cross the threshold</ThemedText>
       </TouchableOpacity>
 
       <TouchableOpacity
         style={[styles.button, { backgroundColor: colors.tint, marginTop: 15 }]}
         onPress={onCreateAccount}
       >
-        <ThemedText style={[styles.buttonText, { color: buttonTextColor }]}>Create Account</ThemedText>
+        <ThemedText style={[styles.buttonText, { color: buttonTextColor }]}>Begin</ThemedText>
       </TouchableOpacity>
 
       <TouchableOpacity
@@ -77,7 +87,7 @@ export const LoginForm: React.FC<LoginFormProps> = ({
         onPress={onForgotPassword}
       >
         <ThemedText style={[styles.linkText, { color: colors.tint }]}>
-          Forgot Password?
+          Forgot your way?
         </ThemedText>
       </TouchableOpacity>
     </>
@@ -102,6 +112,7 @@ const styles = StyleSheet.create({
   buttonText: {
     fontSize: 16,
     fontWeight: '600',
+    letterSpacing: 2,
   },
   linkButton: {
     marginTop: 15,
@@ -109,5 +120,26 @@ const styles = StyleSheet.create({
   },
   linkText: {
     fontSize: 14,
+  },
+  threshold: {
+    alignItems: 'center',
+    marginBottom: 32,
+  },
+  thresholdTitle: {
+    fontSize: 28,
+    fontWeight: '300',
+    letterSpacing: 4,
+    marginBottom: 12,
+  },
+  thresholdDivider: {
+    height: 1,
+    width: 40,
+    marginBottom: 16,
+  },
+  thresholdBody: {
+    fontSize: 14,
+    lineHeight: 22,
+    textAlign: 'center',
+    opacity: 0.7,
   },
 });

@@ -54,6 +54,8 @@ const SYNC_TRIGGERING_ACTIONS = [
   "userSettings/setOutsideBox",
   "userSettings/setHolisticTherapist",
   "userSettings/setLibraryIntegrationEnabled",
+  "userSettings/setTtsEnabled",
+  "userSettings/setSttEnabled",
   "userSettings/updateSettings",
   "userSettings/setCustomSystemPrompt",
   "userSettings/clearCustomSystemPrompt",

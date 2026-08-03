@@ -2,6 +2,7 @@ import { Request, Response, NextFunction } from 'express';
 import jwt, { JwtPayload } from 'jsonwebtoken';
 import { getDbContext } from '../../Entity/Database';
 import { ToGODerAuth } from '../Model/ToGODerRequest';
+import { serverLog } from '../../Services/ServerLogService';
 
 if (!process.env.JWT_SECRET) {
   throw new Error('JWT_SECRET is not defined');
@@ -33,6 +34,9 @@ export const setAuthUser = async (
     next();
   } catch (e) {
     console.log('authentication error', e);
+    serverLog('warn', 'Auth: invalid token (setAuthUser)', {
+      error: (e as Error)?.message ?? String(e),
+    });
     res.status(401).json('Invalid token');
   }
 };
@@ -42,7 +46,10 @@ export const authenticated = (
   next: NextFunction
 ) => {
   try {
-    if (!req.headers.authorization) return res.status(401).json('Unauthorized');
+    if (!req.headers.authorization) {
+      serverLog('warn', 'Auth: missing authorization header');
+      return res.status(401).json('Unauthorized');
+    }
 
     const token = req.headers.authorization.split(' ')[1];
     const { date } = jwt.verify(token, process.env.JWT_SECRET!) as {
@@ -50,11 +57,13 @@ export const authenticated = (
     };
 
     if (date < new Date().getTime() - 1000 * 60 * 60 * 24) {
+      serverLog('warn', 'Auth: token expired (authenticated)');
       return res.status(401).json('Token expired');
     }
 
     next();
   } catch {
+    serverLog('warn', 'Auth: token verification failed (authenticated)');
     res.status(401).json({ logout: true });
   }
 };
@@ -83,11 +92,15 @@ export const authenticatedAsync = async (
     const db = getDbContext();
     const user = await db.user.findUnique({ where: { id } });
     if (!user || user.tokenVersion !== (tokenVersion ?? 0)) {
+      serverLog('warn', 'Auth: token version mismatch (authenticatedAsync)', {
+        userId: id,
+      });
       return res.status(401).json({ logout: true });
     }
 
     next();
   } catch {
+    serverLog('warn', 'Auth: token verification failed (authenticatedAsync)');
     res.status(401).json({ logout: true });
   }
 };

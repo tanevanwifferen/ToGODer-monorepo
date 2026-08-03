@@ -23,6 +23,8 @@ import { useChatActions } from "../hooks/useChatActions";
 import { useGiftedMessages, ExtendedIMessage } from "../hooks/useGiftedMessages";
 import { useLibraryIntegration } from "../hooks/useLibraryIntegration";
 import { useAutoSentiment } from "../hooks/useAutoSentiment";
+import { useStt } from "../hooks/useStt";
+import { useTts } from "../hooks/useTts";
 import { usePdfAttachment, pickPdfFileWeb } from "../hooks/usePdfAttachment";
 import Toast from "react-native-toast-message";
 import { ThemedText } from "./ThemedText";
@@ -112,6 +114,25 @@ export function Chat({ chatId, onBack }: ChatProps) {
   // document-capable models.
   const pdf = usePdfAttachment(chatId);
 
+  // STT: push-to-talk recording → server transcription → fills input
+  const stt = useStt((transcribedText: string) => {
+    const prev = inputTextRef.current;
+    const separator = prev.trim() ? ' ' : '';
+    setInputText(prev + separator + transcribedText);
+  });
+
+  // Show STT permission errors as toast
+  useEffect(() => {
+    if (stt.error) {
+      Toast.show({
+        type: 'error',
+        text1: 'Microphone',
+        text2: stt.error,
+        visibilityTime: 4000,
+      });
+    }
+  }, [stt.error]);
+
   // Handle edit message action from long press menu.
   // Gifted message _id is the message's index in apiMessages.
   const handleEditMessage = useCallback(
@@ -157,6 +178,8 @@ export function Chat({ chatId, onBack }: ChatProps) {
     setEditingMessageContent("");
   }, []);
 
+  const { speak: ttsSpeak } = useTts();
+
   const { onLongPress } = useChatActions(
     giftedMessages,
     (messageId: string) => {
@@ -166,7 +189,8 @@ export function Chat({ chatId, onBack }: ChatProps) {
         onDeleteMessage(messageIndex);
       }
     },
-    handleEditMessage
+    handleEditMessage,
+    ttsSpeak
   );
 
   const renderInputToolbar = (toolbarProps: any) => (
@@ -186,6 +210,12 @@ export function Chat({ chatId, onBack }: ChatProps) {
       onCancel={cancelRequest}
       modelSupportsPdfs={pdf.modelSupportsPdfs}
       pdfAttachment={pdf.attachment}
+      sttEnabled={stt.enabled}
+      isRecording={stt.isRecording}
+      isProcessing={stt.isProcessing}
+      sttError={stt.error}
+      onMicToggle={stt.toggleRecordSubmit}
+      onMicCancel={stt.cancelRecording}
       onPickPdf={async () => {
         const file = await pickPdfFileWeb();
         if (file) pdf.attachFile(file);

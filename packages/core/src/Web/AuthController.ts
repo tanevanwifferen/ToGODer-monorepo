@@ -25,7 +25,7 @@ const updateTokenHandler = async (req: Request, res: Response) => {
     const db = getDbContext();
     const user = await db.user.findUnique({ where: { id: req.body.userId } });
     if (!user) {
-      return res.status(404).send('User not found');
+      return res.status(404).json({ error: 'User not found' });
     }
     const token = jwt.sign(
       { id: req.body.userId, date: new Date().getTime(), tokenVersion: user.tokenVersion },
@@ -34,7 +34,7 @@ const updateTokenHandler = async (req: Request, res: Response) => {
     res.json({ token: token });
   } catch (err) {
     console.log(err);
-    res.status(500).send('Something went wrong');
+    res.status(500).json({ error: 'Something went wrong' });
   }
 };
 
@@ -45,10 +45,10 @@ const forgotPasswordHandler = async (req: Request, res: Response) => {
     const db = getDbContext();
     const user = await db.user.findUnique({ where: { email: email } });
     if (!user) {
-      return res.status(200).send(message);
+      return res.status(200).json({ message });
     }
     if (!user.verified) {
-      return res.status(200).send(message);
+      return res.status(200).json({ message });
     }
 
     var toSign = { date: new Date().getTime(), id: user.id };
@@ -56,10 +56,10 @@ const forgotPasswordHandler = async (req: Request, res: Response) => {
 
     // send forgot password email
     new Mailer().sendForgotPasswordEmail(user.email, signed);
-    res.status(200).send(message);
+    res.status(200).json({ message });
   } catch (err) {
     console.log(err);
-    res.status(500).send('Something went wrong');
+    res.status(500).json({ error: 'Something went wrong' });
   }
 };
 
@@ -74,7 +74,7 @@ const resetPasswordHandler = async (req: Request, res: Response) => {
 
     // 30 minutes
     if (new Date().getTime() - date > 1000 * 60 * 30) {
-      return res.status(400).send('Expired link');
+      return res.status(400).json({ error: 'Expired link' });
     }
 
     const password = await bcrypt.hash(req.body.password, 10);
@@ -82,18 +82,18 @@ const resetPasswordHandler = async (req: Request, res: Response) => {
 
     const db = getDbContext();
 
-    const user = db.user.findUnique({ where: { id: id, email } });
+    const user = await db.user.findUnique({ where: { id: id, email } });
     if (user == null) {
-      return res.status(404).send('User not found');
+      return res.status(404).json({ error: 'User not found' });
     }
     await db.user.update({
       where: { id: id },
       data: { password: password },
     });
-    return res.status(200).send('Password updated. You can now login.');
+    return res.status(200).json({ message: 'Password updated. You can now login.' });
   } catch (err) {
     console.log(err);
-    res.status(500).send('Something went wrong');
+    res.status(500).json({ error: 'Something went wrong' });
   }
 };
 
@@ -103,19 +103,19 @@ const verifyHandler = async (req: Request, res: Response) => {
     const db = getDbContext();
     const user = await db.user.findUnique({ where: { id: id } });
     if (!user) {
-      return res.status(404).send('User not found');
+      return res.status(404).json({ error: 'User not found' });
     }
     if (user.verified) {
-      return res.status(400).send('User already verified');
+      return res.status(400).json({ error: 'User already verified' });
     }
     if (user.verificationToken !== code) {
-      return res.status(400).send('Invalid verification code');
+      return res.status(400).json({ error: 'Invalid verification code' });
     }
     await db.user.update({ where: { id: id }, data: { verified: true } });
-    res.send('Verification successful! you can now close this tab and login.');
+    res.json({ message: 'Verification successful! you can now close this tab and login.' });
   } catch (err) {
     console.log(err);
-    res.status(500).send('Something went wrong');
+    res.status(500).json({ error: 'Something went wrong' });
   }
 };
 
@@ -127,7 +127,7 @@ const signInHandler = async (req: Request, res: Response) => {
     });
 
     if (!user || !user.verified) {
-      res.status(401).send('Invalid email or password.');
+      res.status(401).json({ error: 'Invalid email or password.' });
     } else {
       const authenticated = await bcrypt.compare(
         req.body.password,
@@ -145,12 +145,12 @@ const signInHandler = async (req: Request, res: Response) => {
 
         res.json({ token: token, userId: user.id, date: toSign.date, isAdmin: isAdminUser(user.email) });
       } else {
-        res.status(401).send('Invalid email or password.');
+        res.status(401).json({ error: 'Invalid email or password.' });
       }
     }
   } catch (err) {
     console.log(err);
-    res.status(500).send('Something went wrong');
+    res.status(500).json({ error: 'Something went wrong' });
   }
 };
 
@@ -158,7 +158,7 @@ const logoutHandler = async (req: Request, res: Response) => {
   try {
     const authHeader = req.headers.authorization;
     if (!authHeader) {
-      return res.status(401).send('No token provided');
+      return res.status(401).json({ error: 'No token provided' });
     }
     const token = authHeader.split(' ')[1];
     const { id } = jwt.verify(token, process.env.JWT_SECRET!) as { id: string };
@@ -170,10 +170,10 @@ const logoutHandler = async (req: Request, res: Response) => {
       data: { tokenVersion: { increment: 1 } },
     });
 
-    res.status(200).send('Logged out');
+    res.status(200).json({ message: 'Logged out' });
   } catch (err) {
     console.log(err);
-    res.status(500).send('Something went wrong');
+    res.status(500).json({ error: 'Something went wrong' });
   }
 };
 
@@ -181,10 +181,10 @@ const signUpHandler = async (req: Request, res: Response) => {
   try {
     // verify email is valid email address
     if (!req.body.email || !Mailer.IsValidEmailAddress(req.body.email)) {
-      return res.status(400).send('Email is required');
+      return res.status(400).json({ error: 'Email is required' });
     }
     if (!req.body.password || req.body.password.length < 8) {
-      return res.status(400).send('Password is required');
+      return res.status(400).json({ error: 'Password is required' });
     }
 
     const db = getDbContext();
@@ -193,7 +193,7 @@ const signUpHandler = async (req: Request, res: Response) => {
     });
 
     if (user) {
-      return res.status(400).send('User already exists!');
+      return res.status(400).json({ error: 'User already exists!' });
     }
 
     const hashedPassword = await bcrypt.hash(req.body.password, 10);
@@ -230,12 +230,12 @@ const signUpHandler = async (req: Request, res: Response) => {
     );
     res
       .status(200)
-      .send(
-        'A verification email has been sent to your email account. Please click the link in the email'
-      );
+      .json({
+        message: 'A verification email has been sent to your email account. Please click the link in the email'
+      });
   } catch (error) {
     console.log(error);
-    res.status(500).send('Something went wrong');
+    res.status(500).json({ error: 'Something went wrong' });
   }
 };
 

@@ -21,6 +21,7 @@ import { GetSyncRouter } from "./Web/SyncController";
 import { GetSentimentRouter } from "./Web/SentimentController";
 import { GetMcpRouter } from "./Web/McpController";
 import { GetPdfUploadRouter } from "./Web/PdfUploadController";
+import { GetImageRouter } from "./Web/ImageController";
 import { sentimentIntegrationEnabled } from "./Services/SentimentService";
 import { GetTtsRouter } from "./Web/TtsController";
 import {
@@ -28,12 +29,17 @@ import {
   setupRealtimeVoiceWebSocket,
 } from "./Web/RealtimeVoiceController";
 import { GetAdminRouter } from "./Web/AdminController";
+import { GetTtsRouter } from "./Web/TtsController";
+import { GetSttRouter } from "./Web/SttController";
 import { GetReferralRouter } from "./Web/ReferralController";
 import { createServer } from "http";
 import WebSocket from "ws";
 import { registerLibraryTool } from "./Tools/LibraryTool";
 import { registerArxivTools } from "./Tools/ArxivTool";
 import { registerMemoryTools } from "./Tools/MemoryTool";
+import { registerMcpJobTool } from "./Tools/McpJobTool";
+import { registerSystemPromptTool } from "./Tools/SystemPromptTool";
+import { registerImageGenerateTool } from "./Tools/ImageGenerateTool";
 
 const app = express();
 const port = process.env.PORT || 3000;
@@ -69,8 +75,7 @@ const messageLimiter = rateLimit({
   message: "Too many requests from this IP, please try again later.",
   standardHeaders: true,
   legacyHeaders: false,
-  handler: (req: Request, res: Response) => {
-    console.log(`Rate limit exceeded for IP: ${req.ip}`);
+  handler: (_req: Request, res: Response) => {
     res
       .status(429)
       .send("Too many messages sent from this IP, please try again later.");
@@ -102,8 +107,10 @@ const syncRouter = GetSyncRouter(messageLimiter);
 const sentimentRouter = GetSentimentRouter(messageLimiter);
 const mcpRouter = GetMcpRouter(messageLimiter);
 const pdfUploadRouter = GetPdfUploadRouter();
-const ttsRouter = GetTtsRouter(messageLimiter);
+const imageRouter = GetImageRouter();
 const adminRouter = GetAdminRouter();
+const ttsRouter = GetTtsRouter(messageLimiter);
+const sttRouter = GetSttRouter(messageLimiter);
 const referralRouter = GetReferralRouter();
 
 app.use(chatRouter);
@@ -116,8 +123,10 @@ app.use(syncRouter);
 app.use(sentimentRouter);
 app.use(mcpRouter);
 app.use(pdfUploadRouter);
+app.use(imageRouter);
 app.use(adminRouter);
 app.use(ttsRouter);
+app.use(sttRouter);
 app.use(referralRouter);
 
 const donateOptions: { address: string }[] = JSON.parse(
@@ -179,8 +188,7 @@ app.get("*", (req, res) => {
 // Centralized error handling middleware
 app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
   console.error("Unhandled error at " + new Date() + ":", err);
-  console.error(_req.body);
-  res.status(500).send("Internal Server Error");
+  res.status(500).json({ error: "Internal Server Error" });
 });
 
 // Create HTTP server and WebSocket server
@@ -204,3 +212,6 @@ setupRunners();
 registerLibraryTool();
 registerArxivTools();
 registerMemoryTools();
+registerMcpJobTool();
+registerSystemPromptTool();
+registerImageGenerateTool();

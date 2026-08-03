@@ -8,6 +8,7 @@ import { AIProvider } from './Model/AIProvider';
 import { zodResponseFormat } from 'openai/helpers/zod';
 import { ParsedChatCompletion } from 'openai/resources/chat/completions/index';
 import { logLlmOutput } from './OutputLogger';
+import { serverLog } from '../Services/ServerLogService';
 
 export class OpenRouterWrapper implements AIWrapper {
   private apiKey: string;
@@ -92,6 +93,11 @@ export class OpenRouterWrapper implements AIWrapper {
     } catch (error) {
       logLlmOutput({ model: this.model, method: 'getResponse', error });
       console.error('Error:', error);
+      serverLog('error', 'OpenRouter API call failed', {
+        error: (error as Error)?.message ?? String(error),
+        model: this.model,
+        method: 'getResponse',
+      });
       throw new Error('Failed to get response from OpenRouter API');
     }
   }
@@ -163,6 +169,10 @@ export class OpenRouterWrapper implements AIWrapper {
         error,
       });
       console.error('OpenRouter stream error:', error);
+      serverLog('error', 'OpenRouter stream failed', {
+        error: (error as Error)?.message ?? String(error),
+        model: this.model,
+      });
       throw new Error('Failed to stream response from OpenRouter API');
     }
   }
@@ -356,6 +366,10 @@ export class OpenRouterWrapper implements AIWrapper {
         error,
       });
       console.error('OpenRouter stream with tools error:', error);
+      serverLog('error', 'OpenRouter tool stream failed', {
+        error: (error as Error)?.message ?? String(error),
+        model: this.model,
+      });
       throw new Error(
         'Failed to stream response with tools from OpenRouter API'
       );
@@ -423,6 +437,11 @@ export class OpenRouterWrapper implements AIWrapper {
         );
 
         if (attempt === maxRetries) {
+          serverLog('error', 'OpenRouter JSON parse failed', {
+            error: (error as Error)?.message ?? String(error),
+            model: this.model,
+            attempts: maxRetries,
+          });
           logLlmOutput({
             model: this.model,
             method: 'getJSONResponse',

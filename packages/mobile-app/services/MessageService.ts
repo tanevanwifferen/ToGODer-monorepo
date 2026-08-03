@@ -24,12 +24,15 @@ import {
   ToolStatusEvent,
   ARTIFACT_TOOL_SCHEMAS,
   LIBRARY_TOOL_SCHEMA,
+  GET_CONSOLE_ERRORS_TOOL_SCHEMA,
   ToolSchema,
 } from "../apiClients/ChatApiClient";
+import { getConsoleErrors } from "./ConsoleErrorService";
 import { ApiChatMessage } from "../model/ChatRequest";
 import Toast from "react-native-toast-message";
 import { Platform } from "react-native";
 import { BalanceService } from "./BalanceService";
+import { getOrCreateKeypair } from "../utils/imageKeypair";
 import StorageService from "./StorageService";
 import { CalendarService } from "./CalendarService";
 import { HealthService } from "./health";
@@ -74,6 +77,8 @@ export interface SendMessageStreamOptions {
   pdfName?: string;
   /** Client-derived AES-256-GCM key (base64) for the persisted PDF */
   pdfKey?: string;
+  /** Client's RSA public key (PEM) for asymmetric image encryption */
+  imagePublicKey?: string;
   onChunk?: (content: string) => void;
   onComplete?: (message: ApiChatMessage) => void;
   onError?: (error: string) => void;
@@ -212,8 +217,14 @@ export class MessageService {
   private buildTools(projectId: string | undefined): ToolSchema[] | undefined {
     const state = store.getState();
     const libraryEnabled = state.userSettings.libraryIntegrationEnabled;
+    const isAdmin = state.auth.isAdmin;
 
     const tools: ToolSchema[] = [];
+
+    // Console error viewer: admin-only
+    if (isAdmin) {
+      tools.push(GET_CONSOLE_ERRORS_TOOL_SCHEMA);
+    }
 
     if (projectId) {
       tools.push(...ARTIFACT_TOOL_SCHEMAS);
@@ -826,6 +837,12 @@ export class MessageService {
             })()
           : undefined;
 
+      // Get or create the client's RSA keypair for asymmetric image encryption.
+      // Generates a 2048-bit RSA keypair on first use and persists it to
+      // AsyncStorage. Only the public key is sent to the server; the private
+      // key stays on-device for decrypting images.
+      const imagePublicKey = await getOrCreateKeypair();
+
       // Send the message and get response
       if (useStreaming) {
         await this.sendMessageWithStreaming({
@@ -839,6 +856,7 @@ export class MessageService {
           pdfCacheId,
           pdfName,
           pdfKey,
+          imagePublicKey,
           signal,
           onChunk,
           onComplete,
@@ -857,6 +875,7 @@ export class MessageService {
           pdfCacheId,
           pdfName,
           pdfKey,
+          imagePublicKey,
           signal,
           onComplete,
           onError,
@@ -1070,6 +1089,7 @@ export class MessageService {
         pdfCacheId,
         pdfName,
         pdfKey,
+        options.imagePublicKey,
         signal,
       )) {
         switch (evt.type) {
@@ -1165,6 +1185,7 @@ export class MessageService {
               pdfCacheId,
               pdfName,
               pdfKey,
+              imagePublicKey: options.imagePublicKey,
               signal,
               onChunk,
               onComplete,
@@ -1180,6 +1201,13 @@ export class MessageService {
             const writeValue = evt.data?.value;
             if (writeKey && StorageService.keyIsValid(writeKey) && writeValue !== undefined) {
               await StorageService.set(writeKey, writeValue);
+              // Add the key to chat.memories so it is included in
+              // resolvedMemories on the very next request — otherwise
+              // read_memory returns "content has not been fetched yet"
+              // even though the key is in memoryIndex.
+              store.dispatch(
+                addMemories({ id: chatId, memories: [writeKey] }),
+              );
               console.log(`[memory] write: ${writeKey}`);
             }
             break;
@@ -1197,13 +1225,14 @@ export class MessageService {
           case "tool_call": {
             const toolCall = evt.data;
 
-            // Check if this is a known frontend tool (artifact tools)
+            // Check if this is a known frontend tool (artifact tools + console errors)
             const FRONTEND_TOOL_NAMES = [
               "read_artifact",
               "write_artifact",
               "delete_artifact",
               "move_artifact",
               "list_directory",
+              "get_console_errors",
             ];
 
             // Notify callback for known frontend tools
@@ -1237,7 +1266,41 @@ export class MessageService {
               isError: boolean;
               operation?: "read" | "write" | "delete" | "move";
             };
-            if (!FRONTEND_TOOL_NAMES.includes(toolCall.name)) {
+
+            // Handle get_console_errors tool (admin-only, no project required)
+            if (toolCall.name === "get_console_errors") {
+              const isAdmin = store.getState().auth.isAdmin;
+              if (!isAdmin) {
+                result = {
+                  message: "Access denied: get_console_errors is only available for admin accounts.",
+                  isError: true,
+                };
+              } else {
+              const limit =
+                typeof toolCall.arguments.limit === "number"
+                  ? toolCall.arguments.limit
+                  : undefined;
+              const level =
+                typeof toolCall.arguments.level === "string"
+                  ? toolCall.arguments.level
+                  : "all";
+
+              let entries = getConsoleErrors();
+              if (level !== "all") {
+                entries = entries.filter((e) => e.level === level);
+              }
+              if (limit != null && limit > 0) {
+                entries = entries.slice(0, limit);
+              }
+
+              result = {
+                message: entries.length > 0
+                  ? JSON.stringify(entries, null, 2)
+                  : "No console errors captured yet.",
+                isError: false,
+              };
+              }
+            } else if (!FRONTEND_TOOL_NAMES.includes(toolCall.name)) {
               result = {
                 message: `Error: tool "${toolCall.name}" does not exist. Answer the user directly instead.`,
                 isError: true,
@@ -1400,6 +1463,7 @@ export class MessageService {
           pdfCacheId,
           pdfName,
           pdfKey,
+          imagePublicKey: options.imagePublicKey,
           signal,
           onChunk,
           onComplete,
@@ -1541,6 +1605,7 @@ export class MessageService {
         pdfCacheId,
         pdfName,
         pdfKey,
+        options.imagePublicKey,
       );
 
       if ("requestForMemory" in response) {
@@ -1587,6 +1652,7 @@ export class MessageService {
           pdfCacheId,
           pdfName,
           pdfKey,
+          imagePublicKey: options.imagePublicKey,
           onComplete,
           onError,
         });
@@ -1751,6 +1817,9 @@ export class MessageService {
             })()
           : undefined;
 
+      // Get the client's RSA public key for asymmetric image encryption.
+      const imagePublicKey = await getOrCreateKeypair();
+
       // Send the message and get response
       if (useStreaming) {
         await this.sendMessageWithStreaming({
@@ -1762,6 +1831,7 @@ export class MessageService {
           pdfCacheId,
           pdfName,
           pdfKey,
+          imagePublicKey,
           signal,
           onChunk,
           onComplete,
@@ -1778,6 +1848,7 @@ export class MessageService {
           pdfCacheId,
           pdfName,
           pdfKey,
+          imagePublicKey,
           signal,
           onComplete,
           onError,

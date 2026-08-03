@@ -135,7 +135,7 @@ export function setupRealtimeVoiceWebSocket(
       if (user) {
         const balance = await billingApi.GetTotalBalance(user.email);
         if (balance.lessThanOrEqualTo(0)) {
-          console.log(`Insufficient balance for user: ${user.email}`);
+          console.log('Insufficient balance for user');
           ws.close(
             1008,
             'Insufficient balance. Please add credits to continue.'

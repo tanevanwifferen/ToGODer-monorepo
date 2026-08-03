@@ -212,6 +212,9 @@ export class SyncService {
       language: userSettingsState?.language || "",
       libraryIntegrationEnabled:
         userSettingsState?.libraryIntegrationEnabled ?? false,
+      ttsEnabled: userSettingsState?.ttsEnabled ?? false,
+      sttEnabled: userSettingsState?.sttEnabled ?? false,
+      customSystemPrompt: userSettingsState?.customSystemPrompt ?? undefined,
       updatedAt: userSettingsState?.updatedAt || 0,
     };
 

@@ -65,6 +65,14 @@ export interface ChatRequest {
    */
   pdfKey?: string;
   /**
+   * Client's RSA public key (PEM) for asymmetric image encryption.
+   * When present, the image_generate tool encrypts generated images using
+   * hybrid RSA+AES-256-GCM so only the client (holding the private key)
+   * can decrypt them. The server never sees the private key and cannot
+   * decrypt stored images. Omit for symmetric fallback (logged-out users).
+   */
+  imagePublicKey?: string;
+  /**
    * Server-side only: compact emotional-analysis block injected (hidden)
    * into the LLM's copy of the latest user message. Never sent by clients;
    * set by the chat pipeline after SentimentService runs.
