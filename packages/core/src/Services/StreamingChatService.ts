@@ -315,11 +315,10 @@ export class StreamingChatService {
     }
 
     // Sentiment analysis of the user's recent messages: billed to the user,
-    // so only for logged-in users with a positive personal balance. The
-    // summary is streamed to the client (emotions view) and injected hidden
-    // into the LLM's copy of the last user message.
+    // so only for logged-in users with a positive personal balance. Skipped
+    // for incognito sessions (no trace).
     const sentimentService = new SentimentService();
-    if (user && (await sentimentService.isEligible(user))) {
+    if (!body.incognito && user && (await sentimentService.isEligible(user))) {
       const sentiment = await sentimentService.analyzeConversation(
         body.prompts,
         user,
@@ -330,8 +329,9 @@ export class StreamingChatService {
       }
     }
 
-    // Memory request flow (requires user)
+    // Memory request flow (requires user; skipped entirely for incognito)
     if (
+      !body.incognito &&
       !!body.memoryIndex &&
       body.memoryIndex.length > 0 &&
       user != null &&

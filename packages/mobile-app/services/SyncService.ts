@@ -177,8 +177,11 @@ export class SyncService {
 
     // Convert chats to syncable format
     // Use 0 as fallback to let remote data win if local has no timestamp
+    // Incognito chats are never synced — they stay local and ephemeral
     const syncableChats: Record<string, SyncableChat> = {};
     for (const [id, chat] of Object.entries(chatsState.chats)) {
+      // Skip incognito chats — never leave the device
+      if (chat.incognito) continue;
       // Convert messages to syncable format with IDs
       const syncableMessages = chat.messages.map((msg, idx) =>
         this.toSyncableMessage(msg, idx)

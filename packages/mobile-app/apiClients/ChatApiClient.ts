@@ -416,6 +416,7 @@ export class ChatApiClient {
     pdfName?: string | undefined,
     pdfKey?: string | undefined,
     imagePublicKey?: string | undefined,
+    incognito?: boolean,
     signal?: AbortSignal,
   ): AsyncGenerator<StreamEvent> {
     const baseUrl = getApiUrl();
@@ -460,6 +461,7 @@ export class ChatApiClient {
       pdfName,
       pdfKey,
       imagePublicKey,
+      incognito,
     };
 
     // On React Native mobile, fetch() does not support ReadableStream for

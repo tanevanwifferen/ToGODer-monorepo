@@ -18,6 +18,15 @@ jest.mock('react-native-quick-crypto', () => ({
   pbkdf2Sync: () => Buffer.alloc(32),
 }));
 
+// Mock react-native-quick-base64 for tests
+jest.mock('react-native-quick-base64', () => {
+  const { Buffer } = require('buffer');
+  return {
+    fromByteArray: (bytes) => Buffer.from(bytes).toString('base64'),
+    toByteArray: (b64) => new Uint8Array(Buffer.from(b64, 'base64')),
+  };
+});
+
 // Mock @craftzdog/react-native-buffer for tests
 jest.mock('@craftzdog/react-native-buffer', () => ({
   Buffer: global.Buffer || require('buffer').Buffer,

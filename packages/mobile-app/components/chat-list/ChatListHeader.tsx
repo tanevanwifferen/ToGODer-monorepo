@@ -3,6 +3,7 @@ import { Colors } from "../../constants/Colors";
 
 interface ChatListHeaderProps {
   onNewChat: () => void;
+  onIncognitoChat: () => void;
   projectName?: string | null;
   onClearProjectFilter?: () => void;
 }
@@ -13,7 +14,7 @@ const getHeaderColors = (colorScheme: "light" | "dark") => ({
   badgeBorder: colorScheme === "dark" ? "#333333" : "#E5E7EB",
 });
 
-export function ChatListHeader({ onNewChat, projectName, onClearProjectFilter }: ChatListHeaderProps) {
+export function ChatListHeader({ onNewChat, onIncognitoChat, projectName, onClearProjectFilter }: ChatListHeaderProps) {
   const colorScheme = useColorScheme() ?? "light";
   const theme = Colors[colorScheme];
   const headerColors = getHeaderColors(colorScheme);
@@ -45,12 +46,20 @@ export function ChatListHeader({ onNewChat, projectName, onClearProjectFilter }:
           </TouchableOpacity>
         )}
       </View>
-      <TouchableOpacity
-        style={[styles.newChatButton, { backgroundColor: theme.tint }]}
-        onPress={onNewChat}
-      >
-        <Text style={styles.newChatButtonText}>+ New Chat</Text>
-      </TouchableOpacity>
+      <View style={styles.buttonRow}>
+        <TouchableOpacity
+          style={[styles.newChatButton, { backgroundColor: theme.tint }]}
+          onPress={onNewChat}
+        >
+          <Text style={styles.newChatButtonText}>+ New Chat</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.incognitoButton, { borderColor: theme.tint }]}
+          onPress={onIncognitoChat}
+        >
+          <Text style={[styles.incognitoButtonText, { color: theme.tint }]}>🕶️ Incognito</Text>
+        </TouchableOpacity>
+      </View>
     </View>
   );
 }
@@ -107,6 +116,28 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: "600",
     color: "#FFFFFF",
+    letterSpacing: 0.1,
+  },
+  buttonRow: {
+    flexDirection: "row",
+    gap: 8,
+    alignItems: "center",
+  },
+  incognitoButton: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 8,
+    borderWidth: 1.5,
+    ...Platform.select({
+      web: {
+        cursor: "pointer",
+        transition: "opacity 0.15s ease",
+      } as any,
+    }),
+  },
+  incognitoButtonText: {
+    fontSize: 13,
+    fontWeight: "600",
     letterSpacing: 0.1,
   },
 });

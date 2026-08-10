@@ -1090,6 +1090,7 @@ export class MessageService {
         pdfName,
         pdfKey,
         options.imagePublicKey,
+        chat.incognito,
         signal,
       )) {
         switch (evt.type) {

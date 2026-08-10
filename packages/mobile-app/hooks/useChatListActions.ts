@@ -30,6 +30,22 @@ export const useChatListActions = () => {
     router.push({ pathname: '/chat/[id]', params: { id: newChatId } });
   };
 
+  const handleCreateIncognitoChat = () => {
+    const newChatId = uuidv4();
+    dispatch(
+      addChat({
+        id: newChatId,
+        title: "Incognito",
+        messages: [],
+        memories: [],
+        incognito: true,
+        projectId: null, // Never assign to a project
+      })
+    );
+    dispatch(setCurrentChat(newChatId));
+    router.push({ pathname: '/chat/[id]', params: { id: newChatId } });
+  };
+
   const handleDeleteChat = (chatId: string, title: string | null | undefined) => {
     CustomAlert.alert(
       "Delete Chat",
@@ -52,6 +68,7 @@ export const useChatListActions = () => {
 
   return {
     handleCreateNewChat,
+    handleCreateIncognitoChat,
     handleDeleteChat,
     handleSelectChat,
   };

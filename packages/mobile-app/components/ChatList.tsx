@@ -23,7 +23,7 @@ export function ChatList() {
   const colorScheme = useColorScheme();
   const theme = Colors[colorScheme ?? "light"];
   const dispatch = useDispatch();
-  const { handleCreateNewChat, handleDeleteChat, handleSelectChat } = useChatListActions();
+  const { handleCreateNewChat, handleCreateIncognitoChat, handleDeleteChat, handleSelectChat } = useChatListActions();
   const { sortedChatRequests, sortedChats, hasRequests, chatsMap, currentProjectId } = useSortedChats();
   const { assignChatToProject, getProjectNameForChat, handleCreateProject } = useChatProjectAssignment();
   const projectsState = useSelector(selectProjects);
@@ -91,6 +91,7 @@ export function ChatList() {
       <View style={[contentStyle]}>
         <ChatListHeader
           onNewChat={handleCreateNewChat}
+          onIncognitoChat={handleCreateIncognitoChat}
           projectName={currentProjectName}
           onClearProjectFilter={handleClearProjectFilter}
         />

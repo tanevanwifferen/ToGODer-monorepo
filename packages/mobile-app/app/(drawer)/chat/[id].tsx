@@ -9,7 +9,7 @@ import { useSelector, useDispatch } from 'react-redux';
 import { Chat } from '../../../components/Chat';
 import { selectChatById } from '../../../redux/slices/chatSelectors';
 import { RootState } from '../../../redux/store';
-import { setCurrentChat } from '../../../redux/slices/chatsSlice';
+import { setCurrentChat, deleteChat } from '../../../redux/slices/chatsSlice';
 
 export default function ChatScreen() {
   const { id } = useLocalSearchParams();
@@ -37,6 +37,15 @@ export default function ChatScreen() {
     dispatch(setCurrentChat(null));
     router.back();
   };
+
+  // Clean up incognito chats when navigating away (e.g. via sidebar)
+  React.useEffect(() => {
+    return () => {
+      if (chat?.incognito) {
+        dispatch(deleteChat(chatId));
+      }
+    };
+  }, [chat?.incognito, chatId, dispatch]);
 
   // Handle case where chat doesn't exist (deleted or invalid URL)
   if (!chat) {

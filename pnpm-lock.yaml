@@ -349,7 +349,7 @@ importers:
         version: 9.39.4
       '@testing-library/react-native':
         specifier: ^13.3.3
-        version: 13.3.3(jest@29.7.0(@types/node@22.19.15)(ts-node@10.9.2(@types/node@22.19.15)(typescript@5.8.3)))(react-native@0.79.5(@babel/core@7.29.0)(@types/react@19.0.14)(react@19.0.0))(react-test-renderer@19.0.4(react@19.0.0))(react@19.0.0)
+        version: 13.3.3(jest@29.7.0(@types/node@22.19.15)(ts-node@10.9.2(@types/node@22.19.15)(typescript@5.8.3)))(react-native@0.79.5(@babel/core@7.29.0)(@types/react@19.0.14)(react@19.0.0))(react-test-renderer@19.0.0(react@19.0.0))(react@19.0.0)
       '@types/jest':
         specifier: ^29.5.14
         version: 29.5.14
@@ -393,8 +393,8 @@ importers:
         specifier: ~53.0.10
         version: 53.0.14(@babel/core@7.29.0)(canvas@2.11.2(encoding@0.1.13))(expo@53.0.22(@babel/core@7.29.0)(@expo/metro-runtime@5.0.5(react-native@0.79.5(@babel/core@7.29.0)(@types/react@19.0.14)(react@19.0.0)))(react-native-webview@13.13.5(react-native@0.79.5(@babel/core@7.29.0)(@types/react@19.0.14)(react@19.0.0))(react@19.0.0))(react-native@0.79.5(@babel/core@7.29.0)(@types/react@19.0.14)(react@19.0.0))(react@19.0.0))(jest@29.7.0(@types/node@22.19.15)(ts-node@10.9.2(@types/node@22.19.15)(typescript@5.8.3)))(react-native@0.79.5(@babel/core@7.29.0)(@types/react@19.0.14)(react@19.0.0))(react@19.0.0)
       react-test-renderer:
-        specifier: ~19.0.0
-        version: 19.0.4(react@19.0.0)
+        specifier: 19.0.0
+        version: 19.0.0(react@19.0.0)
       typescript:
         specifier: ~5.8.3
         version: 5.8.3
@@ -5960,11 +5960,6 @@ packages:
     peerDependencies:
       react: ^19.0.0
 
-  react-test-renderer@19.0.4:
-    resolution: {integrity: sha512-ts6Vyc7twtkXNPJz5mhV81Hamo3d87KECrkLTChUNggWxAY2Ccf79m610Jy3RJEifWuQIgkO++y8c2gaNyM/oA==}
-    peerDependencies:
-      react: ^19.0.4
-
   react@19.0.0:
     resolution: {integrity: sha512-V8AVnmPIICiWpGfm6GLzCR/W5FXLchHop40W4nXBmdlEceh16rCN8O8LNWm5bh5XUX91fh7KpA+W0TgMKmgTpQ==}
     engines: {node: '>=0.10.0'}
@@ -9045,14 +9040,14 @@ snapshots:
       '@tanstack/query-core': 5.90.20
       react: 19.0.0
 
-  '@testing-library/react-native@13.3.3(jest@29.7.0(@types/node@22.19.15)(ts-node@10.9.2(@types/node@22.19.15)(typescript@5.8.3)))(react-native@0.79.5(@babel/core@7.29.0)(@types/react@19.0.14)(react@19.0.0))(react-test-renderer@19.0.4(react@19.0.0))(react@19.0.0)':
+  '@testing-library/react-native@13.3.3(jest@29.7.0(@types/node@22.19.15)(ts-node@10.9.2(@types/node@22.19.15)(typescript@5.8.3)))(react-native@0.79.5(@babel/core@7.29.0)(@types/react@19.0.14)(react@19.0.0))(react-test-renderer@19.0.0(react@19.0.0))(react@19.0.0)':
     dependencies:
       jest-matcher-utils: 30.3.0
       picocolors: 1.1.1
       pretty-format: 30.3.0
       react: 19.0.0
       react-native: 0.79.5(@babel/core@7.29.0)(@types/react@19.0.14)(react@19.0.0)
-      react-test-renderer: 19.0.4(react@19.0.0)
+      react-test-renderer: 19.0.0(react@19.0.0)
       redent: 3.0.0
     optionalDependencies:
       jest: 29.7.0(@types/node@22.19.15)(ts-node@10.9.2(@types/node@22.19.15)(typescript@5.8.3))
@@ -14250,12 +14245,6 @@ snapshots:
   react-refresh@0.14.2: {}
 
   react-test-renderer@19.0.0(react@19.0.0):
-    dependencies:
-      react: 19.0.0
-      react-is: 19.2.4
-      scheduler: 0.25.0
-
-  react-test-renderer@19.0.4(react@19.0.0):
     dependencies:
       react: 19.0.0
       react-is: 19.2.4

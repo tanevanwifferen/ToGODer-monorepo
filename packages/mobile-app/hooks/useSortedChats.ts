@@ -20,23 +20,26 @@ export const useSortedChats = () => {
   const [sortedChatRequests, setSortedChatRequests] = useState<Chat[]>([]);
   const [sortedChats, setSortedChats] = useState<Chat[]>([]);
 
-  // Filter chats by selected project
+  // Filter chats by selected project, and always exclude incognito chats
+  // (they never appear in the chat history list)
   const filteredChatRequests = useMemo(() => {
+    const base = chatRequests.filter(chat => !chat.incognito);
     if (!currentProjectId) {
-      // No project selected - show all chat requests
-      return chatRequests;
+      // No project selected - show all chat requests (non-incognito)
+      return base;
     }
     // Filter to only show chat requests belonging to the selected project
-    return chatRequests.filter((chat) => chat.projectId === currentProjectId);
+    return base.filter((chat) => chat.projectId === currentProjectId);
   }, [chatRequests, currentProjectId]);
 
   const filteredRegularChats = useMemo(() => {
+    const base = regularChats.filter(chat => !chat.incognito);
     if (!currentProjectId) {
-      // No project selected - show all chats
-      return regularChats;
+      // No project selected - show all chats (non-incognito)
+      return base;
     }
     // Filter to only show chats belonging to the selected project
-    return regularChats.filter((chat) => chat.projectId === currentProjectId);
+    return base.filter((chat) => chat.projectId === currentProjectId);
   }, [regularChats, currentProjectId]);
 
   function get_last_updated(chat: Chat) {
