@@ -34,7 +34,7 @@ export enum AIProvider {
   Gemini31Pro = "google/gemini-3.1-pro-preview",
   Qwen3Coder = "moonshotai/kimi-k2.5",
   Qwen36Plus = "qwen/qwen3.6-plus",
-  Ministral = "mistralai/ministral-8b-2512",
+  Ling26Flash = "inclusionai/ling-2.6-flash",
 }
 
 export function getAIWrapper(model: AIProvider): AIWrapper {
@@ -64,7 +64,7 @@ export function getAIWrapper(model: AIProvider): AIWrapper {
     case AIProvider.Gemini31Pro:
     case AIProvider.Qwen3Coder:
     case AIProvider.Qwen36Plus:
-    case AIProvider.Ministral:
+    case AIProvider.Ling26Flash:
       return new OpenRouterWrapper(model);
     default:
       return new OpenRouterWrapper(AIProvider.LLama3370b);
@@ -192,10 +192,10 @@ export function getTokenCost(model: AIProvider): AICost {
         output_cost_per_million: new Decimal("6"),
       };
       break;
-    case AIProvider.Ministral:
+    case AIProvider.Ling26Flash:
       torReturn = {
-        input_cost_per_million: new Decimal("0.15"),
-        output_cost_per_million: new Decimal("0.15"),
+        input_cost_per_million: new Decimal("0.01"),
+        output_cost_per_million: new Decimal("0.03"),
       };
       break;
     default:
@@ -259,8 +259,8 @@ export function GetModelName(provider: AIProvider): string {
       return "Qwen 3 Coder";
     case AIProvider.Qwen36Plus:
       return "Qwen 3.6 Plus";
-    case AIProvider.Ministral:
-      return "Ministral 8K";
+    case AIProvider.Ling26Flash:
+      return "Ling 2.6 Flash";
     default:
       throw new Error("Unknown AIProvider");
   }
@@ -273,7 +273,7 @@ export function ListModels(): AIProvider[] {
     return modelCache;
   }
   modelCache = [
-    AIProvider.Ministral,
+    AIProvider.Ling26Flash,
     AIProvider.DeepSeekV4Pro,
     AIProvider.DeepSeekV3,
     AIProvider.DeepSeekV32,
@@ -326,7 +326,7 @@ export function ListModels(): AIProvider[] {
         case AIProvider.Grok420:
         case AIProvider.Grok45:
         case AIProvider.Qwen36Plus:
-        case AIProvider.Ministral:
+        case AIProvider.Ling26Flash:
           a = new OpenRouterWrapper(x);
           break;
         default:

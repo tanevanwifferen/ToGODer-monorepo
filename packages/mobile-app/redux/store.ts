@@ -77,7 +77,7 @@ const migrateSettings = (state: any) => {
 
     // Migrate settings from chats to userSettings
     const migratedSettings = {
-      model: chatsState.model || "mistralai/ministral-8b-2512",
+      model: chatsState.model || "inclusionai/ling-2.6-flash",
       communicationStyle: chatsState.communicationStyle ?? 2,
       language: chatsState.language || "",
       assistant_name: chatsState.assistant_name || "ToGODer",
