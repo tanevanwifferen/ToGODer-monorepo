@@ -178,7 +178,7 @@ export function Chat({ chatId, onBack }: ChatProps) {
     setEditingMessageContent("");
   }, []);
 
-  const { speak: ttsSpeak } = useTts();
+  const { speak: ttsSpeak, stop: ttsStop, speaking: ttsSpeaking } = useTts();
 
   const { onLongPress } = useChatActions(
     giftedMessages,
@@ -216,6 +216,8 @@ export function Chat({ chatId, onBack }: ChatProps) {
       sttError={stt.error}
       onMicToggle={stt.toggleRecordSubmit}
       onMicCancel={stt.cancelRecording}
+      ttsSpeaking={ttsSpeaking}
+      onTtsStop={ttsStop}
       onPickPdf={async () => {
         const file = await pickPdfFileWeb();
         if (file) pdf.attachFile(file);
