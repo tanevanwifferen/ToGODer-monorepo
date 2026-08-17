@@ -4,6 +4,10 @@ import { ChatResponse, MessageResponse } from "../model/ChatResponse";
 import type { StreamEvent, ToolStatusEvent } from "../apiClients/ChatApiClient";
 import { MessageService } from "../services/MessageService";
 import { useTts } from "./useTts";
+import {
+  INSUFFICIENT_BALANCE_USER_MESSAGE,
+  isInsufficientBalanceError,
+} from "../utils/insufficientBalance";
 
 /**
  * Human-readable labels for tool activity, shown while the AI is using a tool.
@@ -151,6 +155,9 @@ function useCoreMessageSending(
                 }
                 case "error": {
                   receivedStreamError = true;
+                  if (isInsufficientBalanceError(evt.data)) {
+                    throw new Error(INSUFFICIENT_BALANCE_USER_MESSAGE);
+                  }
                   const errorMsg =
                     typeof evt.data === "string"
                       ? evt.data
@@ -207,7 +214,13 @@ function useCoreMessageSending(
         setIsLoading(false);
         return result;
       } catch (err) {
-        const error = err instanceof Error ? err : new Error("Failed to send message");
+        let error =
+          err instanceof Error ? err : new Error("Failed to send message");
+        // Surface a friendly, actionable message when the user ran out of
+        // credits instead of the generic streaming error.
+        if (isInsufficientBalanceError(err)) {
+          error = new Error(INSUFFICIENT_BALANCE_USER_MESSAGE);
+        }
         setError(error);
         callbacks?.onError?.(error);
         setIsLoading(false);

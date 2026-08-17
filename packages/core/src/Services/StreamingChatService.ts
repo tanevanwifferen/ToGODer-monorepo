@@ -2,7 +2,7 @@ import { ChatRequest } from "../Model/ChatRequest";
 import { User, McpServer } from "@prisma/client";
 import { ChatService } from "./ChatService";
 import { MemoryService, MAX_MEMORY_FETCH_LOOPS } from "./MemoryService";
-import { BillingApi } from "../Api/BillingApi";
+import { BillingApi, INSUFFICIENT_BALANCE_CODE } from "../Api/BillingApi";
 import { ConversationApi, hasPdfArtifact } from "../Api/ConversationApi";
 import {
   AIProvider,
@@ -184,7 +184,7 @@ export type StreamEvent =
   | { type: "signature"; data: { signature: string } }
   | { type: "instructions"; data: InstructionsSnapshotData }
   | { type: "sentiment"; data: SentimentSummary }
-  | { type: "error"; data: { message: string } }
+  | { type: "error"; data: { message: string; code?: string } }
   | { type: "done"; data?: null };
 
 /**
@@ -284,12 +284,10 @@ export class StreamingChatService {
 
     if (totalMessages >= 10 && !isDefaultModel) {
       if (!user) {
-        yield { type: "chunk", data: { delta: paywallMessage } };
-        const signature = this.chatService.generateSignature([
-          ...body.prompts,
-          { content: paywallMessage, role: "assistant" },
-        ]);
-        yield { type: "signature", data: { signature } };
+        yield {
+          type: "error",
+          data: { message: paywallMessage, code: INSUFFICIENT_BALANCE_CODE },
+        };
         yield { type: "done" };
         return;
       }
@@ -303,12 +301,10 @@ export class StreamingChatService {
 
       const balance = await this.billingApi.GetTotalBalance(user.email);
       if (balance.lessThanOrEqualTo(0)) {
-        yield { type: "chunk", data: { delta: paywallMessage } };
-        const signature = this.chatService.generateSignature([
-          ...body.prompts,
-          { content: paywallMessage, role: "assistant" },
-        ]);
-        yield { type: "signature", data: { signature } };
+        yield {
+          type: "error",
+          data: { message: paywallMessage, code: INSUFFICIENT_BALANCE_CODE },
+        };
         yield { type: "done" };
         return;
       }

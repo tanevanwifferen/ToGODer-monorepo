@@ -30,8 +30,14 @@ import {
 import { getConsoleErrors } from "./ConsoleErrorService";
 import { ApiChatMessage } from "../model/ChatRequest";
 import Toast from "react-native-toast-message";
-import { Platform } from "react-native";
+import { Platform, Linking } from "react-native";
 import { BalanceService } from "./BalanceService";
+import {
+  INSUFFICIENT_BALANCE_TOAST_TITLE,
+  INSUFFICIENT_BALANCE_TOAST_MESSAGE,
+  INSUFFICIENT_BALANCE_USER_MESSAGE,
+  isInsufficientBalanceError,
+} from "../utils/insufficientBalance";
 import { getOrCreateKeypair } from "../utils/imageKeypair";
 import StorageService from "./StorageService";
 import { CalendarService } from "./CalendarService";
@@ -152,6 +158,45 @@ export class MessageService {
    */
   private clearCurrentRequest(): void {
     this.currentRequestController = null;
+  }
+
+  /**
+   * When an error is an insufficient-balance signal, show a friendly toast
+   * with a top-up CTA (opening the ko-fi link when available) and refresh the
+   * balance state so the UI reflects the out-of-credit state. Returns true
+   * when it handled an insufficient-balance error.
+   */
+  private handleInsufficientBalanceError(
+    error: unknown,
+    onError?: (error: string) => void,
+  ): boolean {
+    if (!isInsufficientBalanceError(error)) return false;
+
+    onError?.(INSUFFICIENT_BALANCE_USER_MESSAGE);
+
+    Toast.show({
+      type: "error",
+      text1: INSUFFICIENT_BALANCE_TOAST_TITLE,
+      text2: INSUFFICIENT_BALANCE_TOAST_MESSAGE,
+      position: "bottom",
+      visibilityTime: 6000,
+      onPress: () => {
+        const donateOptions =
+          store.getState().globalConfig.donateOptions ?? [];
+        const koFi = donateOptions.find(
+          (o: any) =>
+            typeof o?.address === "string" &&
+            o.address.includes("ko-fi.com"),
+        );
+        if (koFi?.url) {
+          Linking.openURL(koFi.url).catch(() => {});
+        }
+      },
+    });
+
+    // Refresh balance so the header/balance UI reflects the out-of-credit state.
+    BalanceService.getInstance().updateBalanceIfAuthenticated();
+    return true;
   }
 
   public static getInstance(): MessageService {
@@ -905,6 +950,10 @@ export class MessageService {
         return;
       }
 
+      if (this.handleInsufficientBalanceError(error, onError)) {
+        return;
+      }
+
       const errorMessage =
         error instanceof Error ? error.message : "Failed to send message";
       console.error("MessageService.sendMessage error:", error);
@@ -1370,6 +1419,10 @@ export class MessageService {
                 ? evt.data
                 : (evt.data?.message ?? "Streaming error occurred");
 
+            if (this.handleInsufficientBalanceError(evt.data, onError)) {
+              return;
+            }
+
             console.error("Streaming error:", evt.data);
             onError?.(errorMsg);
             Toast.show({
@@ -1506,6 +1559,10 @@ export class MessageService {
       if (isAborted) {
         // Request was cancelled intentionally - don't show error toast
         console.log("MessageService: Request was cancelled");
+        return;
+      }
+
+      if (this.handleInsufficientBalanceError(error, onError)) {
         return;
       }
 
@@ -1711,6 +1768,10 @@ export class MessageService {
         return;
       }
 
+      if (this.handleInsufficientBalanceError(error, onError)) {
+        return;
+      }
+
       const errorMessage =
         error instanceof Error ? error.message : "Failed to send message";
       console.error("MessageService.sendMessageWithoutStreaming error:", error);
@@ -1870,6 +1931,10 @@ export class MessageService {
 
       if (isAborted) {
         console.log("MessageService: regenerateResponse request was cancelled");
+        return;
+      }
+
+      if (this.handleInsufficientBalanceError(error, onError)) {
         return;
       }
 
