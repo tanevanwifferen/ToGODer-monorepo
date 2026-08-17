@@ -1,7 +1,8 @@
-import React, { useState, useCallback } from "react";
+import React, { useState, useCallback, useEffect, useRef } from "react";
 import {
   StyleSheet,
   View,
+  Text,
   FlatList,
   SafeAreaView,
   Platform,
@@ -24,7 +25,19 @@ export function ChatList() {
   const theme = Colors[colorScheme ?? "light"];
   const dispatch = useDispatch();
   const { handleCreateNewChat, handleCreateIncognitoChat, handleDeleteChat, handleSelectChat } = useChatListActions();
-  const { sortedChatRequests, sortedChats, hasRequests, chatsMap, currentProjectId } = useSortedChats();
+  const [searchInput, setSearchInput] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => setDebouncedSearch(searchInput), 200);
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+    };
+  }, [searchInput]);
+
+  const { sortedChatRequests, sortedChats, hasRequests, chatsMap, currentProjectId } = useSortedChats(debouncedSearch);
   const { assignChatToProject, getProjectNameForChat, handleCreateProject } = useChatProjectAssignment();
   const projectsState = useSelector(selectProjects);
 
@@ -94,22 +107,32 @@ export function ChatList() {
           onIncognitoChat={handleCreateIncognitoChat}
           projectName={currentProjectName}
           onClearProjectFilter={handleClearProjectFilter}
+          searchQuery={searchInput}
+          onSearchChange={setSearchInput}
         />
-        <FlatList
-          data={[...sortedChatRequests, ...sortedChats]}
-          renderItem={({ item, index }) =>
-            renderChatItem({
-              item,
-              isRequest: index < sortedChatRequests.length,
-            })
-          }
-          keyExtractor={(item) => item.id}
-          contentContainerStyle={styles.listContent}
-          removeClippedSubviews={true}
-          ListHeaderComponent={() =>
-            hasRequests ? <ChatSectionHeader title="Requests" /> : null
-          }
-        />
+        {debouncedSearch && sortedChatRequests.length === 0 && sortedChats.length === 0 ? (
+          <View style={styles.emptyContainer}>
+            <Text style={[styles.emptyText, { color: theme.icon }]}>
+              No chats match “{debouncedSearch}”
+            </Text>
+          </View>
+        ) : (
+          <FlatList
+            data={[...sortedChatRequests, ...sortedChats]}
+            renderItem={({ item, index }) =>
+              renderChatItem({
+                item,
+                isRequest: index < sortedChatRequests.length,
+              })
+            }
+            keyExtractor={(item) => item.id}
+            contentContainerStyle={styles.listContent}
+            removeClippedSubviews={true}
+            ListHeaderComponent={() =>
+              hasRequests ? <ChatSectionHeader title="Requests" /> : null
+            }
+          />
+        )}
       </View>
       <ProjectAssignmentModal
         visible={assignmentModalVisible}
@@ -138,5 +161,15 @@ const styles = StyleSheet.create({
   },
   listContent: {
     padding: 16,
+  },
+  emptyContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 32,
+  },
+  emptyText: {
+    fontSize: 15,
+    textAlign: "center",
   },
 });

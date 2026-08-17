@@ -10,7 +10,18 @@ import { selectProjects } from "../redux/slices/projectsSlice";
 
 const selectChatsMap = (state: { chats: ChatsState }) => state.chats.chats;
 
-export const useSortedChats = () => {
+/** Case-insensitive search over chat title + user/assistant message content (skip deleted). */
+const matchesSearch = (chat: Chat, query: string): boolean => {
+  if (chat.title?.toLowerCase().includes(query)) return true;
+  return chat.messages.some(
+    (msg) =>
+      !msg.deleted &&
+      (msg.role === "user" || msg.role === "assistant") &&
+      msg.content?.toLowerCase().includes(query)
+  );
+};
+
+export const useSortedChats = (searchQuery?: string) => {
   const chatRequests = useSelector(selectChatRequests);
   const regularChats = useSelector(selectChats);
   const chatsMap = useSelector(selectChatsMap);
@@ -20,27 +31,31 @@ export const useSortedChats = () => {
   const [sortedChatRequests, setSortedChatRequests] = useState<Chat[]>([]);
   const [sortedChats, setSortedChats] = useState<Chat[]>([]);
 
+  const query = (searchQuery ?? "").toLowerCase().trim();
+
   // Filter chats by selected project, and always exclude incognito chats
   // (they never appear in the chat history list)
   const filteredChatRequests = useMemo(() => {
-    const base = chatRequests.filter(chat => !chat.incognito);
-    if (!currentProjectId) {
-      // No project selected - show all chat requests (non-incognito)
-      return base;
+    let base = chatRequests.filter(chat => !chat.incognito);
+    if (currentProjectId) {
+      base = base.filter((chat) => chat.projectId === currentProjectId);
     }
-    // Filter to only show chat requests belonging to the selected project
-    return base.filter((chat) => chat.projectId === currentProjectId);
-  }, [chatRequests, currentProjectId]);
+    if (query) {
+      base = base.filter((chat) => matchesSearch(chat, query));
+    }
+    return base;
+  }, [chatRequests, currentProjectId, query]);
 
   const filteredRegularChats = useMemo(() => {
-    const base = regularChats.filter(chat => !chat.incognito);
-    if (!currentProjectId) {
-      // No project selected - show all chats (non-incognito)
-      return base;
+    let base = regularChats.filter(chat => !chat.incognito);
+    if (currentProjectId) {
+      base = base.filter((chat) => chat.projectId === currentProjectId);
     }
-    // Filter to only show chats belonging to the selected project
-    return base.filter((chat) => chat.projectId === currentProjectId);
-  }, [regularChats, currentProjectId]);
+    if (query) {
+      base = base.filter((chat) => matchesSearch(chat, query));
+    }
+    return base;
+  }, [regularChats, currentProjectId, query]);
 
   function get_last_updated(chat: Chat) {
     return Math.max(
