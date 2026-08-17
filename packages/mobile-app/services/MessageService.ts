@@ -188,8 +188,11 @@ export class MessageService {
             typeof o?.address === "string" &&
             o.address.includes("ko-fi.com"),
         );
-        if (koFi?.url) {
-          Linking.openURL(koFi.url).catch(() => {});
+        // ko-fi options may carry the URL in `url` or `address`; prefer `url`
+        // but fall back to `address` so the CTA reliably opens the page.
+        const donateUrl = koFi?.url ?? koFi?.address;
+        if (donateUrl) {
+          Linking.openURL(donateUrl).catch(() => {});
         }
       },
     });
