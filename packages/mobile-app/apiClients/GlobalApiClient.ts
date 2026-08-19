@@ -10,6 +10,8 @@ interface ReferralCodeResponse {
   referralCode: string;
   referralLink: string;
   creditsBalance: number;
+  totalSignups: number;
+  totalReferralRewards: number;
 }
 
 interface CreditTransaction {
