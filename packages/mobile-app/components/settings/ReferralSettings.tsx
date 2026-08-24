@@ -18,7 +18,8 @@ const ReferralSettings = () => {
   const isAuthenticated = useSelector(selectIsAuthenticated);
   const [referralCode, setReferralCode] = useState<string | null>(null);
   const [referralLink, setReferralLink] = useState<string | null>(null);
-  const [creditsBalance, setCreditsBalance] = useState<number>(0);
+  const [totalSignups, setTotalSignups] = useState<number>(0);
+  const [totalReferralRewards, setTotalReferralRewards] = useState<number>(0);
   const [loading, setLoading] = useState(false);
   const [copied, setCopied] = useState(false);
 
@@ -31,7 +32,8 @@ const ReferralSettings = () => {
         .then((data) => {
           setReferralCode(data.referralCode);
           setReferralLink(data.referralLink);
-          setCreditsBalance(Number(data.creditsBalance));
+          setTotalSignups(Number(data.totalSignups));
+          setTotalReferralRewards(Number(data.totalReferralRewards));
         })
         .catch(() => {})
         .finally(() => setLoading(false));
@@ -65,13 +67,23 @@ const ReferralSettings = () => {
     <View style={[styles.container, { backgroundColor: theme.background }]}>
       <Text style={[styles.label, { color: theme.text }]}>Earn Credits</Text>
 
-      <View style={[styles.balanceRow, { borderColor: theme.icon }]}>
-        <Text style={[styles.balanceLabel, { color: theme.text }]}>
-          Referral Credits:
-        </Text>
-        <Text style={[styles.balanceValue, { color: theme.tint }]}>
-          ${creditsBalance.toFixed(2)}
-        </Text>
+      <View style={[styles.statsRow, { borderColor: theme.icon }]}>
+        <View style={styles.stat}>
+          <Text style={[styles.statValue, { color: theme.tint }]}>
+            {totalSignups}
+          </Text>
+          <Text style={[styles.statLabel, { color: theme.icon }]}>
+            Referrals
+          </Text>
+        </View>
+        <View style={styles.stat}>
+          <Text style={[styles.statValue, { color: theme.tint }]}>
+            ${totalReferralRewards.toFixed(2)}
+          </Text>
+          <Text style={[styles.statLabel, { color: theme.icon }]}>
+            Rewards Earned
+          </Text>
+        </View>
       </View>
 
       {referralCode && referralLink ? (
@@ -120,20 +132,24 @@ const styles = StyleSheet.create({
     marginBottom: 10,
     lineHeight: 18,
   },
-  balanceRow: {
+  statsRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
+    justifyContent: 'space-around',
     alignItems: 'center',
     marginBottom: 16,
     paddingBottom: 12,
     borderBottomWidth: 1,
   },
-  balanceLabel: {
-    fontSize: 14,
+  stat: {
+    alignItems: 'center',
   },
-  balanceValue: {
-    fontSize: 16,
-    fontWeight: '600',
+  statValue: {
+    fontSize: 18,
+    fontWeight: '700',
+  },
+  statLabel: {
+    fontSize: 12,
+    marginTop: 2,
   },
   linkContainer: {
     marginTop: 4,

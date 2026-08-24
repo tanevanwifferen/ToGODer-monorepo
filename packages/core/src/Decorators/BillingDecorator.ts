@@ -4,7 +4,7 @@ import {
   ChatCompletionTool,
 } from 'openai/resources/index';
 import { AIWrapper, StreamChunk } from '../LLM/AIWrapper';
-import { BillingApi } from '../Api/BillingApi';
+import { BillingApi, InsufficientBalanceError } from '../Api/BillingApi';
 import { AIProvider, getTokenCost } from '../LLM/Model/AIProvider';
 import { User } from '@prisma/client';
 import { ParsedChatCompletion } from 'openai/resources/chat/completions';
@@ -37,7 +37,7 @@ export class BillingDecorator implements AIWrapper {
 
     let totalBalance = await billingApi.GetTotalBalance(this.user.email);
     if (estimatedCost.greaterThan(totalBalance)) {
-      throw new Error(
+      throw new InsufficientBalanceError(
         `Insufficient balance. Estimated cost: $${estimatedCost.toFixed(
           6
         )}, Your balance: $${totalBalance.toFixed(6)}`
@@ -51,7 +51,7 @@ export class BillingDecorator implements AIWrapper {
     multiplier: number = 1,
     signal?: AbortSignal
   ): Promise<ChatCompletion> {
-    this.assertEnoughBalance([
+    await this.assertEnoughBalance([
       ...userAndAgentPrompts,
       { role: 'system', content: systemPrompt },
     ]);
@@ -93,7 +93,7 @@ export class BillingDecorator implements AIWrapper {
   ): AsyncGenerator<string, void, void> {
     // Stream through deltas while accumulating completion text,
     // in case we need to estimate later (not currently used).
-    this.assertEnoughBalance([
+    await this.assertEnoughBalance([
       ...userAndAgentPrompts,
       { role: 'system', content: systemPrompt },
     ]);
@@ -141,7 +141,7 @@ export class BillingDecorator implements AIWrapper {
     multiplier: number = 1,
     signal?: AbortSignal
   ): AsyncGenerator<StreamChunk, void, void> {
-    this.assertEnoughBalance([
+    await this.assertEnoughBalance([
       ...userAndAgentPrompts,
       { role: 'system', content: systemPrompt },
     ]);
@@ -195,7 +195,7 @@ export class BillingDecorator implements AIWrapper {
     multiplier: number = 1,
     signal?: AbortSignal
   ): Promise<ParsedChatCompletion<any>> {
-    this.assertEnoughBalance([
+    await this.assertEnoughBalance([
       ...userAndAgentPrompts,
       { role: 'system', content: systemPrompt },
     ]);

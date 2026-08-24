@@ -173,6 +173,32 @@ async function creditUserByEmail(email: string, amount: Decimal): Promise<void> 
   });
 }
 
+/**
+ * Aggregate, non-identifying referral stats for a single referrer.
+ * Returns only counts and totals — never the identities or emails of
+ * individual referred users.
+ */
+export async function getReferralSummary(userId: string): Promise<{
+  totalSignups: number;
+  totalReferralRewards: Decimal;
+}> {
+  const db = getDbContext();
+
+  const totalSignups = await db.referral.count({
+    where: { referrerUserId: userId, level: 1 },
+  });
+
+  const rewardAgg = await db.creditTransaction.aggregate({
+    where: { userId, source: 'referral', type: 'credit' },
+    _sum: { amount: true },
+  });
+
+  return {
+    totalSignups,
+    totalReferralRewards: rewardAgg._sum.amount ?? new Decimal(0),
+  };
+}
+
 // ── Admin helpers ─────────────────────────────────────────────────
 
 export interface ReferralTreeNode {

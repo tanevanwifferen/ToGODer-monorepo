@@ -186,8 +186,17 @@ app.get("*", (req, res) => {
 });
 
 // Centralized error handling middleware
-app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
+app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
   console.error("Unhandled error at " + new Date() + ":", err);
+  // Insufficient-balance errors (e.g. thrown by BillingDecorator/BillingApi)
+  // should surface as a parseable 402 so clients can show a top-up CTA.
+  if (err?.code === "INSUFFICIENT_BALANCE" || err?.status === 402) {
+    res.status(402).json({
+      error: err?.message ?? "Insufficient balance",
+      code: "INSUFFICIENT_BALANCE",
+    });
+    return;
+  }
   res.status(500).json({ error: "Internal Server Error" });
 });
 

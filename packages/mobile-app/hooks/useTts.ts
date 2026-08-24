@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Platform } from 'react-native';
 import { useSelector } from 'react-redux';
 import Toast from 'react-native-toast-message';
@@ -62,6 +62,7 @@ let _activeSource: AudioBufferSourceNode | null = null;
  */
 export function useTts() {
   const ttsEnabled = useSelector(selectTtsEnabled);
+  const [speaking, setSpeaking] = useState(false);
   const soundRef = useRef<any>(null);
 
   // ── Stop any in-flight TTS on unmount ─────────────────────────────
@@ -112,8 +113,10 @@ export function useTts() {
         source.connect(ctx.destination);
         source.onended = () => {
           if (_activeSource === source) _activeSource = null;
+          setSpeaking(false);
         };
         _activeSource = source;
+        setSpeaking(true);
         source.start();
       } else {
         // ── Mobile: expo-av ──────────────────────────────────────
@@ -130,15 +133,22 @@ export function useTts() {
             { shouldPlay: true, volume: 1.0 },
           );
           soundRef.current = sound;
+          setSpeaking(true);
+          sound.setOnPlaybackStatusUpdate((status: any) => {
+            if (status.didJustFinish) {
+              setSpeaking(false);
+            }
+          });
         } catch (e) {
           console.warn('[tts] expo-av unavailable, cannot play audio:', e);
         }
       }
     } catch (err) {
       console.warn('[tts] Server TTS failed:', err);
+      setSpeaking(false);
       throw err; // re-throw so speakWeb can fall back to SpeechSynthesis
     }
-  }, []);
+  }, [setSpeaking]);
 
   // ── Primary entry point ───────────────────────────────────────────
   const speak = useCallback(
@@ -180,6 +190,8 @@ export function useTts() {
               (v) => v.lang.startsWith('en') && v.localService,
             );
             if (enVoice) utterance.voice = enVoice;
+            utterance.onend = () => setSpeaking(false);
+            setSpeaking(true);
             window.speechSynthesis.speak(utterance);
           } catch {
             console.warn('[tts] SpeechSynthesis also unavailable');
@@ -190,10 +202,12 @@ export function useTts() {
         await speakServer(text).catch(() => {});
       }
     },
-    [ttsEnabled, speakServer],
+    [ttsEnabled, speakServer, setSpeaking],
   );
 
   const stop = useCallback(async () => {
+    setSpeaking(false);
+
     // Web: stop AudioContext source
     _activeSource?.stop();
     _activeSource = null;
@@ -214,7 +228,7 @@ export function useTts() {
       } catch {}
       soundRef.current = null;
     }
-  }, []);
+  }, [setSpeaking]);
 
-  return { speak, stop, enabled: ttsEnabled };
+  return { speak, stop, speaking, enabled: ttsEnabled };
 }

@@ -5,6 +5,24 @@ import { randomUUID } from 'node:crypto';
 
 export const donationTag = 'donation';
 
+/**
+ * Stable, machine-parseable code attached to insufficient-balance errors so
+ * the client can render a friendly "out of credits" toast instead of a
+ * generic streaming error. Also carries the HTTP status (402) so controllers
+ * and error handlers can map it consistently.
+ */
+export const INSUFFICIENT_BALANCE_CODE = 'INSUFFICIENT_BALANCE';
+
+export class InsufficientBalanceError extends Error {
+  public readonly code = INSUFFICIENT_BALANCE_CODE;
+  public readonly status = 402;
+
+  constructor(message = 'Insufficient balance') {
+    super(message);
+    this.name = 'InsufficientBalanceError';
+  }
+}
+
 export class BillingApi {
   public async GetTotalBalance(user_email?: string): Promise<Decimal> {
     let balance1 = new Decimal(0);
@@ -78,7 +96,7 @@ export class BillingApi {
     }
 
     if (amount.greaterThan(userBalance.add(globalBalance))) {
-      throw new Error('Insufficient balance');
+      throw new InsufficientBalanceError('Insufficient balance');
     }
 
     if (amount.greaterThan(userBalance)) {

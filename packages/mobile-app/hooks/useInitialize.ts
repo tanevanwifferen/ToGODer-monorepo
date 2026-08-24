@@ -23,7 +23,7 @@ export function useInitialize() {
 
       // Only migrate authenticated users from the old (guest) default to
       // DeepSeek V4 Pro. Non-authenticated users keep the guest default
-      // (Ministral, the first model returned by the server).
+      // (DeepSeek V4 Flash, the first model returned by the server).
       if (
         isAuthenticated &&
         oldDefaultModel &&

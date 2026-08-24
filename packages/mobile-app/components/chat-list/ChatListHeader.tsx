@@ -1,10 +1,13 @@
-import { StyleSheet, View, Text, TouchableOpacity, useColorScheme, Platform } from "react-native";
+import { StyleSheet, View, Text, TextInput, TouchableOpacity, useColorScheme, Platform } from "react-native";
 import { Colors } from "../../constants/Colors";
 
 interface ChatListHeaderProps {
   onNewChat: () => void;
+  onIncognitoChat: () => void;
   projectName?: string | null;
   onClearProjectFilter?: () => void;
+  searchQuery: string;
+  onSearchChange: (text: string) => void;
 }
 
 const getHeaderColors = (colorScheme: "light" | "dark") => ({
@@ -13,7 +16,7 @@ const getHeaderColors = (colorScheme: "light" | "dark") => ({
   badgeBorder: colorScheme === "dark" ? "#333333" : "#E5E7EB",
 });
 
-export function ChatListHeader({ onNewChat, projectName, onClearProjectFilter }: ChatListHeaderProps) {
+export function ChatListHeader({ onNewChat, onIncognitoChat, projectName, onClearProjectFilter, searchQuery, onSearchChange }: ChatListHeaderProps) {
   const colorScheme = useColorScheme() ?? "light";
   const theme = Colors[colorScheme];
   const headerColors = getHeaderColors(colorScheme);
@@ -25,32 +28,61 @@ export function ChatListHeader({ onNewChat, projectName, onClearProjectFilter }:
         { borderBottomColor: headerColors.borderColor },
       ]}
     >
-      <View style={styles.titleContainer}>
-        <Text style={[styles.headerTitle, { color: theme.text }]}>Chats</Text>
-        {projectName && (
+      <View style={styles.topRow}>
+        <View style={styles.titleContainer}>
+          <Text style={[styles.headerTitle, { color: theme.text }]}>Chats</Text>
+          {projectName && (
+            <TouchableOpacity
+              style={[
+                styles.projectBadge,
+                {
+                  backgroundColor: headerColors.badgeBackground,
+                  borderColor: headerColors.badgeBorder,
+                },
+              ]}
+              onPress={onClearProjectFilter}
+            >
+              <Text style={[styles.projectBadgeText, { color: theme.tint }]}>
+                {projectName}
+              </Text>
+              <Text style={[styles.clearIcon, { color: theme.icon }]}>×</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+        <View style={styles.buttonRow}>
           <TouchableOpacity
-            style={[
-              styles.projectBadge,
-              {
-                backgroundColor: headerColors.badgeBackground,
-                borderColor: headerColors.badgeBorder,
-              },
-            ]}
-            onPress={onClearProjectFilter}
+            style={[styles.newChatButton, { backgroundColor: theme.tint }]}
+            onPress={onNewChat}
           >
-            <Text style={[styles.projectBadgeText, { color: theme.tint }]}>
-              {projectName}
-            </Text>
-            <Text style={[styles.clearIcon, { color: theme.icon }]}>×</Text>
+            <Text style={styles.newChatButtonText}>+ New Chat</Text>
           </TouchableOpacity>
-        )}
+          <TouchableOpacity
+            style={[styles.incognitoButton, { borderColor: theme.tint }]}
+            onPress={onIncognitoChat}
+          >
+            <Text style={[styles.incognitoButtonText, { color: theme.tint }]}>🕶️ Incognito</Text>
+          </TouchableOpacity>
+        </View>
       </View>
-      <TouchableOpacity
-        style={[styles.newChatButton, { backgroundColor: theme.tint }]}
-        onPress={onNewChat}
-      >
-        <Text style={styles.newChatButtonText}>+ New Chat</Text>
-      </TouchableOpacity>
+      <View style={styles.searchRow}>
+        <TextInput
+          style={[
+            styles.searchInput,
+            {
+              color: theme.text,
+              backgroundColor: headerColors.badgeBackground,
+              borderColor: headerColors.badgeBorder,
+            },
+          ]}
+          placeholder="Search chats…"
+          placeholderTextColor={theme.icon}
+          value={searchQuery}
+          onChangeText={onSearchChange}
+          autoCorrect={false}
+          autoCapitalize="none"
+          clearButtonMode="while-editing"
+        />
+      </View>
     </View>
   );
 }
@@ -60,9 +92,21 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 14,
     borderBottomWidth: 1,
+  },
+  topRow: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
+  },
+  searchRow: {
+    marginTop: 10,
+  },
+  searchInput: {
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    borderRadius: 8,
+    borderWidth: 1,
+    fontSize: 14,
   },
   titleContainer: {
     flexDirection: "row",
@@ -107,6 +151,28 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: "600",
     color: "#FFFFFF",
+    letterSpacing: 0.1,
+  },
+  buttonRow: {
+    flexDirection: "row",
+    gap: 8,
+    alignItems: "center",
+  },
+  incognitoButton: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 8,
+    borderWidth: 1.5,
+    ...Platform.select({
+      web: {
+        cursor: "pointer",
+        transition: "opacity 0.15s ease",
+      } as any,
+    }),
+  },
+  incognitoButtonText: {
+    fontSize: 13,
+    fontWeight: "600",
     letterSpacing: 0.1,
   },
 });

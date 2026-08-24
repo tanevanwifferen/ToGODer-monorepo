@@ -24,7 +24,7 @@ import {
   MAX_MEMORY_FETCH_LOOPS,
 } from "../Services/MemoryService";
 import { SystemPromptGenerationService } from "../Services/SystemPromptGenerationService";
-import { BillingApi } from "../Api/BillingApi";
+import { BillingApi, INSUFFICIENT_BALANCE_CODE } from "../Api/BillingApi";
 import { SseStream } from "./Utils/Sse";
 import { StreamingChatService } from "../Services/StreamingChatService";
 import { SentimentService } from "../Services/SentimentService";
@@ -103,14 +103,9 @@ const chatHandler = async (req: Request, res: Response, next: NextFunction) => {
       "Insufficient balance. Please donate through KoFi with this email address to continue using the service.";
 
     const respondWithPaywall = () => {
-      const signature = chatService.generateSignature([
-        ...body.prompts,
-        { content: paywallMessage, role: "assistant" },
-      ]);
-      res.json({
-        signature,
-        content: paywallMessage,
-        updateDate: null,
+      res.status(402).json({
+        error: paywallMessage,
+        code: INSUFFICIENT_BALANCE_CODE,
       });
     };
 
@@ -372,18 +367,15 @@ export function GetChatRouter(messageLimiter: RateLimitRequestHandler): Router {
         }
 
         try {
-          if (!res.headersSent) {
-            // If headers haven't been sent yet, we can still use SSE
-            sse.event("error", { message: error?.message ?? "Unknown error" });
-            sse.event("done", null);
-            sse.done();
-          } else {
-            // Headers already sent, just log the error
-            console.error(
-              "Error during SSE streaming (headers already sent):",
-              error,
-            );
-          }
+          // SseStream flushes headers immediately, so the response is already
+          // streaming. We can always write an error event (with a machine-
+          // readable code when present) followed by done, even mid-stream.
+          sse.event("error", {
+            message: error?.message ?? "Unknown error",
+            code: error?.code,
+          });
+          sse.event("done", null);
+          sse.done();
         } catch (sseError) {
           // If SSE operations fail, just log
           console.error("Failed to send error via SSE:", sseError);

@@ -43,6 +43,7 @@ export interface ChatSettings {
   sttEnabled: boolean | undefined;
   customSystemPrompt?: string;
   persona?: string;
+  incognito?: boolean;
 }
 
 export interface ArtifactIndexItem {

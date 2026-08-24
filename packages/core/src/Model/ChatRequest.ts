@@ -79,6 +79,11 @@ export interface ChatRequest {
    */
   sentimentContext?: string;
   /**
+   * When true, the conversation is ephemeral: not saved to chat history,
+   * not persisted to memory, and leaves no trace after the session ends.
+   */
+  incognito?: boolean;
+  /**
    * Server-side only: pending client-side memory operations queued by
    * conscious memory tools (write_memory, delete_memory). Drained by
    * StreamingChatService after each backend tool execution.

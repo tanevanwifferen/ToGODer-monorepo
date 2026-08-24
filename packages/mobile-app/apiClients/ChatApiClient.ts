@@ -416,6 +416,7 @@ export class ChatApiClient {
     pdfName?: string | undefined,
     pdfKey?: string | undefined,
     imagePublicKey?: string | undefined,
+    incognito?: boolean,
     signal?: AbortSignal,
   ): AsyncGenerator<StreamEvent> {
     const baseUrl = getApiUrl();
@@ -460,6 +461,7 @@ export class ChatApiClient {
       pdfName,
       pdfKey,
       imagePublicKey,
+      incognito,
     };
 
     // On React Native mobile, fetch() does not support ReadableStream for
@@ -483,7 +485,16 @@ export class ChatApiClient {
       });
 
       if (!res.ok) {
-        throw new Error(`Stream error: ${res.status} ${res.statusText}`);
+        // Preserve the HTTP status (and a stable code for 402) so callers can
+        // distinguish "insufficient balance" from other stream failures.
+        const streamError = new Error(
+          `Stream error: ${res.status} ${res.statusText}`,
+        ) as Error & { status?: number; code?: string };
+        streamError.status = res.status;
+        if (res.status === 402) {
+          streamError.code = "INSUFFICIENT_BALANCE";
+        }
+        throw streamError;
       }
 
       const bodyAny: any = res.body as any;

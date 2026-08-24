@@ -14,6 +14,7 @@ export interface Chat {
   projectId?: string;
   deleted?: boolean; // Tombstone marker for sync
   deletedAt?: number; // When the chat was deleted
+  incognito?: boolean; // Ephemeral: not synced, not saved to history
   // Server-signed history of the custom instructions used in this chat.
   // A new entry is appended only when the instructions actually change.
   instructionHistory?: SignedInstructionSnapshot[];

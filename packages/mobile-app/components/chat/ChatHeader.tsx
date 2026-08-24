@@ -119,7 +119,12 @@ export function ChatHeader({ title = 'Chat', onBack, messages }: ChatHeaderProps
           <Text style={[styles.backButtonText, { color: theme.text }]}>← Back</Text>
         </TouchableOpacity>
         <View style={styles.titleContainer}>
-          <Text style={[styles.headerTitle, { color: theme.text }]} numberOfLines={1}>{title}</Text>
+          <View style={styles.titleRow}>
+            <Text style={[styles.headerTitle, { color: theme.text }]} numberOfLines={1}>{title}</Text>
+            {currentChat?.incognito && (
+              <Text style={[styles.incognitoBadge, { color: theme.tint }]}>🕶️ Incognito</Text>
+            )}
+          </View>
         </View>
         <MoodChip
           chatId={currentChat?.id ?? ''}
@@ -199,6 +204,15 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginHorizontal: 10,
+  },
+  titleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  incognitoBadge: {
+    fontSize: 12,
+    fontWeight: '600',
   },
   headerTitle: {
     fontSize: 18,

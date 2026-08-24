@@ -49,6 +49,9 @@ interface CustomInputToolbarProps extends InputToolbarProps<IMessage> {
   sttError?: string | null;
   onMicToggle?: () => void;
   onMicCancel?: () => void;
+  /** TTS stop-speaking button */
+  ttsSpeaking?: boolean;
+  onTtsStop?: () => void;
 }
 
 export function CustomInputToolbar({
@@ -73,6 +76,8 @@ export function CustomInputToolbar({
   sttError,
   onMicToggle,
   onMicCancel,
+  ttsSpeaking,
+  onTtsStop,
   ...toolbarProps
 }: CustomInputToolbarProps) {
   const colorScheme = useColorScheme();
@@ -158,40 +163,52 @@ export function CustomInputToolbar({
     return (
       <View style={styles.actionsRow}>
         {sttEnabled && onMicToggle && (
-          <View style={styles.micRow}>
-            {isRecording && onMicCancel && (
+          <View style={styles.micColumn}>
+            {ttsSpeaking && onTtsStop && (
               <TouchableOpacity
-                onPress={onMicCancel}
-                style={styles.cancelButton}
-                accessibilityLabel="Cancel recording"
+                onPress={onTtsStop}
+                style={styles.ttsStopButton}
+                accessibilityLabel="Stop speaking"
                 accessibilityRole="button"
               >
-                <Ionicons name="close-circle" size={24} color="#ef4444" />
+                <Ionicons name="stop-circle" size={24} color="#ef4444" />
               </TouchableOpacity>
             )}
-            <TouchableOpacity
-              onPress={isProcessing ? undefined : onMicToggle}
-              style={[
-                styles.micButton,
-                isRecording && styles.micButtonActive,
-                isProcessing && styles.micButtonProcessing,
-              ]}
-              disabled={isProcessing}
-              accessibilityLabel={
-                isProcessing
-                  ? 'Transcribing audio…'
-                  : isRecording
-                    ? 'Tap to stop recording and submit'
-                    : 'Tap to start recording'
-              }
-              accessibilityRole="button"
-            >
-              <Ionicons
-                name={isProcessing ? 'hourglass-outline' : isRecording ? 'mic' : 'mic-outline'}
-                size={24}
-                color={isProcessing ? '#f59e0b' : isRecording ? '#ef4444' : theme.tint}
-              />
-            </TouchableOpacity>
+            <View style={styles.micRow}>
+              {isRecording && onMicCancel && (
+                <TouchableOpacity
+                  onPress={onMicCancel}
+                  style={styles.cancelButton}
+                  accessibilityLabel="Cancel recording"
+                  accessibilityRole="button"
+                >
+                  <Ionicons name="close-circle" size={24} color="#ef4444" />
+                </TouchableOpacity>
+              )}
+              <TouchableOpacity
+                onPress={isProcessing ? undefined : onMicToggle}
+                style={[
+                  styles.micButton,
+                  isRecording && styles.micButtonActive,
+                  isProcessing && styles.micButtonProcessing,
+                ]}
+                disabled={isProcessing}
+                accessibilityLabel={
+                  isProcessing
+                    ? 'Transcribing audio…'
+                    : isRecording
+                      ? 'Tap to stop recording and submit'
+                      : 'Tap to start recording'
+                }
+                accessibilityRole="button"
+              >
+                <Ionicons
+                  name={isProcessing ? 'hourglass-outline' : isRecording ? 'mic' : 'mic-outline'}
+                  size={24}
+                  color={isProcessing ? '#f59e0b' : isRecording ? '#ef4444' : theme.tint}
+                />
+              </TouchableOpacity>
+            </View>
           </View>
         )}
         {modelSupportsPdfs && (
@@ -389,6 +406,21 @@ const styles = StyleSheet.create({
   micRow: {
     flexDirection: 'row',
     alignItems: 'center',
+  },
+  micColumn: {
+    flexDirection: 'column',
+    alignItems: 'center',
+  },
+  ttsStopButton: {
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginLeft: 8,
+    marginBottom: 2,
+    paddingHorizontal: 4,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(239,68,68,0.12)',
   },
   cancelButton: {
     justifyContent: 'center',

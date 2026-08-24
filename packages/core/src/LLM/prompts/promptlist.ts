@@ -172,8 +172,11 @@ export const PromptList: Record<string, PromptListItem> = {
   },
   '/experience': {
     prompt: ExperiencePrompt,
-    description: 'Let us lead the conversation.',
-    display: false,
+    description:
+      'A guided introspective conversation in the style of a fortune teller \
+      who explores what truly drives you — your motivations, values, and \
+      the patterns woven into your life story.',
+    display: true,
   },
   '/connection': {
     prompt: ConnectionFacilitatorPrompt,

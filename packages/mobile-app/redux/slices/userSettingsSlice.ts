@@ -42,7 +42,7 @@ export interface UserSettingsState {
 
 const initialState: UserSettingsState = {
   // Conversation defaults
-  model: "mistralai/ministral-8b-2512",
+  model: "deepseek/deepseek-v4-flash",
   communicationStyle: ChatRequestCommunicationStyle.AdaptToConversant,
   language: "",
   assistant_name: "ToGODer",

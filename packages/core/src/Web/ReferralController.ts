@@ -7,6 +7,7 @@ import {
   resolveReferralCode,
   getReferralStats,
   ensureReferralCode,
+  getReferralSummary,
 } from '../Services/ReferralService';
 import { getDbContext } from '../Entity/Database';
 
@@ -61,11 +62,14 @@ export function GetReferralRouter(): Router {
 
       const code = await ensureReferralCode(user.id);
       const hostUrl = process.env.HOST_URL || 'https://togoder.click';
+      const { totalSignups, totalReferralRewards } = await getReferralSummary(user.id);
 
       res.json({
         referralCode: code,
         referralLink: `${hostUrl}/ref/${code}`,
         creditsBalance: user.creditsBalance,
+        totalSignups,
+        totalReferralRewards,
       });
     },
   );

@@ -508,7 +508,10 @@ export class ConversationApi {
       () => this.assistant_name!,
     );
 
-    systemPrompt += "\n\n" + this.formatPersonalData(input);
+    // Skip personal data for incognito sessions — no trace left behind
+    if (!input.incognito) {
+      systemPrompt += "\n\n" + this.formatPersonalData(input);
+    }
     systemPrompt = rootpersona + "\n\n" + systemPrompt;
 
     // ── Session-level prompt modifications ─────────────────────
