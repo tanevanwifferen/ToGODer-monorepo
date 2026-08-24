@@ -88,12 +88,20 @@ const ReferralSettings = () => {
 
       {referralCode && referralLink ? (
         <View style={styles.linkContainer}>
+          <View style={styles.tiers}>
+            <Text style={[styles.sublabel, { color: theme.icon }]}>
+              <Text style={{ fontWeight: '700', color: theme.tint }}>2%</Text>{' '}
+              when a supporter (someone who signs up via your link) tops up and
+              becomes a paid supporter.
+            </Text>
+            <Text style={[styles.sublabel, { color: theme.icon }]}>
+              <Text style={{ fontWeight: '700', color: theme.tint }}>3%</Text>{' '}
+              when a second-level affiliate (someone your supporter refers)
+              tops up.
+            </Text>
+          </View>
           <Text style={[styles.sublabel, { color: theme.icon }]}>
-            Share this link to earn{' '}
-            <Text style={{ fontWeight: '700', color: theme.tint }}>
-              2% commission
-            </Text>{' '}
-            on every supporter signup:
+            Share your link to start earning:
           </Text>
           <View style={[styles.linkBox, { borderColor: theme.icon, backgroundColor: colorScheme === 'dark' ? 'rgba(255,255,255,0.05)' : '#f8f9fa' }]}>
             <Text style={[styles.linkText, { color: theme.text }]} numberOfLines={1} selectable>
@@ -150,6 +158,9 @@ const styles = StyleSheet.create({
   statLabel: {
     fontSize: 12,
     marginTop: 2,
+  },
+  tiers: {
+    marginBottom: 12,
   },
   linkContainer: {
     marginTop: 4,
