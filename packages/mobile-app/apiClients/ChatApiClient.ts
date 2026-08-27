@@ -1039,4 +1039,18 @@ export class ChatApiClient {
     }
     return response as SystemPromptResponse;
   }
+
+  /**
+   * Register the Expo Push Token with the backend for this device.
+   */
+  static async registerPushToken(token: string, platform: string): Promise<void> {
+    await ApiClient.post("/push/register", { token, platform });
+  }
+
+  /**
+   * Unregister the Expo Push Token from the backend.
+   */
+  static async unregisterPushToken(token: string): Promise<void> {
+    await ApiClient.post("/push/unregister", { token });
+  }
 }

@@ -23,6 +23,8 @@ model User {
   referralsMade     Referral[]          @relation("ReferralReferrer")
   referralsReceived Referral[]          @relation("ReferralReferred")
   creditTransactions CreditTransaction[]
+  pushTokens        PushToken[]
+  scheduledWakeups  ScheduledWakeup[]
 }
 
 model UserDataSync {
@@ -184,6 +186,37 @@ model CreditTransaction {
 
   @@index([userId])
   @@index([createdAt])
+}
+
+// table for push notification tokens (Expo Push Token per user-device)
+model PushToken {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  token     String   @unique
+  platform  String   @default("ios") // "ios" | "android" | "web"
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
+}
+
+// table for scheduled assistant wake-ups (cron-triggered push notifications)
+model ScheduledWakeup {
+  id          String    @id @default(uuid())
+  userId      String
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  triggerAt   DateTime  // when to fire the wake-up
+  reason      String    // why the assistant scheduled this (set by the LLM)
+  fired       Boolean   @default(false)
+  firedAt     DateTime?
+  cancelled   Boolean   @default(false)
+  resultJson  String?   // JSON: { shouldPing, message, reasoning }
+  createdAt   DateTime  @default(now())
+
+  @@index([userId])
+  @@index([triggerAt])
+  @@index([fired])
 }
 
 generator client {

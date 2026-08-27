@@ -38,7 +38,10 @@ import { registerArxivTools } from "./Tools/ArxivTool";
 import { registerMemoryTools } from "./Tools/MemoryTool";
 import { registerMcpJobTool } from "./Tools/McpJobTool";
 import { registerSystemPromptTool } from "./Tools/SystemPromptTool";
+import { registerScheduleWakeupTool } from "./Tools/ScheduleWakeupTool";
 import { registerImageGenerateTool } from "./Tools/ImageGenerateTool";
+import { GetPushRouter } from "./Web/PushController";
+import { getWakeupService } from "./Services/WakeupService";
 
 const app = express();
 const port = process.env.PORT || 3000;
@@ -111,6 +114,7 @@ const adminRouter = GetAdminRouter();
 const ttsRouter = GetTtsRouter(messageLimiter);
 const sttRouter = GetSttRouter(messageLimiter);
 const referralRouter = GetReferralRouter();
+const pushRouter = GetPushRouter(messageLimiter);
 
 app.use(chatRouter);
 app.use(authRouter);
@@ -127,6 +131,7 @@ app.use(adminRouter);
 app.use(ttsRouter);
 app.use(sttRouter);
 app.use(referralRouter);
+app.use(pushRouter);
 
 const donateOptions: { address: string }[] = JSON.parse(
   process.env.DONATE_OPTIONS || "[]",
@@ -222,4 +227,8 @@ registerArxivTools();
 registerMemoryTools();
 registerMcpJobTool();
 registerSystemPromptTool();
+registerScheduleWakeupTool();
 registerImageGenerateTool();
+
+// Start the wake-up cron scheduler for push notifications
+getWakeupService().start();

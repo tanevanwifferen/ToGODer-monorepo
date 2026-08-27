@@ -89,6 +89,12 @@ export interface ChatRequest {
    * StreamingChatService after each backend tool execution.
    */
   _pendingMemoryOps?: PendingMemoryOp[];
+  /**
+   * Server-side only: pending wake-up intents queued by the
+   * schedule_wakeup tool. Drained by StreamingChatService after each
+   * backend tool execution and persisted to the database.
+   */
+  _pendingWakeup?: Array<{ triggerAt: Date; reason: string }>;
 }
 
 export interface ExperienceRequest {

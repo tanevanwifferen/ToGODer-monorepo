@@ -12,6 +12,7 @@ import {
 import { StreamChunk } from "../LLM/AIWrapper";
 import { ToolRegistry } from "../Tools/ToolRegistry";
 import { drainMemoryOps } from "../Tools/MemoryTool";
+import { drainPendingWakeups } from "../Tools/ScheduleWakeupTool";
 import { getMcpClientManager } from "../Tools/McpClientManager";
 import { getDbContext } from "../Entity/Database";
 import { serverLog } from "./ServerLogService";
@@ -659,6 +660,29 @@ export class StreamingChatService {
               type: "memory_delete",
               data: { key: op.key },
             };
+          }
+        }
+
+        // Drain pending wake-up intents (schedule_wakeup tool)
+        for (const w of drainPendingWakeups(body)) {
+          if (user) {
+            try {
+              await getDbContext().scheduledWakeup.create({
+                data: {
+                  userId: user.id,
+                  triggerAt: w.triggerAt,
+                  reason: w.reason,
+                },
+              });
+              serverLog('warn', `Wakeup scheduled for user ${user.id}`, {
+                triggerAt: w.triggerAt.toISOString(),
+                reason: w.reason,
+              });
+            } catch (err) {
+              serverLog('error', `Failed to persist wakeup for user ${user.id}`, {
+                error: (err as Error)?.message ?? String(err),
+              });
+            }
           }
         }
 
