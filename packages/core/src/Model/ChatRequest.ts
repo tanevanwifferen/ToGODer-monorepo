@@ -95,6 +95,17 @@ export interface ChatRequest {
    * backend tool execution and persisted to the database.
    */
   _pendingWakeup?: Array<{ triggerAt: Date; reason: string }>;
+  /**
+   * Server-side only: the authenticated user ID, set by the streaming
+   * service so tool handlers can access server-side persistence.
+   */
+  _userId?: string;
+  /**
+   * Server-side only: the system prompt built for this request.
+   * Set by the streaming service so the read_system_prompt introspection
+   * tool can return it to the AI for self-awareness.
+   */
+  _systemPrompt?: string;
 }
 
 export interface ExperienceRequest {

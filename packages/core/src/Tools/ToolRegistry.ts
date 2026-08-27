@@ -95,4 +95,14 @@ export class ToolRegistry {
   clear(): void {
     this.tools.clear();
   }
+
+  /** Get all registered tool names with descriptions for introspection */
+  getAllToolInfo(request: ChatRequest): Array<{ name: string; description: string }> {
+    return Array.from(this.tools.entries())
+      .filter(([_, t]) => !t.isEnabled || t.isEnabled(request))
+      .map(([name, t]) => ({
+        name,
+        description: t.definition.function.description ?? 'No description',
+      }));
+  }
 }

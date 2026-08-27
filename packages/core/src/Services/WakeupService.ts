@@ -126,27 +126,23 @@ export class WakeupService {
       return;
     }
 
-    // Gather memory context. The memory store is client-side, but we can read
-    // the MemoryService approach: the memories field on a ChatRequest is
-    // populated client-side. For a wakeup, we use the user's data sync record.
+    // Gather memory context from the server-side memory store.
+    // Unlike the encrypted client-side blob, ServerMemory is plaintext
+    // and written by the write_memory tool on every memory mutation.
     let memoryContext = '(no memories available)';
     try {
-      const dataSync = await db.userDataSync.findUnique({
+      const memories = await db.serverMemory.findMany({
         where: { userId },
+        orderBy: { updatedAt: 'desc' },
+        take: 20,
       });
-      if (dataSync?.encryptedData) {
-        // The encrypted blob contains memory data but we can't read it
-        // without the client's key. Instead, we note that memories exist
-        // but are encrypted and inaccessible server-side. The LLM should
-        // lean toward pinging if it can't evaluate — better to ping than
-        // to miss a check-in.
-        memoryContext =
-          '(memories are encrypted client-side; you cannot read them. ' +
-          'If the user scheduled this check-in, they likely want a ping. ' +
-          'Lean toward sending a notification unless the reason suggests otherwise.)';
+      if (memories.length > 0) {
+        memoryContext = memories
+          .map((m) => `${m.key}: ${m.value}`)
+          .join('\n');
       }
-    } catch {
-      // no-op
+    } catch (err) {
+      console.error('[wakeup] Error reading server memories:', err);
     }
 
     // Call LLM to decide

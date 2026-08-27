@@ -10,6 +10,7 @@ const MODIFIABLE_SECTIONS = new Set([
   'preferences',
   'context',
   'tone',
+  'tool_preferences',
 ]);
 
 /**

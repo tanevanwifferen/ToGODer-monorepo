@@ -226,6 +226,12 @@ export class StreamingChatService {
       body.prompts = sanitizeToolMessages(body.prompts);
     }
 
+    // Expose the authenticated user ID to tool handlers for server-side
+    // persistence (e.g. memory writes need the userId for upsert).
+    if (user) {
+      body._userId = user.id;
+    }
+
     // When custom instructions are in play, emit a signed snapshot of them so
     // the client can keep a verifiable, timestamped history of instruction
     // changes alongside the chat (used when sharing conversations/artifacts).
@@ -335,12 +341,29 @@ export class StreamingChatService {
       !body.memoryLoopLimitReached &&
       (body.memoryLoopCount ?? 0) < MAX_MEMORY_FETCH_LOOPS
     ) {
-      const requestForMemory = await this.memoryService.requestMemories(
-        body,
-        user,
+      const existingKeys = new Set(Object.keys(body.memories ?? {}));
+
+      // Always-fetch heuristic: short-term and emotional state memories
+      // are always relevant — fetch them without an LLM call to reduce
+      // the 2-turn latency for the most critical context.
+      const alwaysFetchPrefixes = ['/short-term/', '/emotional/', '/state/'];
+      const alwaysKeys = body.memoryIndex.filter(
+        (k) =>
+          !existingKeys.has(k) &&
+          alwaysFetchPrefixes.some((prefix) => k.startsWith(prefix)),
       );
-      if (requestForMemory.keys.length > 0) {
-        yield { type: "memory_request", data: requestForMemory };
+
+      // LLM-based selection for remaining unfetched keys
+      const llmRequest = await this.memoryService.requestMemories(body, user);
+      const llmKeys = (llmRequest.keys ?? []).filter(
+        (k) => !existingKeys.has(k),
+      );
+
+      // Merge: always-fetch keys + LLM-selected keys, deduplicated
+      const allKeys = [...new Set([...alwaysKeys, ...llmKeys])];
+
+      if (allKeys.length > 0) {
+        yield { type: "memory_request", data: { keys: allKeys } };
         yield { type: "done" };
         return;
       }

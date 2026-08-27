@@ -1,5 +1,6 @@
 import { ToolRegistry } from './ToolRegistry';
 import { ChatRequest } from '../Model/ChatRequest';
+import { getDbContext } from '../Entity/Database';
 
 /**
  * Pending client-side memory operation queued by a conscious tool.
@@ -100,6 +101,23 @@ export function registerMemoryTools(): void {
         return JSON.stringify({ key, value: memories[key] });
       }
 
+      // Fall back to server-side store (enables cross-session memory reads)
+      if (ctx.request._userId) {
+        try {
+          const db = getDbContext();
+          const serverMem = await db.serverMemory.findUnique({
+            where: { userId_key: { userId: ctx.request._userId, key } },
+          });
+          if (serverMem) {
+            // Cache it in-memory for the rest of this request
+            ctx.request.memories[key] = serverMem.value;
+            return JSON.stringify({ key, value: serverMem.value });
+          }
+        } catch (err) {
+          console.error(`[memory] Server-side read failed for key "${key}":`, err);
+        }
+      }
+
       // The key exists in the index but wasn't fetched yet.
       // Signal the model to request it via memory_request flow.
       const memoryIndex = ctx.request.memoryIndex ?? [];
@@ -164,6 +182,21 @@ export function registerMemoryTools(): void {
       // cross-request durability.
       ctx.request.memories[key] = String(value);
 
+      // Also persist server-side so the WakeupService can read memories
+      // without the client being connected.
+      if (ctx.request._userId) {
+        try {
+          const db = getDbContext();
+          await db.serverMemory.upsert({
+            where: { userId_key: { userId: ctx.request._userId, key } },
+            create: { userId: ctx.request._userId, key, value: String(value) },
+            update: { value: String(value) },
+          });
+        } catch (err) {
+          console.error(`[memory] Server-side persist failed for key "${key}":`, err);
+        }
+      }
+
       return `Memory "${key}" has been written.`;
     },
   );
@@ -198,6 +231,18 @@ export function registerMemoryTools(): void {
 
       // Queue the client-side delete
       enqueueMemoryOp(ctx.request, { type: 'delete', key });
+
+      // Also remove from server-side store
+      if (ctx.request._userId) {
+        try {
+          const db = getDbContext();
+          await db.serverMemory.deleteMany({
+            where: { userId: ctx.request._userId, key },
+          });
+        } catch (err) {
+          console.error(`[memory] Server-side delete failed for key "${key}":`, err);
+        }
+      }
 
       return `Memory "${key}" has been queued for deletion. The client will persist it.`;
     },

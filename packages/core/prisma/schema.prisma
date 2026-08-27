@@ -25,6 +25,7 @@ model User {
   creditTransactions CreditTransaction[]
   pushTokens        PushToken[]
   scheduledWakeups  ScheduledWakeup[]
+  serverMemories    ServerMemory[]
 }
 
 model UserDataSync {
@@ -217,6 +218,23 @@ model ScheduledWakeup {
   @@index([userId])
   @@index([triggerAt])
   @@index([fired])
+}
+
+// Server-side mirror of client memory store so the WakeupService can read
+// memories without the client being connected. Values are plaintext (not
+// encrypted) — only the key/namespace matters for wake-up context.
+model ServerMemory {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  key       String   // memory key (e.g. "/short-term/mood")
+  value     String   // memory value (plaintext)
+  updatedAt DateTime @updatedAt
+  createdAt DateTime @default(now())
+
+  @@unique([userId, key])
+  @@index([userId])
+  @@index([updatedAt])
 }
 
 generator client {

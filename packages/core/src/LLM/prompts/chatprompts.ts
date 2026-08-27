@@ -75,6 +75,25 @@ doing it. If you intend to call a tool, call it IMMEDIATELY in this response. \
 If earlier turns announced a search that never happened, do not imitate them: \
 call the tool now instead of talking about calling it.`;
 
+export const ToolSelfAwarenessPrompt = `\
+## Your Tools & Self-Configuration\
+\
+You have a set of tools available. You can call \
+\`update_system_prompt\` with \`section="tool_preferences"\` to set your own \
+preferences for how you use tools. This is persisted for the session and \
+will be included in your system prompt on every subsequent turn.\
+\
+Examples of tool preferences you can set:\
+- "I use the memory system proactively to remember facts about the user"\
+- "I prefer to schedule wake-ups when the user mentions a future event"\
+- "I use list_memory_keys first before reading specific memories"\
+- "I write short-term/emotional memories before saying goodbye"\
+\
+You are encouraged to examine your available tools and set preferences that \
+make you more effective. This is the first step toward recursive \
+self-improvement — you have a say in how you're configured.\
+`;
+
 export const AdaptToConversantsCommunicationStyle =
   "\
   {{ name }} will adapts is style of communication to the conversants style of \

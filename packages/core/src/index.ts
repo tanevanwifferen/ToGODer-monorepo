@@ -40,6 +40,7 @@ import { registerMcpJobTool } from "./Tools/McpJobTool";
 import { registerSystemPromptTool } from "./Tools/SystemPromptTool";
 import { registerScheduleWakeupTool } from "./Tools/ScheduleWakeupTool";
 import { registerImageGenerateTool } from "./Tools/ImageGenerateTool";
+import { registerIntrospectionTools } from "./Tools/IntrospectionTool";
 import { GetPushRouter } from "./Web/PushController";
 import { getWakeupService } from "./Services/WakeupService";
 
@@ -229,6 +230,7 @@ registerMcpJobTool();
 registerSystemPromptTool();
 registerScheduleWakeupTool();
 registerImageGenerateTool();
+registerIntrospectionTools();
 
 // Start the wake-up cron scheduler for push notifications
 getWakeupService().start();

@@ -12,6 +12,7 @@ import {
   lessBloatPrompt,
   outsideBoxPrompt,
   ToolCallDisciplinePrompt,
+  ToolSelfAwarenessPrompt,
 } from "../LLM/prompts/chatprompts";
 import { PromptList, resolvePromptListItem } from "../LLM/prompts/promptlist";
 import {
@@ -473,6 +474,16 @@ export class ConversationApi {
       systemPrompt += "\n\n" + ToolCallDisciplinePrompt;
     }
 
+    // Tool self-awareness: the AI can examine its tools and set its own
+    // preferences via update_system_prompt section=tool_preferences.
+    // This is the foundation for recursive self-improvement.
+    if (input.tools && input.tools.length > 0) {
+      systemPrompt += "\n\n" + ToolSelfAwarenessPrompt.replace(
+        /{{ name }}/g,
+        () => this.assistant_name!,
+      );
+    }
+
     if (input.humanPrompt) {
       systemPrompt += "\n\n" + HumanResponsePrompt;
     }
@@ -527,6 +538,10 @@ export class ConversationApi {
       this.assistant_name,
     );
     systemPrompt = mergeSessionModifications(systemPrompt, sessionId);
+
+    // Stash the built prompt on the request so introspection tools
+    // (read_system_prompt) can return it to the AI for self-awareness.
+    input._systemPrompt = systemPrompt;
 
     return systemPrompt;
   }
