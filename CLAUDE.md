@@ -50,6 +50,27 @@ bd close <id>         # Complete work
 <!-- END BEADS INTEGRATION -->
 
 
+## When your task is done
+
+When your changes are complete, finalize them fully — work is not done until
+the change is rebuilt/recompiled, the running service is restarted, and it is
+committed and pushed:
+
+1. **Rebuild / recompile** — run the build/test commands for the parts you
+   changed, then rebuild the container image:
+   ```bash
+   docker-compose build
+   ```
+2. **Restart the service** — rebuild and restart the running container(s) so
+   they pick up the new image:
+   ```bash
+   docker-compose up -d --build
+   ```
+   Verify it came up healthy (`docker-compose ps`) before reporting done.
+3. **Commit** — one atomic commit per task on the current branch.
+4. **Push** — pull with rebase first, then push; do not force-push.
+
+
 ## Build & Test
 
 _Add your build and test commands here_
