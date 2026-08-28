@@ -1,76 +1,48 @@
 import { ConversationApi } from '../Api/ConversationApi';
-import { MemoryService, MAX_MEMORY_FETCH_LOOPS } from './MemoryService';
 import { ChatRequest } from '../Model/ChatRequest';
 import { User } from '@prisma/client';
 import { AIProvider } from '../LLM/Model/AIProvider';
 import { PromptList } from '../LLM/prompts/promptlist';
 import { AutoGenerateSystemPromptPrompt } from '../LLM/prompts/systemPromptGeneration';
-import { requestForMemoryBasedOnSystemPromptPrompt } from '../LLM/prompts/systemprompts';
+import { rootpersona } from '../LLM/prompts/rootprompts';
+import { loadSeedV2 } from '../LLM/prompts/seedv2';
 
 /**
- * Service for auto-generating personalized system prompts based on user memories and existing prompt examples.
- * This service fetches user memories, analyzes existing prompts, and creates a tailored system prompt.
+ * Service for auto-generating personalized system prompts based on the
+ * assistant's character (v2 seed, rootpersona, persona definitions) and
+ * existing prompt examples.
+ *
+ * The memory system injects user context at runtime, so generated prompts
+ * must NOT embed or duplicate user memories.
  */
 export class SystemPromptGenerationService {
   private conversationApi: ConversationApi;
-  private memoryService: MemoryService;
 
   constructor(assistantName: string) {
     this.conversationApi = new ConversationApi(assistantName);
-    this.memoryService = new MemoryService(assistantName);
   }
 
   /**
-   * Generates a personalized system prompt for a user based on their memories and existing prompt examples.
-   * Uses a two-phase approach: first generates a basic system prompt, then requests relevant memories to enhance it.
-   * @param body ChatRequest containing memory information and configuration
+   * Generates a personalized system prompt grounded in the assistant's character
+   * (v2 seed identity / rootpersona) and existing prompt examples.
+   *
+   * Does NOT fetch or embed user memories — the memory system handles user
+   * context independently at runtime.
+   *
+   * @param body ChatRequest containing configurable preferences
    * @param user The user to generate the prompt for
-   * @returns Either a request for more memories or the generated system prompt
+   * @returns The generated character-grounded system prompt
    */
   async generatePersonalizedSystemPrompt(
     body: ChatRequest,
     user: User
-  ): Promise<{ requestForMemory?: { keys: string[] }; systemPrompt?: string }> {
-    // Phase 1: Check if we need additional memories
-    var requestForMemory: { keys: string[] } = { keys: [] };
-    const limitReached =
-      body.memoryLoopLimitReached ||
-      (body.memoryLoopCount ?? 0) >= MAX_MEMORY_FETCH_LOOPS;
-    if (!!body.memoryIndex && body.memoryIndex.length > 0 && !limitReached) {
-      var memories = body.memories || {};
-      Object.defineProperty(memories, 'root', {
-        value: body.configurableData ?? undefined,
-        writable: true,
-        enumerable: true,
-        configurable: true,
-      });
-      requestForMemory =
-        await this.conversationApi.requestMemoriesForSystemPrompt(
-          requestForMemoryBasedOnSystemPromptPrompt,
-          body.memoryIndex,
-          memories,
-          user
-        );
-    } else if (limitReached) {
-      console.warn(
-        'SystemPromptGenerationService: memory fetch limit reached, skipping additional requests'
-      );
-    }
-
-    // If we need more memories, return the request
-    if (requestForMemory.keys.length > 0) {
-      return { requestForMemory };
-    }
-
-    // Phase 2: Generate initial system prompt with available memories
+  ): Promise<{ systemPrompt?: string }> {
     const promptExamples = this.getPromptExamples();
     const systemPromptInput = this.formatSystemPromptInput(
-      body.memories || {},
       body.configurableData,
       promptExamples
     );
 
-    // Generate the initial personalized system prompt
     const aiWrapper = this.conversationApi.getAIWrapper(AIProvider.DeepSeekV4Flash, user);
     const response = await aiWrapper.getResponse(
       AutoGenerateSystemPromptPrompt,
@@ -90,7 +62,6 @@ export class SystemPromptGenerationService {
       response.choices[0].message.content ||
       'Unable to generate personalized system prompt.';
 
-    // We have all the memories we need, return the generated system prompt
     return { systemPrompt: generatedPrompt };
   }
 
@@ -127,39 +98,38 @@ export class SystemPromptGenerationService {
   }
 
   /**
-   * Formats the input for the AI system prompt generator.
+   * Formats the input for the AI system prompt generator, grounded in the
+   * assistant's character (v2 seed, rootpersona) — NOT user memories.
    */
   private formatSystemPromptInput(
-    memories: { [key: string]: string },
     configurableData: { [key: string]: string },
     promptExamples: { [key: string]: { prompt: string; description: string } }
   ): string {
-    let input = 'USER MEMORIES AND PERSONAL DATA:\n\n';
+    const seedV2 = loadSeedV2();
 
-    if (Object.keys(memories).length > 0) {
-      for (const [key, content] of Object.entries(memories)) {
-        input += `Memory ${key}:\n${content}\n\n`;
-      }
+    let input = '';
+
+    input += 'ASSISTANT ROOT PERSONA (core convictions & identity):\n\n';
+    input += rootpersona + '\n\n';
+
+    input += 'V2 SEED PROMPT (voice, response discipline, self-awareness):\n\n';
+    input += seedV2 + '\n\n';
+
+    input += 'CONFIGURABLE DATA (user-chosen character preferences):\n\n';
+    if (configurableData && Object.keys(configurableData).length > 0) {
+      input += JSON.stringify(configurableData, null, 2) + '\n\n';
     } else {
-      input +=
-        'No specific memories available. Generate a general but helpful system prompt.\n\n';
+      input += 'No configurable preferences selected.\n\n';
     }
 
-    input += 'CONFIGURABLE DATA:\n\n';
-    if (configurableData) {
-      input += '\n' + JSON.stringify(configurableData, null, 2) + '\n\n';
-    } else {
-      input += 'No configurable data available.\n';
-    }
-
-    input += 'EXISTING PROMPT EXAMPLES:\n\n';
-
+    input += 'EXISTING PROMPT EXAMPLES (templates & tone references):\n\n';
     for (const [key, example] of Object.entries(promptExamples)) {
       input += `${key} - ${example.description}:\n${example.prompt}\n\n---\n\n`;
     }
 
     input +=
-      'Please generate a personalized system prompt based on the above information.';
+      'Please generate a personalised system prompt grounded in the assistant\'s character above. ' +
+      'Do NOT embed user memories or personal history — the memory system handles that at runtime.';
 
     return input;
   }

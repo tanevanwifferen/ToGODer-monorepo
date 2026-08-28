@@ -54,9 +54,12 @@ const McpSettings = () => {
 
   const [form, setForm] = useState(emptyForm());
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [isAdding, setIsAdding] = useState(false);
   // When editing, track whether the user touched the headers section. Per the
   // PUT contract: omitted `headers` => preserve; sent (incl. {}) => replace.
   const [headersTouched, setHeadersTouched] = useState(false);
+  // Client-side validation errors (cleared on input change via dependent logic)
+  const [validationError, setValidationError] = useState<string | null>(null);
 
   useEffect(() => {
     if (isAuthenticated) {
@@ -72,7 +75,9 @@ const McpSettings = () => {
   const startAdd = () => {
     setForm(emptyForm());
     setEditingId(null);
+    setIsAdding(true);
     setHeadersTouched(false);
+    setValidationError(null);
     resetError();
   };
 
@@ -86,7 +91,9 @@ const McpSettings = () => {
   const cancelForm = () => {
     setForm(emptyForm());
     setEditingId(null);
+    setIsAdding(false);
     setHeadersTouched(false);
+    setValidationError(null);
     resetError();
   };
 
@@ -101,8 +108,33 @@ const McpSettings = () => {
     return out; // possibly {} => clear
   };
 
+  /** Client-side validation: reject empty name and invalid URLs. */
+  const validate = (): boolean => {
+    setValidationError(null);
+    if (!form.name.trim()) {
+      setValidationError('Server name is required.');
+      return false;
+    }
+    if (!form.url.trim()) {
+      setValidationError('Server URL is required.');
+      return false;
+    }
+    try {
+      const u = new URL(form.url.trim());
+      if (u.protocol !== 'http:' && u.protocol !== 'https:') {
+        setValidationError('URL must start with http:// or https://');
+        return false;
+      }
+    } catch {
+      setValidationError('Invalid URL format.');
+      return false;
+    }
+    return true;
+  };
+
   const submit = async () => {
     resetError();
+    if (!validate()) return;
     if (editingId) {
       await dispatch(
         updateMcpServer({
@@ -243,11 +275,17 @@ const McpSettings = () => {
       ))}
 
       {/* Add / Edit form */}
-      {isEditing || servers.length === 0 ? (
+      {isAdding || isEditing || servers.length === 0 ? (
         <View style={styles.section}>
           <Text style={[styles.subLabel, { color: theme.text }]}>
             {isEditing ? 'Edit MCP Server' : 'Add MCP Server'}
           </Text>
+
+          {validationError && (
+            <Text style={[styles.errorText, { color: theme.error, marginBottom: 12 }]}>
+              {validationError}
+            </Text>
+          )}
 
           <Text style={[styles.fieldLabel, { color: theme.icon }]}>Name</Text>
           <TextInput
@@ -379,14 +417,12 @@ const McpSettings = () => {
                 {isEditing ? 'Save' : 'Add server'}
               </Text>
             </TouchableOpacity>
-            {isEditing && (
-              <TouchableOpacity
-                style={[styles.actionButton, { backgroundColor: theme.icon }]}
-                onPress={cancelForm}
-              >
-                <Text style={styles.actionButtonText}>Cancel</Text>
-              </TouchableOpacity>
-            )}
+            <TouchableOpacity
+              style={[styles.actionButton, { backgroundColor: theme.icon }]}
+              onPress={cancelForm}
+            >
+              <Text style={styles.actionButtonText}>Cancel</Text>
+            </TouchableOpacity>
           </View>
         </View>
       ) : (

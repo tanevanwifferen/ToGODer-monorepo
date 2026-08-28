@@ -571,18 +571,11 @@ export function GetChatRouter(messageLimiter: RateLimitRequestHandler): Router {
             user,
           );
 
-        if (result.requestForMemory) {
-          res.json({
-            requestForMemory: result.requestForMemory,
-            systemPrompt: null,
-          });
-        } else {
-          res.json({
-            systemPrompt: result.systemPrompt,
-            requestForMemory: null,
-            assistant_name: body.assistant_name,
-          });
-        }
+        res.json({
+          systemPrompt: result.systemPrompt,
+          requestForMemory: null,
+          assistant_name: body.assistant_name,
+        });
       } catch (error) {
         next(error);
       }
