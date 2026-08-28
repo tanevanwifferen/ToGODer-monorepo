@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, StyleSheet, Text, TextInput, TouchableOpacity, useColorScheme, ScrollView, Alert } from 'react-native';
+import { View, StyleSheet, Text, TouchableOpacity, useColorScheme, ScrollView, Alert } from 'react-native';
 import { useDispatch, useSelector } from 'react-redux';
 import { Colors } from '../../constants/Colors';
 import { useSystemPrompt } from '../../query-hooks/useChat';
@@ -92,20 +92,14 @@ const SystemPromptSettings = () => {
 
       {customSystemPrompt && (
         <View style={styles.section}>
-          <Text style={[styles.label, { color: theme.text }]}>Generated System Prompt</Text>
+          <Text style={[styles.label, { color: theme.text }]}>Current System Prompt</Text>
           <ScrollView style={[styles.promptContainer, { borderColor: theme.icon }]}>
-            <TextInput
-              style={[styles.promptText, { color: theme.text }]}
-              value={customSystemPrompt}
-              onChangeText={(text) => dispatch(setCustomSystemPrompt(text))}
-              multiline
-              placeholder="Your generated system prompt will appear here..."
-              placeholderTextColor={theme.icon}
-              textAlignVertical="top"
-            />
+            <Text style={[styles.promptText, { color: theme.text }]} selectable>
+              {customSystemPrompt}
+            </Text>
           </ScrollView>
           <Text style={[styles.helpText, { color: theme.icon }]}>
-            You can edit the generated prompt above if needed.
+            This is the current system prompt (read-only). Use "Generate System Prompt" above to regenerate it.
           </Text>
         </View>
       )}

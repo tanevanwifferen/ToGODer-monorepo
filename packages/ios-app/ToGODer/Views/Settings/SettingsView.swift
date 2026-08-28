@@ -91,8 +91,18 @@ struct SettingsView: View {
             }
 
             Section("Custom System Prompt") {
-                TextEditor(text: customPromptBinding)
-                    .frame(minHeight: 100)
+                if let prompt = settingsService.settings.customSystemPrompt, !prompt.isEmpty {
+                    Text(prompt)
+                        .font(.body)
+                        .textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(8)
+                        .background(Color(.secondarySystemBackground))
+                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                } else {
+                    Text("No system prompt generated yet.")
+                        .foregroundStyle(.secondary)
+                }
 
                 Button {
                     Task { await generateSystemPrompt() }
@@ -255,13 +265,6 @@ struct SettingsView: View {
                 let trimmed = String(val.prefix(1000))
                 settingsService.updateSettings { $0.persona = trimmed.isEmpty ? nil : trimmed }
             }
-        )
-    }
-
-    private var customPromptBinding: Binding<String> {
-        Binding(
-            get: { settingsService.settings.customSystemPrompt ?? "" },
-            set: { val in settingsService.updateSettings { $0.customSystemPrompt = val.isEmpty ? nil : val } }
         )
     }
 }
