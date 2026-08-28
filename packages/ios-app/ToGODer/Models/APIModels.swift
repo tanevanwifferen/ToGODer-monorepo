@@ -253,6 +253,16 @@ struct SystemPromptResponse: Codable {
     }
 }
 
+struct ActiveSystemPromptResponse: Codable {
+    let systemPrompt: String
+    let assistantName: String?
+
+    enum CodingKeys: String, CodingKey {
+        case systemPrompt
+        case assistantName = "assistant_name"
+    }
+}
+
 struct MemoryRequest: Codable {
     let keys: [String]
 }

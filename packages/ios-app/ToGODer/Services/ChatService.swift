@@ -547,6 +547,37 @@ final class ChatService: ObservableObject {
 
     // MARK: - System Prompt Generation
 
+    /// Fetches the currently-active (dynamic) system prompt for read-only
+    /// display in settings. No state mutation / no LLM cost on the server.
+    func fetchActiveSystemPrompt() async throws -> String {
+        let settings = settingsService.settings
+        let allMemories = storage.loadMemories()
+        let memoryIndex = Array(allMemories.keys)
+
+        let request = ChatRequest(
+            model: settings.model,
+            humanPrompt: settings.humanPrompt,
+            keepGoing: settings.keepGoing,
+            outsideBox: settings.outsideBox,
+            holisticTherapist: settings.holisticTherapist,
+            communicationStyle: settings.communicationStyle.rawValue,
+            prompts: [],
+            configurableData: personalDataService?.data ?? "",
+            staticData: buildStaticData(),
+            assistantName: settings.assistantName,
+            memoryIndex: memoryIndex,
+            memories: allMemories,
+            customSystemPrompt: settings.customSystemPrompt,
+            persona: settings.persona,
+            libraryIntegrationEnabled: settings.libraryIntegrationEnabled,
+            memoryLoopCount: 0,
+            memoryLoopLimitReached: false
+        )
+
+        let response: ActiveSystemPromptResponse = try await apiClient.post("/system-prompt/preview", body: request)
+        return response.systemPrompt
+    }
+
     /// Generates a personalized system prompt via /generate-system-prompt,
     /// resolving requested memories in a loop. Port of RN useSystemPrompt.
     func generateSystemPrompt() async throws -> String {

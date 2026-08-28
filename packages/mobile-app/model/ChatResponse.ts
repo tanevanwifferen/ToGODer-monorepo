@@ -37,3 +37,8 @@ export interface SystemPromptResponse {
   requestForMemory: { keys: string[] } | null;
   assistant_name?: string;
 }
+
+export interface ActiveSystemPromptResponse {
+  systemPrompt: string;
+  assistant_name?: string;
+}

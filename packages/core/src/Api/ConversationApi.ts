@@ -415,6 +415,7 @@ export class ConversationApi {
   private async buildSystemPrompt(
     input: ChatRequest,
     user: User | null | undefined,
+    preview = false,
   ): Promise<string> {
     // ── v2 Seed Prompt ──────────────────────────────────────────
     // When v2 is enabled and no explicit command overrides it, use the
@@ -430,21 +431,29 @@ export class ConversationApi {
       const userId = user?.id ?? 'anonymous';
       const existingCovenant = getUserCovenant(userId);
 
-      // Use a fast/cheap model for covenant extraction
-      const covenantWrapper = this.getAIWrapper(
-        AIProvider.DeepSeekV4Flash,
-        user,
-      );
-      const covenant = await extractCovenantStateWithAI(
-        input.prompts,
-        covenantWrapper,
-        existingCovenant ?? undefined,
-      );
+      let covenantText: string;
+      if (preview) {
+        // Preview (read-only display): render the LAST extracted
+        // covenant state without re-running AI extraction. Avoids
+        // mutating state or spending an LLM call on a settings view.
+        covenantText = renderCovenantState(existingCovenant);
+      } else {
+        // Use a fast/cheap model for covenant extraction
+        const covenantWrapper = this.getAIWrapper(
+          AIProvider.DeepSeekV4Flash,
+          user,
+        );
+        const covenant = await extractCovenantStateWithAI(
+          input.prompts,
+          covenantWrapper,
+          existingCovenant ?? undefined,
+        );
 
-      // Persist per-user state
-      setUserCovenant(userId, covenant);
+        // Persist per-user state
+        setUserCovenant(userId, covenant);
+        covenantText = renderCovenantState(covenant);
+      }
 
-      const covenantText = renderCovenantState(covenant);
       systemPrompt = systemPrompt.replace(
         /\{\{ covenant_state \}\}/g,
         covenantText,
@@ -544,6 +553,20 @@ export class ConversationApi {
     input._systemPrompt = systemPrompt;
 
     return systemPrompt;
+  }
+
+  /**
+   * Build the currently-active system prompt for read-only display,
+   * WITHOUT re-running covenant extraction or mutating any state.
+   * Returns the same effective prompt shape as a live turn would use
+   * (v2 seed + rendered covenant + persona + behavior sections +
+   * personal data), using the client-supplied settings in `input`.
+   */
+  public async previewSystemPrompt(
+    input: ChatRequest,
+    user: User | null | undefined,
+  ): Promise<string> {
+    return this.buildSystemPrompt(input, user, true);
   }
 
   /**

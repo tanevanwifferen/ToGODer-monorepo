@@ -405,3 +405,113 @@ export function useSystemPrompt() {
     error,
   };
 }
+
+/**
+ * Custom hook for fetching the currently-active (dynamic) system prompt
+ * from the backend for read-only display in settings. Returns the same
+ * effective prompt a live turn would use (v2 seed + rendered covenant +
+ * persona + behavior sections + personal data), with no LLM cost and no
+ * state mutation on the server.
+ */
+export function useActiveSystemPrompt() {
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<Error | null>(null);
+  const [activePrompt, setActivePrompt] = useState<string | null>(null);
+
+  const model = useSelector(selectModel);
+  const humanPrompt = useSelector(selectHumanPrompt);
+  const keepGoing = useSelector(selectKeepGoing);
+  const outsideBox = useSelector(selectOutsideBox);
+  const holisticTherapist = useSelector(selectHolisticTherapist);
+  const communicationStyle = useSelector(selectCommunicationStyle);
+  const libraryIntegrationEnabled = useSelector(selectLibraryIntegrationEnabled);
+  const personalData = useSelector(selectPersonalData);
+  const assistant_name = useSelector(selectAssistantName);
+  const customSystemPrompt = useSelector(selectCustomSystemPrompt);
+  const persona = useSelector((state: RootState) => state.personal.persona);
+
+  const fetchActivePrompt = useCallback(async (): Promise<string> => {
+    setIsLoading(true);
+    setError(null);
+    try {
+      const memory_index = await StorageService.listKeys();
+      const memories: Record<string, string> = {};
+      for (const key of memory_index) {
+        if (!StorageService.keyIsValid(key)) continue;
+        const value = await StorageService.get(key);
+        if (value != null) memories[key] = value;
+      }
+
+      const configurableData =
+        typeof personalData == "string"
+          ? personalData
+          : JSON.stringify(personalData);
+
+      let staticData: any = {
+        date: new Date().toDateString() + " " + new Date().toTimeString(),
+      };
+      if (Platform.OS !== "web") {
+        const upcomingEventsInCalendar =
+          await CalendarService.getUpcomingEvents();
+        const pastEventsInCalendar = await CalendarService.getPastWeekEvents();
+        const health = await HealthService.getHealthDataSummerized();
+        staticData = {
+          ...staticData,
+          upcomingEventsInCalendar,
+          pastEventsInCalendar,
+          health,
+        };
+      }
+
+      const response = await ChatApiClient.getActiveSystemPrompt(
+        model,
+        humanPrompt,
+        keepGoing,
+        outsideBox,
+        holisticTherapist,
+        communicationStyle ?? ChatRequestCommunicationStyle.Default,
+        configurableData,
+        staticData,
+        assistant_name,
+        memory_index,
+        memories,
+        persona && persona.length > 0 ? persona : undefined,
+        customSystemPrompt ?? undefined,
+        libraryIntegrationEnabled ?? false,
+      );
+
+      const prompt = response.systemPrompt;
+      setActivePrompt(prompt);
+      setError(null);
+      return prompt;
+    } catch (err: any) {
+      const error =
+        err instanceof Error
+          ? err
+          : new Error((err as string) ?? "Failed to fetch active system prompt");
+      setError(error);
+      throw error;
+    } finally {
+      setIsLoading(false);
+    }
+  }, [
+    model,
+    humanPrompt,
+    keepGoing,
+    outsideBox,
+    holisticTherapist,
+    communicationStyle,
+    personalData,
+    assistant_name,
+    customSystemPrompt,
+    persona,
+    libraryIntegrationEnabled,
+  ]);
+
+  return {
+    activePrompt,
+    fetchActivePrompt,
+    isLoading,
+    error,
+  };
+}

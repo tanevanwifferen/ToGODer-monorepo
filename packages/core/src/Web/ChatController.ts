@@ -16,6 +16,7 @@ import {
   modelSupportsDocuments,
 } from "../LLM/Model/AIProvider";
 import { hasPdfArtifact } from "../Api/ConversationApi";
+import { ConversationApi } from "../Api/ConversationApi";
 import { setAuthUser } from "./Middleware/auth";
 import { ToGODerRequest } from "./Model/ToGODerRequest";
 import { ChatService } from "../Services/ChatService";
@@ -476,6 +477,52 @@ export function GetChatRouter(messageLimiter: RateLimitRequestHandler): Router {
         } else {
           res.json({ updateData: null });
         }
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
+
+  // Endpoint returning the currently-active (dynamic) system prompt for
+  // read-only display in the settings screen. Builds the same effective
+  // prompt a live turn would use, but renders the LAST extracted covenant
+  // state instead of re-running AI extraction (no state mutation / no LLM
+  // cost on a settings view).
+  chatRouter.post(
+    "/api/system-prompt/preview",
+    messageLimiter,
+    setAuthUser,
+    async (req: Request, res: Response, next: NextFunction) => {
+      try {
+        const user = (req as ToGODerRequest).togoder_auth?.user ?? null;
+
+        let body: ChatRequest = req.body;
+        if (!body.assistant_name || body.assistant_name === "") {
+          body.assistant_name = getAssistantName();
+        }
+        if (!body.model) {
+          body.model = getDefaultModel();
+        }
+        if (!body.memoryIndex) {
+          body.memoryIndex = [];
+        }
+        if (!body.memories) {
+          body.memories = {};
+        }
+        if (!Array.isArray(body.prompts)) {
+          body.prompts = [];
+        }
+
+        const conversationApi = new ConversationApi(body.assistant_name);
+        const systemPrompt = await conversationApi.previewSystemPrompt(
+          body,
+          user,
+        );
+
+        res.json({
+          systemPrompt,
+          assistant_name: body.assistant_name,
+        });
       } catch (error) {
         next(error);
       }

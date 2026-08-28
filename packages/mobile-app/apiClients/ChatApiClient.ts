@@ -9,6 +9,7 @@ import {
   ExperienceResponse,
   UpdateMemoryResponse,
   SystemPromptResponse,
+  ActiveSystemPromptResponse,
 } from "../model/ChatResponse";
 import { store } from "../redux";
 import { getApiUrl } from "../constants/Env";
@@ -1052,5 +1053,53 @@ export class ChatApiClient {
    */
   static async unregisterPushToken(token: string): Promise<void> {
     await ApiClient.post("/push/unregister", { token });
+  }
+
+  /**
+   * Fetch the currently-active system prompt from the backend for
+   * read-only display in settings. No state mutation / no LLM cost.
+   */
+  static async getActiveSystemPrompt(
+    model: string,
+    humanPrompt: boolean = true,
+    keepGoing: boolean = true,
+    outsideBox: boolean = true,
+    holisticTherapist: boolean = true,
+    communicationStyle: ChatRequestCommunicationStyle,
+    configurableData?: string,
+    staticData?: Record<string, any> | undefined,
+    assistant_name?: string | undefined,
+    memoryIndex?: string[] | undefined,
+    memories?: Record<string, string> | undefined,
+    persona?: string | undefined,
+    customSystemPrompt?: string | undefined,
+    libraryIntegrationEnabled?: boolean,
+  ): Promise<ActiveSystemPromptResponse> {
+    const response = await ApiClient.post<ActiveSystemPromptResponse>(
+      "/system-prompt/preview",
+      {
+        model,
+        humanPrompt,
+        keepGoing,
+        outsideBox,
+        holisticTherapist,
+        communicationStyle,
+        configurableData,
+        staticData,
+        assistant_name,
+        memoryIndex,
+        memories,
+        persona,
+        customSystemPrompt,
+        libraryIntegrationEnabled,
+        prompts: [],
+        memoryLoopCount: 0,
+        memoryLoopLimitReached: false,
+      },
+    );
+    if (response instanceof Error) {
+      throw response;
+    }
+    return response as ActiveSystemPromptResponse;
   }
 }

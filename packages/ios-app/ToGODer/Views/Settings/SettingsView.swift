@@ -10,6 +10,9 @@ struct SettingsView: View {
     @State private var showPasscodeSetup = false
     @State private var isGeneratingPrompt = false
     @State private var promptError: String?
+    @State private var activePrompt: String?
+    @State private var isLoadingActivePrompt = false
+    @State private var activePromptError: String?
 
     var body: some View {
         Form {
@@ -90,6 +93,44 @@ struct SettingsView: View {
                     .foregroundStyle(.secondary)
             }
 
+            Section("Current System Prompt") {
+                if let activePrompt {
+                    Text(activePrompt)
+                        .font(.body)
+                        .textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(8)
+                        .background(Color(.secondarySystemBackground))
+                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                } else if isLoadingActivePrompt {
+                    HStack {
+                        ProgressView()
+                        Text("Loading...")
+                            .foregroundStyle(.secondary)
+                    }
+                } else {
+                    Text("No active system prompt loaded.")
+                        .foregroundStyle(.secondary)
+                }
+
+                Button {
+                    Task { await loadActivePrompt() }
+                } label: {
+                    Text(isLoadingActivePrompt ? "Refreshing..." : "Refresh System Prompt")
+                }
+                .disabled(isLoadingActivePrompt)
+
+                Text("The live prompt the assistant is using right now. It evolves as your conversation deepens.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                if let activePromptError {
+                    Text("Error: \(activePromptError)")
+                        .font(.caption)
+                        .foregroundStyle(.red)
+                }
+            }
+
             Section("Custom System Prompt") {
                 if let prompt = settingsService.settings.customSystemPrompt, !prompt.isEmpty {
                     Text(prompt)
@@ -145,12 +186,26 @@ struct SettingsView: View {
             }
         }
         .navigationTitle("Settings")
+        .task {
+            await loadActivePrompt()
+        }
         .sheet(isPresented: $showPasscodeSetup) {
             PasscodeView(mode: .setup)
         }
     }
 
     // MARK: - Actions
+
+    private func loadActivePrompt() async {
+        isLoadingActivePrompt = true
+        activePromptError = nil
+        defer { isLoadingActivePrompt = false }
+        do {
+            activePrompt = try await chatService.fetchActiveSystemPrompt()
+        } catch {
+            activePromptError = error.localizedDescription
+        }
+    }
 
     private func generateSystemPrompt() async {
         isGeneratingPrompt = true
