@@ -34,6 +34,7 @@ export enum AIProvider {
   Gemini31Pro = "google/gemini-3.1-pro-preview",
   Qwen3Coder = "moonshotai/kimi-k2.5",
   Qwen36Plus = "qwen/qwen3.6-plus",
+  Gpt6Astra = "gpt-6-astra",
 }
 
 export function getAIWrapper(model: AIProvider): AIWrapper {
@@ -44,6 +45,7 @@ export function getAIWrapper(model: AIProvider): AIWrapper {
     case AIProvider.Gpt35turbo:
     case AIProvider.gpt5:
     case AIProvider.gpt51Chat:
+    case AIProvider.Gpt6Astra:
       return new OpenAIWrapper(model);
     case AIProvider.Claude3SonnetBeta:
     case AIProvider.Claude37SonnetBeta:
@@ -190,6 +192,12 @@ export function getTokenCost(model: AIProvider): AICost {
         output_cost_per_million: new Decimal("6"),
       };
       break;
+    case AIProvider.Gpt6Astra:
+      torReturn = {
+        input_cost_per_million: new Decimal("10"),
+        output_cost_per_million: new Decimal("50"),
+      };
+      break;
     default:
       throw new Error("unknown price for model: " + model);
   }
@@ -251,6 +259,8 @@ export function GetModelName(provider: AIProvider): string {
       return "Qwen 3 Coder";
     case AIProvider.Qwen36Plus:
       return "Qwen 3.6 Plus";
+    case AIProvider.Gpt6Astra:
+      return "GPT-6 Astra";
     default:
       throw new Error("Unknown AIProvider");
   }
@@ -286,6 +296,7 @@ export function ListModels(): AIProvider[] {
     AIProvider.Grok420,
     AIProvider.Grok45,
     AIProvider.Qwen36Plus,
+    AIProvider.Gpt6Astra,
   ].filter((x) => {
     try {
       var a: AIWrapper | null = null;
@@ -296,6 +307,7 @@ export function ListModels(): AIProvider[] {
         case AIProvider.gpt41:
         case AIProvider.Gpt4oMini:
         case AIProvider.Gpt35turbo:
+        case AIProvider.Gpt6Astra:
           a = new OpenAIWrapper(x);
           break;
         case AIProvider.Claude3SonnetBeta:
