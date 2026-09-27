@@ -22,11 +22,13 @@ export enum AIProvider {
   Claude45Sonnet = "anthropic/claude-sonnet-4.5",
   Claude46Opus = "anthropic/claude-opus-4.6",
   Claude47Opus = "anthropic/claude-opus-4.7",
+  Claude55Opus = "anthropic/claude-opus-5.5",
   Claude5Fable = "anthropic/claude-fable-5",
   DeepSeekV3 = "deepseek/deepseek-chat-v3.1",
   DeepSeekV32 = "deepseek/deepseek-v3.2",
   DeepSeekV4Pro = "deepseek/deepseek-v4-pro",
   DeepSeekV4Flash = "deepseek/deepseek-v4-flash",
+  DeepSeekV41Flash = "deepseek/deepseek-v4.1-flash",
   LLama3370b = "meta-llama/llama-3.3-70b-instruct",
   Llama4Maverick = "meta-llama/llama-4-maverick",
   Grok420 = "x-ai/grok-4.20",
@@ -53,11 +55,13 @@ export function getAIWrapper(model: AIProvider): AIWrapper {
     case AIProvider.Claude45Sonnet:
     case AIProvider.Claude46Opus:
     case AIProvider.Claude47Opus:
+    case AIProvider.Claude55Opus:
     case AIProvider.Claude5Fable:
     case AIProvider.DeepSeekV3:
     case AIProvider.DeepSeekV32:
     case AIProvider.DeepSeekV4Pro:
     case AIProvider.DeepSeekV4Flash:
+    case AIProvider.DeepSeekV41Flash:
     case AIProvider.LLama3370b:
     case AIProvider.Llama4Maverick:
     case AIProvider.Grok420:
@@ -90,6 +94,12 @@ export function getTokenCost(model: AIProvider): AICost {
         output_cost_per_million: new Decimal("25"),
       };
       break;
+    case AIProvider.Claude55Opus:
+      torReturn = {
+        input_cost_per_million: new Decimal("4"),
+        output_cost_per_million: new Decimal("20"),
+      };
+      break;
     case AIProvider.Claude5Fable:
       torReturn = {
         input_cost_per_million: new Decimal("10"),
@@ -118,6 +128,12 @@ export function getTokenCost(model: AIProvider): AICost {
       torReturn = {
         input_cost_per_million: new Decimal("0.112"),
         output_cost_per_million: new Decimal("0.224"),
+      };
+      break;
+    case AIProvider.DeepSeekV41Flash:
+      torReturn = {
+        input_cost_per_million: new Decimal("0.375"),
+        output_cost_per_million: new Decimal("1.50"),
       };
       break;
     case AIProvider.LLama3370b:
@@ -235,6 +251,8 @@ export function GetModelName(provider: AIProvider): string {
       return "Claude 4.6 Opus";
     case AIProvider.Claude47Opus:
       return "Claude 4.7 Opus";
+    case AIProvider.Claude55Opus:
+      return "Claude 5.5 Opus";
     case AIProvider.Claude5Fable:
       return "Claude 5 Fable";
     case AIProvider.DeepSeekV3:
@@ -245,6 +263,8 @@ export function GetModelName(provider: AIProvider): string {
       return "DeepSeek V4 Pro";
     case AIProvider.DeepSeekV4Flash:
       return "DeepSeek V4 Flash";
+    case AIProvider.DeepSeekV41Flash:
+      return "DeepSeek V4.1 Flash";
     case AIProvider.LLama3370b:
       return "Llama 3.3 70b";
     case AIProvider.Llama4Maverick:
@@ -274,6 +294,7 @@ export function ListModels(): AIProvider[] {
   }
   modelCache = [
     AIProvider.DeepSeekV4Flash,
+    AIProvider.DeepSeekV41Flash,
     AIProvider.DeepSeekV4Pro,
     AIProvider.DeepSeekV3,
     AIProvider.DeepSeekV32,
@@ -289,6 +310,7 @@ export function ListModels(): AIProvider[] {
     AIProvider.Claude45Sonnet,
     AIProvider.Claude46Opus,
     AIProvider.Claude47Opus,
+    AIProvider.Claude55Opus,
     AIProvider.Claude5Fable,
     AIProvider.LLama3370b,
     AIProvider.Llama4Maverick,
@@ -316,11 +338,13 @@ export function ListModels(): AIProvider[] {
         case AIProvider.Claude45Sonnet:
         case AIProvider.Claude46Opus:
         case AIProvider.Claude47Opus:
+        case AIProvider.Claude55Opus:
         case AIProvider.Claude5Fable:
         case AIProvider.DeepSeekV3:
         case AIProvider.DeepSeekV32:
         case AIProvider.DeepSeekV4Pro:
         case AIProvider.DeepSeekV4Flash:
+        case AIProvider.DeepSeekV41Flash:
         case AIProvider.LLama3370b:
         case AIProvider.Llama4Maverick:
         case AIProvider.Gemini31Pro:
