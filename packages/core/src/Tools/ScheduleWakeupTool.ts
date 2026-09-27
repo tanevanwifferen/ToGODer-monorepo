@@ -73,6 +73,19 @@ export function registerScheduleWakeupTool(): void {
       }
       request._pendingWakeup.push({ triggerAt: parsedDate, reason });
 
+      // Check whether the user has any registered push token so the assistant
+      // can be honest about whether the notification will actually be delivered.
+      const userId = (ctx.request as any)?._userId as string | undefined;
+      let hasPushToken = false;
+      if (userId) {
+        try {
+          hasPushToken =
+            (await getDbContext().pushToken.count({ where: { userId } })) > 0;
+        } catch (err) {
+          console.error('[schedule_wakeup] Failed to check push tokens:', err);
+        }
+      }
+
       const friendly = parsedDate.toLocaleString('en-US', {
         weekday: 'long',
         month: 'long',
@@ -82,11 +95,23 @@ export function registerScheduleWakeupTool(): void {
         timeZoneName: 'short',
       });
 
+      if (!hasPushToken) {
+        return (
+          `✅ Wake-up scheduled for ${friendly} (will persist for up to a day).\n` +
+          `Reason: "${reason}"\n\n` +
+          `⚠️ No push token registered for this user — the notification will NOT ` +
+          `be delivered. Be honest with the user: a check-in requires push ` +
+          `notifications to be enabled in the ToGODer app, and they have not ` +
+          `granted notification permission yet. Ask them to open the app's ` +
+          `settings and enable/allow notifications.`
+        );
+      }
+
       return (
         `✅ Wake-up scheduled for ${friendly}.\n` +
         `Reason: "${reason}"\n\n` +
         `I'll check in with you then and decide whether to send a push notification ` +
-        `based on your recent context. Make sure you have push notifications enabled!`
+        `based on your recent context.`
       );
     },
     (_request) => true, // always enabled; streaming service checks auth on persist

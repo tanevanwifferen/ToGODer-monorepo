@@ -19,6 +19,7 @@ import { RouteProvider } from '../components/providers/RouteProvider';
 import { useColorScheme } from '../hooks/useColorScheme';
 import { useInitialization } from '../hooks/useInitialization';
 import { useInitialize } from '../hooks/useInitialize';
+import { usePushNotificationSetup } from '../hooks/usePushNotifications';
 
 // Prevent the splash screen from auto-hiding before asset loading is complete.
 SplashScreen.preventAutoHideAsync();
@@ -27,6 +28,14 @@ SplashScreen.preventAutoHideAsync();
 function InitializationWrapper({ children }: { children: React.ReactNode }) {
   useInitialization();
   return <>{children}</>;
+}
+
+// Requests notification permission and registers the Expo push token with the
+// backend once granted. Mounted at app startup so the OS permission prompt is
+// shown on first launch (the reason schedule_wakeup check-ins never arrived).
+function PushNotificationSetup() {
+  usePushNotificationSetup();
+  return null;
 }
 
 export default function RootLayout() {
@@ -96,6 +105,7 @@ export default function RootLayout() {
           <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
             <RouteProvider>
               <InitializationWrapper>
+                <PushNotificationSetup />
                 <ExperienceProvider>
                     <GestureHandlerRootView style={styles.container}>
                     <Stack>
